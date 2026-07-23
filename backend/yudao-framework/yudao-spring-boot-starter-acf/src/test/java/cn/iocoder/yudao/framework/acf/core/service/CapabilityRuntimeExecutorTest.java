@@ -12,9 +12,11 @@ import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuard;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuardChain;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuardContext;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuardResult;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityInvocationExecutor;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimePolicy;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimePolicyService;
 import cn.iocoder.yudao.framework.acf.core.runtime.DefaultCapabilityExceptionClassifier;
+import cn.iocoder.yudao.framework.acf.core.runtime.DefaultCapabilityInvocationExecutor;
 import cn.iocoder.yudao.framework.acf.core.schema.CapabilitySchemaGenerator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Validation;
@@ -27,6 +29,9 @@ import org.springframework.context.annotation.AnnotationConfigApplicationContext
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -130,21 +135,58 @@ class CapabilityRuntimeExecutorTest {
         assertThat(idempotencyService.releaseCount).isOne();
     }
 
+    @Test
+    void shouldTimeoutTargetAndCloseRuntimeLifecycleAsFailure() throws Exception {
+        CapturingRuntimeGuard guard = CapturingRuntimeGuard.allowed();
+        CapturingIdempotencyService idempotencyService = new CapturingIdempotencyService();
+        CapturingAuditService auditService = new CapturingAuditService();
+
+        try (DefaultCapabilityInvocationExecutor invocationExecutor =
+                     new DefaultCapabilityInvocationExecutor()) {
+            CapabilityResult result = executor(runtimePolicy(30), guard, idempotencyService,
+                    auditService, invocationExecutor).invoke(command("test.runtime.slow", "runtime-003"));
+
+            assertThat(result.getErrorCode()).isEqualTo("RUNTIME_TIMEOUT");
+            assertThat(result.isRetryable()).isTrue();
+            assertThat(capability.invocationCount).isOne();
+            assertThat(capability.slowInterrupted.await(1, TimeUnit.SECONDS)).isTrue();
+            assertThat(guard.failureCount).isOne();
+            assertThat(guard.failureCause).isInstanceOf(TimeoutException.class);
+            assertThat(idempotencyService.failCount).isOne();
+            assertThat(idempotencyService.releaseCount).isZero();
+            assertThat(auditService.record.getRuntimePolicySummary()).contains("timeoutMs=30");
+            assertThat(auditService.record.isTargetInvoked()).isTrue();
+        }
+    }
+
     private CapabilityExecutor executor(CapabilityRuntimePolicyService runtimePolicyService,
                                         CapabilityRuntimeGuard guard,
                                         CapabilityIdempotencyService idempotencyService,
                                         CapabilityAuditService auditService) {
+        return executor(runtimePolicyService, guard, idempotencyService, auditService,
+                DefaultCapabilityInvocationExecutor.shared());
+    }
+
+    private CapabilityExecutor executor(CapabilityRuntimePolicyService runtimePolicyService,
+                                        CapabilityRuntimeGuard guard,
+                                        CapabilityIdempotencyService idempotencyService,
+                                        CapabilityAuditService auditService,
+                                        CapabilityInvocationExecutor invocationExecutor) {
         CapabilityGovernanceService governanceService = new DefaultCapabilityGovernanceService(
                 new CapabilityPolicyChain(List.of()));
         return new CapabilityExecutor(registry, governanceService, null, idempotencyService, auditService,
                 new DefaultCapabilityExceptionClassifier(), runtimePolicyService,
-                new CapabilityRuntimeGuardChain(List.of(guard)),
+                new CapabilityRuntimeGuardChain(List.of(guard)), invocationExecutor,
                 new CapabilityRequestDigestGenerator(objectMapper), objectMapper, validator);
     }
 
     private CapabilityRuntimePolicyService runtimePolicy() {
+        return runtimePolicy(2_000);
+    }
+
+    private CapabilityRuntimePolicyService runtimePolicy(int timeoutMs) {
         CapabilityRuntimePolicy policy = CapabilityRuntimePolicy.builder()
-                .timeoutMs(2_000)
+                .timeoutMs(timeoutMs)
                 .maxConcurrency(1)
                 .build();
         return (definition, context) -> policy;
@@ -161,6 +203,7 @@ class CapabilityRuntimeExecutorTest {
     static class RuntimeCapability {
 
         private int invocationCount;
+        private final CountDownLatch slowInterrupted = new CountDownLatch(1);
 
         @AgentCapability(name = "test.runtime.success", title = "运行时成功能力",
                 description = "验证运行时保护器成功收口", permissions = "test:runtime:invoke")
@@ -181,6 +224,19 @@ class CapabilityRuntimeExecutorTest {
         public CapabilityResult failureResult() {
             invocationCount++;
             return CapabilityResult.failure("BUSINESS_REJECTED", "business rejected", false);
+        }
+
+        @AgentCapability(name = "test.runtime.slow", title = "运行时超时能力",
+                description = "验证目标调用超时与中断", permissions = "test:runtime:invoke")
+        public String slow() throws InterruptedException {
+            invocationCount++;
+            try {
+                Thread.sleep(10_000);
+                return "late";
+            } catch (InterruptedException exception) {
+                slowInterrupted.countDown();
+                throw exception;
+            }
         }
     }
 

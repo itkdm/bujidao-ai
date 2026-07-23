@@ -6,9 +6,11 @@ import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyChain;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPermissionPolicy;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityExceptionClassifier;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityConcurrencyGuard;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityInvocationExecutor;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuard;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuardChain;
 import cn.iocoder.yudao.framework.acf.core.runtime.DefaultCapabilityExceptionClassifier;
+import cn.iocoder.yudao.framework.acf.core.runtime.DefaultCapabilityInvocationExecutor;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimePolicyService;
 import cn.iocoder.yudao.framework.acf.core.runtime.DefaultCapabilityRuntimePolicyService;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityConfirmationService;
@@ -103,6 +105,12 @@ public class YudaoAcfAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnMissingBean(CapabilityInvocationExecutor.class)
+    public DefaultCapabilityInvocationExecutor capabilityInvocationExecutor() {
+        return new DefaultCapabilityInvocationExecutor();
+    }
+
+    @Bean
     @ConditionalOnMissingBean(CapabilityConcurrencyGuard.class)
     public CapabilityConcurrencyGuard capabilityConcurrencyGuard() {
         return new CapabilityConcurrencyGuard();
@@ -124,11 +132,13 @@ public class YudaoAcfAutoConfiguration {
                                                  CapabilityExceptionClassifier exceptionClassifier,
                                                  CapabilityRuntimePolicyService runtimePolicyService,
                                                  CapabilityRuntimeGuardChain runtimeGuardChain,
+                                                 CapabilityInvocationExecutor invocationExecutor,
                                                  CapabilityRequestDigestGenerator requestDigestGenerator,
                                                  ObjectMapper objectMapper, Validator validator) {
         return new CapabilityExecutor(capabilityRegistry, governanceService, confirmationService.getIfAvailable(),
                 idempotencyService.getIfAvailable(), auditService.getIfAvailable(), exceptionClassifier,
-                runtimePolicyService, runtimeGuardChain, requestDigestGenerator, objectMapper, validator);
+                runtimePolicyService, runtimeGuardChain, invocationExecutor,
+                requestDigestGenerator, objectMapper, validator);
     }
 
 }

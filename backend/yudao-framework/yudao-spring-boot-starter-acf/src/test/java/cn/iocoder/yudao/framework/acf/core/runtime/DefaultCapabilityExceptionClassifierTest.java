@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.InvocationTargetException;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeoutException;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -47,6 +48,18 @@ class DefaultCapabilityExceptionClassifierTest {
         assertThat(result.getErrorCode()).isEqualTo(AcfCapabilityErrorCodes.INVOKE_ERROR);
         assertThat(result.getMessage()).isEqualTo("inventory unavailable");
         assertThat(result.isRetryable()).isFalse();
+        assertThat(result.getCause()).isSameAs(cause);
+    }
+
+    @Test
+    void shouldClassifyExecutorSaturationAsRetryableRuntimeFailure() {
+        RejectedExecutionException cause = new RejectedExecutionException("queue full");
+
+        CapabilityExceptionClassification result = classifier.classify(cause);
+
+        assertThat(result.getErrorCode()).isEqualTo(AcfCapabilityErrorCodes.RUNTIME_EXECUTOR_REJECTED);
+        assertThat(result.getMessage()).isEqualTo("Capability invocation executor is saturated");
+        assertThat(result.isRetryable()).isTrue();
         assertThat(result.getCause()).isSameAs(cause);
     }
 

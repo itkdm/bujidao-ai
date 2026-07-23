@@ -15,12 +15,14 @@ import cn.iocoder.yudao.framework.acf.core.model.CapabilityPolicyResult;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityExceptionClassification;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityExceptionClassifier;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityInvocationExecutor;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuardChain;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuardContext;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuardResult;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimePolicy;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimePolicyService;
 import cn.iocoder.yudao.framework.acf.core.runtime.DefaultCapabilityExceptionClassifier;
+import cn.iocoder.yudao.framework.acf.core.runtime.DefaultCapabilityInvocationExecutor;
 import cn.iocoder.yudao.framework.acf.core.runtime.DefaultCapabilityRuntimePolicyService;
 import cn.iocoder.yudao.framework.acf.core.standard.AcfCapabilityErrorCodes;
 import com.fasterxml.jackson.databind.JavaType;
@@ -54,6 +56,8 @@ public class CapabilityExecutor {
             new DefaultCapabilityRuntimePolicyService();
     private static final CapabilityRuntimeGuardChain EMPTY_RUNTIME_GUARD_CHAIN =
             new CapabilityRuntimeGuardChain(List.of());
+    private static final CapabilityInvocationExecutor DEFAULT_INVOCATION_EXECUTOR =
+            DefaultCapabilityInvocationExecutor.shared();
 
     public static final String ERROR_BAD_REQUEST = AcfCapabilityErrorCodes.BAD_REQUEST;
     public static final String ERROR_CAPABILITY_NOT_FOUND = AcfCapabilityErrorCodes.CAPABILITY_NOT_FOUND;
@@ -77,6 +81,7 @@ public class CapabilityExecutor {
     private final CapabilityExceptionClassifier exceptionClassifier;
     private final CapabilityRuntimePolicyService runtimePolicyService;
     private final CapabilityRuntimeGuardChain runtimeGuardChain;
+    private final CapabilityInvocationExecutor invocationExecutor;
     private final CapabilityRequestDigestGenerator requestDigestGenerator;
     private final ObjectMapper objectMapper;
     private final Validator validator;
@@ -85,7 +90,8 @@ public class CapabilityExecutor {
                               ObjectMapper objectMapper, Validator validator) {
         this(capabilityRegistry, governanceService, null, null, null,
                 new DefaultCapabilityExceptionClassifier(), DEFAULT_RUNTIME_POLICY_SERVICE, EMPTY_RUNTIME_GUARD_CHAIN,
-                new CapabilityRequestDigestGenerator(objectMapper), objectMapper, validator);
+                DEFAULT_INVOCATION_EXECUTOR, new CapabilityRequestDigestGenerator(objectMapper),
+                objectMapper, validator);
     }
 
     public CapabilityExecutor(CapabilityRegistry capabilityRegistry, CapabilityGovernanceService governanceService,
@@ -94,7 +100,7 @@ public class CapabilityExecutor {
                               ObjectMapper objectMapper, Validator validator) {
         this(capabilityRegistry, governanceService, confirmationService, null, null,
                 new DefaultCapabilityExceptionClassifier(), DEFAULT_RUNTIME_POLICY_SERVICE, EMPTY_RUNTIME_GUARD_CHAIN,
-                requestDigestGenerator, objectMapper, validator);
+                DEFAULT_INVOCATION_EXECUTOR, requestDigestGenerator, objectMapper, validator);
     }
 
     public CapabilityExecutor(CapabilityRegistry capabilityRegistry, CapabilityGovernanceService governanceService,
@@ -104,7 +110,7 @@ public class CapabilityExecutor {
                               ObjectMapper objectMapper, Validator validator) {
         this(capabilityRegistry, governanceService, confirmationService, idempotencyService, null,
                 new DefaultCapabilityExceptionClassifier(), DEFAULT_RUNTIME_POLICY_SERVICE, EMPTY_RUNTIME_GUARD_CHAIN,
-                requestDigestGenerator, objectMapper, validator);
+                DEFAULT_INVOCATION_EXECUTOR, requestDigestGenerator, objectMapper, validator);
     }
 
     public CapabilityExecutor(CapabilityRegistry capabilityRegistry, CapabilityGovernanceService governanceService,
@@ -115,7 +121,7 @@ public class CapabilityExecutor {
                               ObjectMapper objectMapper, Validator validator) {
         this(capabilityRegistry, governanceService, confirmationService, idempotencyService, auditService,
                 new DefaultCapabilityExceptionClassifier(), DEFAULT_RUNTIME_POLICY_SERVICE, EMPTY_RUNTIME_GUARD_CHAIN,
-                requestDigestGenerator, objectMapper, validator);
+                DEFAULT_INVOCATION_EXECUTOR, requestDigestGenerator, objectMapper, validator);
     }
 
     public CapabilityExecutor(CapabilityRegistry capabilityRegistry, CapabilityGovernanceService governanceService,
@@ -127,7 +133,7 @@ public class CapabilityExecutor {
                               ObjectMapper objectMapper, Validator validator) {
         this(capabilityRegistry, governanceService, confirmationService, idempotencyService, auditService,
                 exceptionClassifier, DEFAULT_RUNTIME_POLICY_SERVICE, EMPTY_RUNTIME_GUARD_CHAIN,
-                requestDigestGenerator, objectMapper, validator);
+                DEFAULT_INVOCATION_EXECUTOR, requestDigestGenerator, objectMapper, validator);
     }
 
     public CapabilityExecutor(CapabilityRegistry capabilityRegistry, CapabilityGovernanceService governanceService,
@@ -139,6 +145,21 @@ public class CapabilityExecutor {
                               CapabilityRuntimeGuardChain runtimeGuardChain,
                               CapabilityRequestDigestGenerator requestDigestGenerator,
                               ObjectMapper objectMapper, Validator validator) {
+        this(capabilityRegistry, governanceService, confirmationService, idempotencyService, auditService,
+                exceptionClassifier, runtimePolicyService, runtimeGuardChain, DEFAULT_INVOCATION_EXECUTOR,
+                requestDigestGenerator, objectMapper, validator);
+    }
+
+    public CapabilityExecutor(CapabilityRegistry capabilityRegistry, CapabilityGovernanceService governanceService,
+                              CapabilityConfirmationService confirmationService,
+                              CapabilityIdempotencyService idempotencyService,
+                              CapabilityAuditService auditService,
+                              CapabilityExceptionClassifier exceptionClassifier,
+                              CapabilityRuntimePolicyService runtimePolicyService,
+                              CapabilityRuntimeGuardChain runtimeGuardChain,
+                              CapabilityInvocationExecutor invocationExecutor,
+                              CapabilityRequestDigestGenerator requestDigestGenerator,
+                              ObjectMapper objectMapper, Validator validator) {
         this.capabilityRegistry = capabilityRegistry;
         this.governanceService = governanceService;
         this.confirmationService = confirmationService;
@@ -147,6 +168,7 @@ public class CapabilityExecutor {
         this.exceptionClassifier = Objects.requireNonNull(exceptionClassifier, "exceptionClassifier");
         this.runtimePolicyService = Objects.requireNonNull(runtimePolicyService, "runtimePolicyService");
         this.runtimeGuardChain = Objects.requireNonNull(runtimeGuardChain, "runtimeGuardChain");
+        this.invocationExecutor = Objects.requireNonNull(invocationExecutor, "invocationExecutor");
         this.requestDigestGenerator = requestDigestGenerator;
         this.objectMapper = objectMapper;
         this.validator = validator;
@@ -350,8 +372,8 @@ public class CapabilityExecutor {
         stepStartedAt = System.currentTimeMillis();
         audit.targetInvoked();
         try {
-            Object rawResult = invokeTarget(registration, argument);
-            CapabilityResult result = normalizeResult(name, rawResult);
+            CapabilityResult result = invocationExecutor.invoke(
+                    () -> normalizeResult(name, invokeTarget(registration, argument)), runtimePolicy.getTimeoutMs());
             if (result.isSuccess()) {
                 guardLease.onSuccess(result);
                 audit.success(CapabilityAuditStage.INVOCATION, "target invocation completed", stepStartedAt);
@@ -373,7 +395,7 @@ public class CapabilityExecutor {
                 audit.failure(CapabilityAuditStage.IDEMPOTENCY, completedResult, completionStartedAt);
             }
             return completedResult;
-        } catch (ReflectiveOperationException | RuntimeException exception) {
+        } catch (Exception exception) {
             CapabilityResult result = classifyException(name, exception);
             guardLease.onFailure(result, exception);
             audit.failure(CapabilityAuditStage.INVOCATION, result, stepStartedAt);

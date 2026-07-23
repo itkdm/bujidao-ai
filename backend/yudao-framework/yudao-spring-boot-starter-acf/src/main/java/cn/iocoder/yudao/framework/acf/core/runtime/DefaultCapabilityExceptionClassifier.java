@@ -8,6 +8,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.UndeclaredThrowableException;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeoutException;
 
 /**
@@ -29,6 +30,10 @@ public class DefaultCapabilityExceptionClassifier implements CapabilityException
         if (cause instanceof TimeoutException) {
             return CapabilityExceptionClassification.of(AcfCapabilityErrorCodes.RUNTIME_TIMEOUT,
                     "Capability invocation timed out", true, cause);
+        }
+        if (cause instanceof RejectedExecutionException) {
+            return CapabilityExceptionClassification.of(AcfCapabilityErrorCodes.RUNTIME_EXECUTOR_REJECTED,
+                    "Capability invocation executor is saturated", true, cause);
         }
         return classification(AcfCapabilityErrorCodes.INVOKE_ERROR, cause, false);
     }
