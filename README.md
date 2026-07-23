@@ -1,26 +1,29 @@
 # bujidao-ai
 
-`bujidao-ai` 是面向芋道 / ruoyi-vue-pro 生态的 AI 扩展项目。
+`bujidao-ai` 是基于芋道源码 / ruoyi-vue-pro 的 AI 扩展项目。
 
-项目会在芋道源码的前后端基础上，逐步沉淀 AI 相关能力，例如 ACF 能力接入、RAG 独立模块、Agent 模块、AI 管理后台能力等。
+项目目标是在成熟的企业级后台体系上，补充面向真实业务场景的 AI 能力。
 
-## 目录结构
+本项目不是从零实现新的后台框架，而是在芋道工程基础上持续沉淀 AI 方向的扩展模块和实践方案。
 
-- `backend/`: 后端工程，来源于 `YunaiV/ruoyi-vue-pro`
-- `frontend/`: 管理后台前端工程，来源于 `yudaocode/yudao-ui-admin-vue3`
-- `docs/`: 本项目自己的设计、同步和扩展文档
-- `sql/`: 本项目自己的增量 SQL、迁移脚本和说明
+## 适合谁使用
 
-## Git 远程
+- 已经在使用或准备使用芋道源码，希望在现有后台基础上接入 AI 能力的开发者
+- 想了解企业级后台如何落地 RAG、Agent、MCP等能力的团队
+- 需要持续跟进上游，同时保留 AI 扩展空间的二次开发项目的用户
 
-- `origin`: 本项目自己的 GitHub 仓库，`git@github.com:itkdm/bujidao-ai.git`
-- `upstream-backend`: 芋道后端上游，`https://github.com/YunaiV/ruoyi-vue-pro.git`
-- `upstream-frontend`: 芋道前端上游，`https://github.com/yudaocode/yudao-ui-admin-vue3.git`
+## 项目结构
 
-## 同步策略
+- `backend/`: 后端工程
+- `frontend/`: 管理后台前端
+- `docs/`: 项目文档
+- `sql/`: 扩展 SQL
 
-本仓库使用 `git subtree` 引入芋道前后端代码。
+## 上游关系和致谢
 
-这样可以把前后端代码放在同一个开源仓库中，同时保留后续定期同步上游的能力。相比 submodule，这种方式对普通使用者更友好，克隆本仓库后不需要额外初始化子模块。
+本项目基于以下开源项目持续同步：
 
-具体同步命令见 [docs/upstream-sync.md](docs/upstream-sync.md)。
+- 后端: [YunaiV/ruoyi-vue-pro](https://github.com/YunaiV/ruoyi-vue-pro)
+- 前端: [yudaocode/yudao-ui-admin-vue3](https://github.com/yudaocode/yudao-ui-admin-vue3)
+
+感谢芋道源码提供稳定、完整的开源基础。本项目会尽量保持与上游架构兼容，并在 AI 能力方向做增量扩展。
