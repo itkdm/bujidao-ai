@@ -8,6 +8,7 @@ import cn.iocoder.yudao.framework.acf.core.model.CapabilityIdempotencyCheck;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityInvokeCommand;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyChain;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityCircuitBreakerGuard;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuard;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuardChain;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuardContext;
@@ -21,6 +22,7 @@ import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimePolicyServic
 import cn.iocoder.yudao.framework.acf.core.runtime.DefaultCapabilityExceptionClassifier;
 import cn.iocoder.yudao.framework.acf.core.runtime.DefaultCapabilityInvocationExecutor;
 import cn.iocoder.yudao.framework.acf.core.schema.CapabilitySchemaGenerator;
+import cn.iocoder.yudao.framework.acf.core.standard.AcfCapabilityErrorCodes;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -251,6 +253,32 @@ class CapabilityRuntimeExecutorTest {
         assertThat(second.isRetryable()).isTrue();
         assertThat(capability.invocationCount).isOne();
         assertThat(auditService.record.getRuntimeGuardCode()).isEqualTo(CapabilityRateLimitGuard.CODE);
+        assertThat(auditService.record.isTargetInvoked()).isFalse();
+    }
+
+    @Test
+    void shouldRejectInvocationBeforeTargetWhenCircuitIsOpen() {
+        CapturingAuditService auditService = new CapturingAuditService();
+        CapabilityRuntimePolicy policy = CapabilityRuntimePolicy.builder()
+                .timeoutMs(1_000)
+                .circuitBreakerEnabled(true)
+                .circuitFailureThreshold(2)
+                .circuitOpenSeconds(60)
+                .circuitHalfOpenMaxCalls(1)
+                .build();
+        CapabilityExecutor circuitProtectedExecutor = executor((definition, context) -> policy,
+                new CapabilityCircuitBreakerGuard(), null, auditService);
+
+        CapabilityResult first = circuitProtectedExecutor.invoke(command("test.runtime.throwing", null));
+        CapabilityResult second = circuitProtectedExecutor.invoke(command("test.runtime.throwing", null));
+        CapabilityResult rejected = circuitProtectedExecutor.invoke(command("test.runtime.throwing", null));
+
+        assertThat(first.getErrorCode()).isEqualTo(AcfCapabilityErrorCodes.INVOKE_ERROR);
+        assertThat(second.getErrorCode()).isEqualTo(AcfCapabilityErrorCodes.INVOKE_ERROR);
+        assertThat(rejected.getErrorCode()).isEqualTo(AcfCapabilityErrorCodes.RUNTIME_CIRCUIT_OPEN);
+        assertThat(rejected.isRetryable()).isTrue();
+        assertThat(capability.invocationCount).isEqualTo(2);
+        assertThat(auditService.record.getRuntimeGuardCode()).isEqualTo(CapabilityCircuitBreakerGuard.CODE);
         assertThat(auditService.record.isTargetInvoked()).isFalse();
     }
 

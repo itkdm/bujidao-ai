@@ -45,6 +45,35 @@ class CapabilityRuntimeGuardChainTest {
     }
 
     @Test
+    void shouldReturnEachGuardLeaseStateToItsCompletionCallback() {
+        List<Object> completedStates = new ArrayList<>();
+        Object leaseState = new Object();
+        CapabilityRuntimeGuard statefulGuard = new CapabilityRuntimeGuard() {
+            @Override
+            public String code() {
+                return "STATEFUL";
+            }
+
+            @Override
+            public CapabilityRuntimeGuardResult acquire(CapabilityRuntimeGuardContext context) {
+                return CapabilityRuntimeGuardResult.allowed(code(), leaseState);
+            }
+
+            @Override
+            public void onSuccess(CapabilityRuntimeGuardContext context, CapabilityResult result,
+                                  Object currentLeaseState) {
+                completedStates.add(currentLeaseState);
+            }
+        };
+
+        CapabilityRuntimeGuardChain.Lease lease = new CapabilityRuntimeGuardChain(List.of(statefulGuard))
+                .acquire(context(1L, null));
+        lease.onSuccess(CapabilityResult.success("test.runtime.guard", (Object) "ok"));
+
+        assertThat(completedStates).containsExactly(leaseState);
+    }
+
+    @Test
     void shouldConvertGuardExceptionToStableRejection() {
         CapabilityRuntimeGuard failingGuard = new CapabilityRuntimeGuard() {
             @Override

@@ -14,9 +14,10 @@ public final class CapabilityRuntimeGuardResult {
     private final String errorCode;
     private final String reason;
     private final boolean retryable;
+    private final Object leaseState;
 
     private CapabilityRuntimeGuardResult(boolean allowed, String guardCode, String errorCode,
-                                         String reason, boolean retryable) {
+                                         String reason, boolean retryable, Object leaseState) {
         if (!StringUtils.hasText(guardCode)) {
             throw new IllegalArgumentException("Runtime guard code must not be blank");
         }
@@ -28,15 +29,23 @@ public final class CapabilityRuntimeGuardResult {
         this.errorCode = errorCode;
         this.reason = reason;
         this.retryable = retryable;
+        this.leaseState = leaseState;
     }
 
     public static CapabilityRuntimeGuardResult allowed(String guardCode) {
-        return new CapabilityRuntimeGuardResult(true, guardCode, null, null, false);
+        return allowed(guardCode, null);
+    }
+
+    /**
+     * 返回允许结果，并携带仅供本次 Guard 租约收口使用的私有状态。
+     */
+    public static CapabilityRuntimeGuardResult allowed(String guardCode, Object leaseState) {
+        return new CapabilityRuntimeGuardResult(true, guardCode, null, null, false, leaseState);
     }
 
     public static CapabilityRuntimeGuardResult rejected(String guardCode, String errorCode,
                                                         String reason, boolean retryable) {
-        return new CapabilityRuntimeGuardResult(false, guardCode, errorCode, reason, retryable);
+        return new CapabilityRuntimeGuardResult(false, guardCode, errorCode, reason, retryable, null);
     }
 
     public boolean isAllowed() {
@@ -57,6 +66,10 @@ public final class CapabilityRuntimeGuardResult {
 
     public boolean isRetryable() {
         return retryable;
+    }
+
+    public Object getLeaseState() {
+        return leaseState;
     }
 
 }

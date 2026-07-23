@@ -35,7 +35,7 @@ public final class CapabilityRuntimeGuardChain {
 
     public Lease acquire(CapabilityRuntimeGuardContext context) {
         Objects.requireNonNull(context, "context");
-        List<CapabilityRuntimeGuard> acquired = new ArrayList<>();
+        List<AcquiredGuard> acquired = new ArrayList<>();
         for (CapabilityRuntimeGuard guard : guards) {
             try {
                 if (!guard.supports(context)) {
@@ -51,7 +51,7 @@ public final class CapabilityRuntimeGuardChain {
                     releaseAcquired(acquired, context);
                     return Lease.rejected(context, result);
                 }
-                acquired.add(guard);
+                acquired.add(new AcquiredGuard(guard, result.getLeaseState()));
             } catch (RuntimeException exception) {
                 releaseAcquired(acquired, context);
                 CapabilityRuntimeGuardResult result = CapabilityRuntimeGuardResult.rejected(
@@ -76,15 +76,15 @@ public final class CapabilityRuntimeGuardChain {
         }
     }
 
-    private static void releaseAcquired(List<CapabilityRuntimeGuard> acquired,
+    private static void releaseAcquired(List<AcquiredGuard> acquired,
                                         CapabilityRuntimeGuardContext context) {
         for (int index = acquired.size() - 1; index >= 0; index--) {
-            CapabilityRuntimeGuard guard = acquired.get(index);
+            AcquiredGuard acquiredGuard = acquired.get(index);
             try {
-                guard.release(context);
+                acquiredGuard.guard().release(context, acquiredGuard.leaseState());
             } catch (RuntimeException exception) {
                 LOGGER.warn("释放 ACF 运行时保护器失败，guard={}，capability={}",
-                        guard.code(), context.getDefinition().getName(), exception);
+                        acquiredGuard.guard().code(), context.getDefinition().getName(), exception);
             }
         }
     }
@@ -100,11 +100,11 @@ public final class CapabilityRuntimeGuardChain {
     public static final class Lease {
 
         private final CapabilityRuntimeGuardContext context;
-        private final List<CapabilityRuntimeGuard> acquired;
+        private final List<AcquiredGuard> acquired;
         private final CapabilityRuntimeGuardResult rejection;
         private final AtomicBoolean closed = new AtomicBoolean();
 
-        private Lease(CapabilityRuntimeGuardContext context, List<CapabilityRuntimeGuard> acquired,
+        private Lease(CapabilityRuntimeGuardContext context, List<AcquiredGuard> acquired,
                       CapabilityRuntimeGuardResult rejection) {
             this.context = context;
             this.acquired = List.copyOf(acquired);
@@ -112,7 +112,7 @@ public final class CapabilityRuntimeGuardChain {
         }
 
         private static Lease acquired(CapabilityRuntimeGuardContext context,
-                                      List<CapabilityRuntimeGuard> acquired) {
+                                      List<AcquiredGuard> acquired) {
             return new Lease(context, acquired, null);
         }
 
@@ -130,15 +130,17 @@ public final class CapabilityRuntimeGuardChain {
         }
 
         public void release() {
-            close((guard, currentContext) -> guard.release(currentContext));
+            close((guard, currentContext) -> guard.guard().release(currentContext, guard.leaseState()));
         }
 
         public void onSuccess(CapabilityResult result) {
-            close((guard, currentContext) -> guard.onSuccess(currentContext, result));
+            close((guard, currentContext) ->
+                    guard.guard().onSuccess(currentContext, result, guard.leaseState()));
         }
 
         public void onFailure(CapabilityResult result, Throwable cause) {
-            close((guard, currentContext) -> guard.onFailure(currentContext, result, cause));
+            close((guard, currentContext) ->
+                    guard.guard().onFailure(currentContext, result, cause, guard.leaseState()));
         }
 
         private void close(GuardCallback callback) {
@@ -147,12 +149,12 @@ public final class CapabilityRuntimeGuardChain {
             }
             // 与获取顺序相反收口，保证存在依赖关系的 Guard 按栈语义释放资源。
             for (int index = acquired.size() - 1; index >= 0; index--) {
-                CapabilityRuntimeGuard guard = acquired.get(index);
+                AcquiredGuard guard = acquired.get(index);
                 try {
                     callback.invoke(guard, context);
                 } catch (RuntimeException exception) {
                     LOGGER.warn("收口 ACF 运行时保护器失败，guard={}，capability={}",
-                            guard.code(), context.getDefinition().getName(), exception);
+                            guard.guard().code(), context.getDefinition().getName(), exception);
                 }
             }
         }
@@ -161,8 +163,11 @@ public final class CapabilityRuntimeGuardChain {
     @FunctionalInterface
     private interface GuardCallback {
 
-        void invoke(CapabilityRuntimeGuard guard, CapabilityRuntimeGuardContext context);
+        void invoke(AcquiredGuard guard, CapabilityRuntimeGuardContext context);
 
+    }
+
+    private record AcquiredGuard(CapabilityRuntimeGuard guard, Object leaseState) {
     }
 
 }

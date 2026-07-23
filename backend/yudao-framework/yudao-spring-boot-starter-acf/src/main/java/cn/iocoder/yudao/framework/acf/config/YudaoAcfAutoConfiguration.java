@@ -4,8 +4,9 @@ import cn.iocoder.yudao.framework.acf.core.schema.CapabilitySchemaGenerator;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicy;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyChain;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPermissionPolicy;
-import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityExceptionClassifier;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityCircuitBreakerGuard;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityConcurrencyGuard;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityExceptionClassifier;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityInvocationExecutor;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuard;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuardChain;
@@ -115,6 +116,12 @@ public class YudaoAcfAutoConfiguration {
     @ConditionalOnMissingBean(CapabilityConcurrencyGuard.class)
     public CapabilityConcurrencyGuard capabilityConcurrencyGuard() {
         return new CapabilityConcurrencyGuard();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(CapabilityCircuitBreakerGuard.class)
+    public CapabilityCircuitBreakerGuard capabilityCircuitBreakerGuard() {
+        return new CapabilityCircuitBreakerGuard();
     }
 
     @Bean
