@@ -15,4 +15,18 @@
     <description>Agent Capability Facade 核心 Starter</description>
     <url>https://github.com/itkdm/bujidao-ai</url>
 
+    <dependencies>
+        <dependency>
+            <groupId>jakarta.validation</groupId>
+            <artifactId>jakarta.validation-api</artifactId>
+        </dependency>
+
+        <!-- Test 测试相关 -->
+        <dependency>
+            <groupId>cn.iocoder.boot</groupId>
+            <artifactId>yudao-spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
 </project>
