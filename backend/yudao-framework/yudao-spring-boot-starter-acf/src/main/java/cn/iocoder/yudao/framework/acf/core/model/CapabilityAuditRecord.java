@@ -32,6 +32,8 @@ public final class CapabilityAuditRecord {
     private final CapabilityAuditStage finalStage;
     private final CapabilityConfirmationStatus confirmationStatus;
     private final CapabilityIdempotencyAuditStatus idempotencyStatus;
+    private final String runtimePolicySummary;
+    private final String runtimeGuardCode;
     private final boolean targetInvoked;
     private final CapabilityStatus status;
     private final String errorCode;

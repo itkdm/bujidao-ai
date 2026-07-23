@@ -84,6 +84,8 @@ class CapabilityAuditExecutorTest {
         assertThat(record.getFinalStage()).isEqualTo(CapabilityAuditStage.COMPLETED);
         assertThat(record.getConfirmationStatus()).isEqualTo(CapabilityConfirmationStatus.NOT_REQUIRED);
         assertThat(record.getIdempotencyStatus()).isEqualTo(CapabilityIdempotencyAuditStatus.NOT_REQUESTED);
+        assertThat(record.getRuntimePolicySummary()).isEqualTo("timeoutMs=30000");
+        assertThat(record.getRuntimeGuardCode()).isNull();
         assertThat(record.isTargetInvoked()).isTrue();
         assertThat(record.getStatus()).isEqualTo(CapabilityStatus.SUCCESS);
         assertThat(record.getErrorCode()).isNull();
@@ -96,10 +98,12 @@ class CapabilityAuditExecutorTest {
                         CapabilityAuditStage.ARGUMENT_VALIDATION,
                         CapabilityAuditStage.CONFIRMATION,
                         CapabilityAuditStage.IDEMPOTENCY,
+                        CapabilityAuditStage.RUNTIME_POLICY,
+                        CapabilityAuditStage.RUNTIME_GUARD,
                         CapabilityAuditStage.INVOCATION);
         assertThat(auditService.steps)
                 .extracting(CapabilityAuditStepRecord::getStepNo)
-                .containsExactly(1, 2, 3, 4, 5, 6, 7);
+                .containsExactly(1, 2, 3, 4, 5, 6, 7, 8, 9);
         assertThat(auditService.steps)
                 .extracting(CapabilityAuditStepRecord::getStatus)
                 .containsOnly(CapabilityAuditStepStatus.SUCCESS);

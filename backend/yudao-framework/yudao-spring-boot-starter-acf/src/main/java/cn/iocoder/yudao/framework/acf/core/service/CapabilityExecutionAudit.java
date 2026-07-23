@@ -9,6 +9,7 @@ import cn.iocoder.yudao.framework.acf.core.model.CapabilityAuditStepRecord;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityContext;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityDefinition;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimePolicy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,6 +36,8 @@ final class CapabilityExecutionAudit {
     private CapabilityAuditStage failureStage;
     private CapabilityConfirmationStatus confirmationStatus = CapabilityConfirmationStatus.NOT_REQUIRED;
     private CapabilityIdempotencyAuditStatus idempotencyStatus = CapabilityIdempotencyAuditStatus.NOT_REQUESTED;
+    private String runtimePolicySummary;
+    private String runtimeGuardCode;
     private boolean targetInvoked;
     private int stepNo;
 
@@ -57,6 +60,14 @@ final class CapabilityExecutionAudit {
 
     void idempotencyStatus(CapabilityIdempotencyAuditStatus idempotencyStatus) {
         this.idempotencyStatus = idempotencyStatus;
+    }
+
+    void runtimePolicy(CapabilityRuntimePolicy runtimePolicy) {
+        this.runtimePolicySummary = runtimePolicy == null ? null : runtimePolicy.summary();
+    }
+
+    void runtimeGuardCode(String runtimeGuardCode) {
+        this.runtimeGuardCode = runtimeGuardCode;
     }
 
     void targetInvoked() {
@@ -99,6 +110,8 @@ final class CapabilityExecutionAudit {
                     .finalStage(finalStage)
                     .confirmationStatus(confirmationStatus)
                     .idempotencyStatus(idempotencyStatus)
+                    .runtimePolicySummary(runtimePolicySummary)
+                    .runtimeGuardCode(runtimeGuardCode)
                     .targetInvoked(targetInvoked)
                     .status(result == null ? null : result.getStatus())
                     .errorCode(result == null ? null : result.getErrorCode())

@@ -20,7 +20,10 @@ public final class AcfCapabilityErrorCodes {
     public static final String IDEMPOTENCY_UNAVAILABLE = "IDEMPOTENCY_UNAVAILABLE";
     public static final String IDEMPOTENCY_ERROR = "IDEMPOTENCY_ERROR";
     public static final String IDEMPOTENCY_CONFLICT = "IDEMPOTENCY_CONFLICT";
+    public static final String RUNTIME_POLICY_ERROR = "RUNTIME_POLICY_ERROR";
     public static final String RUNTIME_TIMEOUT = "RUNTIME_TIMEOUT";
+    public static final String RUNTIME_GUARD_ERROR = "RUNTIME_GUARD_ERROR";
+    public static final String RUNTIME_CONCURRENCY_REJECTED = "RUNTIME_CONCURRENCY_REJECTED";
     public static final String INVOKE_ERROR = "INVOKE_ERROR";
 
     public static final String PARAMETER_MISSING = "ACF_PARAMETER_MISSING";

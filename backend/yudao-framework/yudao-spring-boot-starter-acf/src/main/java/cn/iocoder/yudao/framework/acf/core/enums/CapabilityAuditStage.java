@@ -19,6 +19,10 @@ public enum CapabilityAuditStage {
 
     IDEMPOTENCY,
 
+    RUNTIME_POLICY,
+
+    RUNTIME_GUARD,
+
     INVOCATION,
 
     COMPLETED
