@@ -20,9 +20,9 @@ class CapabilityPermissionPolicyTest {
             .build();
 
     @Test
-    void shouldOnlySupportExecutionPhase() {
+    void shouldSupportExecutionAndVisibilityPhases() {
         assertThat(policy.supports(CapabilityPolicyPhase.EXECUTION)).isTrue();
-        assertThat(policy.supports(CapabilityPolicyPhase.VISIBILITY)).isFalse();
+        assertThat(policy.supports(CapabilityPolicyPhase.VISIBILITY)).isTrue();
         assertThat(policy.supports(CapabilityPolicyPhase.RELEASE_READINESS)).isFalse();
     }
 

@@ -30,7 +30,7 @@ public class CapabilityPermissionPolicy implements CapabilityPolicy {
 
     @Override
     public boolean supports(CapabilityPolicyPhase phase) {
-        return phase == CapabilityPolicyPhase.EXECUTION;
+        return phase == CapabilityPolicyPhase.EXECUTION || phase == CapabilityPolicyPhase.VISIBILITY;
     }
 
     @Override

@@ -2,7 +2,9 @@ package cn.iocoder.yudao.framework.acf.config;
 
 import cn.iocoder.yudao.framework.acf.core.annotation.AgentCapability;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityContext;
+import cn.iocoder.yudao.framework.acf.core.model.CapabilityDefinition;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityInvokeCommand;
+import cn.iocoder.yudao.framework.acf.core.model.CapabilityVisibilityQuery;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicy;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyChain;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyContext;
@@ -13,6 +15,7 @@ import cn.iocoder.yudao.framework.acf.core.service.CapabilityExecutor;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityGovernanceService;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityPermissionEvaluator;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityRegistry;
+import cn.iocoder.yudao.framework.acf.core.service.CapabilityVisibilityService;
 import cn.iocoder.yudao.framework.acf.core.service.DefaultCapabilityGovernanceService;
 import cn.iocoder.yudao.framework.common.biz.system.permission.PermissionCommonApi;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -53,6 +56,7 @@ class YudaoAcfAutoConfigurationTest {
             assertThat(context).hasSingleBean(CapabilityPermissionPolicy.class);
             assertThat(context).hasSingleBean(CapabilityPolicyChain.class);
             assertThat(context).hasSingleBean(CapabilityGovernanceService.class);
+            assertThat(context).hasSingleBean(CapabilityVisibilityService.class);
             assertThat(context).hasSingleBean(CapabilityExecutor.class);
         });
     }
@@ -62,13 +66,19 @@ class YudaoAcfAutoConfigurationTest {
         contextRunner.withUserConfiguration(CapabilityProviderConfig.class)
                 .run(context -> {
                     CapabilityRegistry registry = context.getBean(CapabilityRegistry.class);
+                    CapabilityVisibilityService visibilityService = context.getBean(CapabilityVisibilityService.class);
                     CapabilityExecutor executor = context.getBean(CapabilityExecutor.class);
+                    CapabilityContext invocationContext = CapabilityContext.builder().userId(1L).build();
 
                     assertThat(registry.get("test.auto.echo").getTitle()).isEqualTo("自动发现能力");
+                    assertThat(visibilityService.listVisible(CapabilityVisibilityQuery.builder()
+                            .context(invocationContext)
+                            .build())).extracting(CapabilityDefinition::getName)
+                            .containsExactly("test.auto.echo");
                     assertThat(executor.invoke(CapabilityInvokeCommand.builder()
                             .name("test.auto.echo")
                             .arguments("hello")
-                            .context(CapabilityContext.builder().userId(1L).build())
+                            .context(invocationContext)
                             .build()).getData()).isEqualTo("hello");
                 });
     }
@@ -104,16 +114,19 @@ class YudaoAcfAutoConfigurationTest {
                     assertThat(context).hasSingleBean(CapabilityRegistry.class);
                     assertThat(context).hasSingleBean(CapabilityPolicyChain.class);
                     assertThat(context).hasSingleBean(CapabilityGovernanceService.class);
+                    assertThat(context).hasSingleBean(CapabilityVisibilityService.class);
                     assertThat(context).hasSingleBean(CapabilityExecutor.class);
                     assertThat(context).hasBean("customCapabilitySchemaGenerator");
                     assertThat(context).hasBean("customCapabilityRegistry");
                     assertThat(context).hasBean("customCapabilityPolicyChain");
                     assertThat(context).hasBean("customCapabilityGovernanceService");
+                    assertThat(context).hasBean("customCapabilityVisibilityService");
                     assertThat(context).hasBean("customCapabilityExecutor");
                     assertThat(context).doesNotHaveBean("capabilitySchemaGenerator");
                     assertThat(context).doesNotHaveBean("capabilityRegistry");
                     assertThat(context).doesNotHaveBean("capabilityPolicyChain");
                     assertThat(context).doesNotHaveBean("capabilityGovernanceService");
+                    assertThat(context).doesNotHaveBean("capabilityVisibilityService");
                     assertThat(context).doesNotHaveBean("capabilityExecutor");
                 });
     }
@@ -188,6 +201,12 @@ class YudaoAcfAutoConfigurationTest {
         @Bean
         CapabilityGovernanceService customCapabilityGovernanceService(CapabilityPolicyChain policyChain) {
             return new DefaultCapabilityGovernanceService(policyChain);
+        }
+
+        @Bean
+        CapabilityVisibilityService customCapabilityVisibilityService(CapabilityRegistry capabilityRegistry,
+                                                                      CapabilityGovernanceService governanceService) {
+            return new CapabilityVisibilityService(capabilityRegistry, governanceService);
         }
 
         @Bean

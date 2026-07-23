@@ -8,6 +8,7 @@ import cn.iocoder.yudao.framework.acf.core.service.CapabilityExecutor;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityGovernanceService;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityPermissionEvaluator;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityRegistry;
+import cn.iocoder.yudao.framework.acf.core.service.CapabilityVisibilityService;
 import cn.iocoder.yudao.framework.acf.core.service.DefaultCapabilityGovernanceService;
 import cn.iocoder.yudao.framework.common.biz.system.permission.PermissionCommonApi;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -63,6 +64,13 @@ public class YudaoAcfAutoConfiguration {
     @ConditionalOnMissingBean(CapabilityGovernanceService.class)
     public CapabilityGovernanceService capabilityGovernanceService(CapabilityPolicyChain policyChain) {
         return new DefaultCapabilityGovernanceService(policyChain);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(CapabilityVisibilityService.class)
+    public CapabilityVisibilityService capabilityVisibilityService(CapabilityRegistry capabilityRegistry,
+                                                                   CapabilityGovernanceService governanceService) {
+        return new CapabilityVisibilityService(capabilityRegistry, governanceService);
     }
 
     @Bean
