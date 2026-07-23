@@ -9,6 +9,7 @@ import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityConcurrencyGuard;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityInvocationExecutor;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuard;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuardChain;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRateLimitGuard;
 import cn.iocoder.yudao.framework.acf.core.runtime.DefaultCapabilityExceptionClassifier;
 import cn.iocoder.yudao.framework.acf.core.runtime.DefaultCapabilityInvocationExecutor;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimePolicyService;
@@ -114,6 +115,12 @@ public class YudaoAcfAutoConfiguration {
     @ConditionalOnMissingBean(CapabilityConcurrencyGuard.class)
     public CapabilityConcurrencyGuard capabilityConcurrencyGuard() {
         return new CapabilityConcurrencyGuard();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(CapabilityRateLimitGuard.class)
+    public CapabilityRateLimitGuard capabilityRateLimitGuard() {
+        return new CapabilityRateLimitGuard();
     }
 
     @Bean

@@ -25,6 +25,7 @@ public final class AcfCapabilityErrorCodes {
     public static final String RUNTIME_EXECUTOR_REJECTED = "RUNTIME_EXECUTOR_REJECTED";
     public static final String RUNTIME_GUARD_ERROR = "RUNTIME_GUARD_ERROR";
     public static final String RUNTIME_CONCURRENCY_REJECTED = "RUNTIME_CONCURRENCY_REJECTED";
+    public static final String RUNTIME_RATE_LIMITED = "RUNTIME_RATE_LIMITED";
     public static final String INVOKE_ERROR = "INVOKE_ERROR";
 
     public static final String PARAMETER_MISSING = "ACF_PARAMETER_MISSING";

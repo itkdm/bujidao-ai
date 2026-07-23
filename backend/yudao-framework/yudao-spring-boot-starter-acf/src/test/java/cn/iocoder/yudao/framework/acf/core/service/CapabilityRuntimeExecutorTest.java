@@ -12,6 +12,7 @@ import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuard;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuardChain;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuardContext;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuardResult;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRateLimitGuard;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityExceptionClassification;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityExceptionClassifier;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityInvocationExecutor;
@@ -228,6 +229,29 @@ class CapabilityRuntimeExecutorTest {
         assertThat(result.getErrorCode()).isEqualTo("TRANSIENT_FAILURE");
         assertThat(capability.invocationCount).isEqualTo(3);
         assertThat(auditService.record.getRetryCount()).isEqualTo(2);
+    }
+
+    @Test
+    void shouldRejectRateLimitedInvocationBeforeTargetStarts() {
+        CapturingAuditService auditService = new CapturingAuditService();
+        CapabilityRuntimePolicy policy = CapabilityRuntimePolicy.builder()
+                .timeoutMs(1_000)
+                .rateLimitEnabled(true)
+                .rateLimitCount(1)
+                .rateLimitWindowSeconds(60)
+                .build();
+        CapabilityExecutor rateLimitedExecutor = executor((definition, context) -> policy,
+                new CapabilityRateLimitGuard(), null, auditService);
+
+        CapabilityResult first = rateLimitedExecutor.invoke(command("test.runtime.success", null));
+        CapabilityResult second = rateLimitedExecutor.invoke(command("test.runtime.success", null));
+
+        assertThat(first.isSuccess()).isTrue();
+        assertThat(second.getErrorCode()).isEqualTo("RUNTIME_RATE_LIMITED");
+        assertThat(second.isRetryable()).isTrue();
+        assertThat(capability.invocationCount).isOne();
+        assertThat(auditService.record.getRuntimeGuardCode()).isEqualTo(CapabilityRateLimitGuard.CODE);
+        assertThat(auditService.record.isTargetInvoked()).isFalse();
     }
 
     private CapabilityExecutor executor(CapabilityRuntimePolicyService runtimePolicyService,
