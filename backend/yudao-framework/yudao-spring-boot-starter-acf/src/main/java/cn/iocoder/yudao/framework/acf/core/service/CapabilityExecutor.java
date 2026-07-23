@@ -7,6 +7,7 @@ import cn.iocoder.yudao.framework.acf.core.model.CapabilityDefinition;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityInvokeCommand;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityPolicyResult;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
+import cn.iocoder.yudao.framework.acf.core.standard.AcfCapabilityErrorCodes;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.ConstraintViolation;
@@ -30,14 +31,14 @@ import java.util.Set;
  */
 public class CapabilityExecutor {
 
-    public static final String ERROR_BAD_REQUEST = "BAD_REQUEST";
-    public static final String ERROR_CAPABILITY_NOT_FOUND = "CAPABILITY_NOT_FOUND";
-    public static final String ERROR_POLICY = "POLICY_ERROR";
-    public static final String ERROR_POLICY_DENIED = "POLICY_DENIED";
-    public static final String ERROR_CONFIRMATION = "CONFIRMATION_ERROR";
-    public static final String ERROR_CONFIRMATION_UNAVAILABLE = "CONFIRMATION_UNAVAILABLE";
-    public static final String ERROR_CONFIRMATION_TOKEN_INVALID = "CONFIRM_TOKEN_INVALID";
-    public static final String ERROR_INVOKE = "INVOKE_ERROR";
+    public static final String ERROR_BAD_REQUEST = AcfCapabilityErrorCodes.BAD_REQUEST;
+    public static final String ERROR_CAPABILITY_NOT_FOUND = AcfCapabilityErrorCodes.CAPABILITY_NOT_FOUND;
+    public static final String ERROR_POLICY = AcfCapabilityErrorCodes.POLICY_ERROR;
+    public static final String ERROR_POLICY_DENIED = AcfCapabilityErrorCodes.POLICY_DENIED;
+    public static final String ERROR_CONFIRMATION = AcfCapabilityErrorCodes.CONFIRMATION_ERROR;
+    public static final String ERROR_CONFIRMATION_UNAVAILABLE = AcfCapabilityErrorCodes.CONFIRMATION_UNAVAILABLE;
+    public static final String ERROR_CONFIRMATION_TOKEN_INVALID = AcfCapabilityErrorCodes.CONFIRM_TOKEN_INVALID;
+    public static final String ERROR_INVOKE = AcfCapabilityErrorCodes.INVOKE_ERROR;
 
     private final CapabilityRegistry capabilityRegistry;
     private final CapabilityGovernanceService governanceService;
@@ -88,7 +89,7 @@ public class CapabilityExecutor {
         if (!policyResult.isAllowed()) {
             String errorCode = StringUtils.hasText(policyResult.getErrorCode())
                     ? policyResult.getErrorCode() : ERROR_POLICY_DENIED;
-            return CapabilityResult.failure(name, errorCode, policyResult.getReason());
+            return CapabilityResult.denied(name, errorCode, policyResult.getReason());
         }
 
         CapabilityDefinition effectiveDefinition = policyResult.getDefinition() == null
@@ -101,8 +102,8 @@ public class CapabilityExecutor {
             if (confirmationResult != null) {
                 return confirmationResult;
             }
-            Object data = invokeTarget(registration, argument);
-            return CapabilityResult.success(name, data);
+            Object rawResult = invokeTarget(registration, argument);
+            return normalizeResult(name, rawResult);
         } catch (IllegalArgumentException exception) {
             return CapabilityResult.failure(name, ERROR_BAD_REQUEST, readableMessage(exception));
         } catch (InvocationTargetException exception) {
@@ -110,6 +111,17 @@ public class CapabilityExecutor {
         } catch (ReflectiveOperationException exception) {
             return CapabilityResult.failure(name, ERROR_INVOKE, readableMessage(exception));
         }
+    }
+
+    /**
+     * 业务能力可直接返回标准结果，也可以返回普通业务对象。
+     * 这里统一补齐实际调用的 capability name，避免协议适配层再次判断结果形态。
+     */
+    private CapabilityResult normalizeResult(String name, Object rawResult) {
+        if (rawResult instanceof CapabilityResult capabilityResult) {
+            return capabilityResult.withName(name);
+        }
+        return CapabilityResult.success(name, rawResult);
     }
 
     private Object convertArgument(CapabilityDefinition definition, Object arguments) {

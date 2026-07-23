@@ -4,7 +4,9 @@ import cn.iocoder.yudao.framework.acf.core.annotation.AgentCapability;
 import cn.iocoder.yudao.framework.acf.core.enums.CapabilityConsumerType;
 import cn.iocoder.yudao.framework.acf.core.enums.CapabilityStatus;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityContext;
+import cn.iocoder.yudao.framework.acf.core.model.CapabilityEvidence;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityInvokeCommand;
+import cn.iocoder.yudao.framework.acf.core.model.CapabilityNextAction;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicy;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyChain;
@@ -125,6 +127,19 @@ class CapabilityExecutorTest {
     }
 
     @Test
+    void shouldPreserveStandardResultReturnedByCapability() {
+        CapabilityResult result = invoke("test.product.standard.result", Map.of("keyword", "keyboard", "limit", 5));
+
+        assertThat(result.getName()).isEqualTo("test.product.standard.result");
+        assertThat(result.getStatus()).isEqualTo(CapabilityStatus.SUCCESS);
+        assertThat(result.getData()).isEqualTo(new ProductResponse("keyboard", 5));
+        assertThat(result.getMessage()).isEqualTo("product found");
+        assertThat(result.getEvidence()).extracting(CapabilityEvidence::getCode).containsExactly("product_lookup");
+        assertThat(result.getSuggestedNextActions()).extracting(CapabilityNextAction::getName)
+                .containsExactly("test.product.search");
+    }
+
+    @Test
     void shouldApplyGovernanceBeforeInvokingTarget() {
         AtomicReference<CapabilityPolicyContext> observedContext = new AtomicReference<>();
         CapabilityPolicy denyPolicy = new CapabilityPolicy() {
@@ -159,6 +174,7 @@ class CapabilityExecutorTest {
                 .build());
 
         assertThat(result.isSuccess()).isFalse();
+        assertThat(result.getStatus()).isEqualTo(CapabilityStatus.DENIED);
         assertThat(result.getErrorCode()).isEqualTo("CAPABILITY_DISABLED");
         assertThat(productCapability.invocationCount).isZero();
         assertThat(observedContext.get().invocationContext()).isSameAs(invocationContext);
@@ -207,6 +223,15 @@ class CapabilityExecutorTest {
                 permissions = "product:query")
         public List<String> batch(List<ProductRequest> requests) {
             return requests.stream().map(ProductRequest::keyword).toList();
+        }
+
+        @AgentCapability(name = "test.product.standard.result", title = "标准商品结果",
+                description = "验证标准结果不会被重复包装", permissions = "product:query")
+        public CapabilityResult standardResult(ProductRequest request) {
+            return CapabilityResult.success(new ProductResponse(request.keyword(), request.limit()), "product found")
+                    .withEvidence(CapabilityEvidence.of("product_lookup", "商品查询完成", Map.of()))
+                    .withSuggestedNextAction(CapabilityNextAction.of(
+                            "test.product.search", "继续搜索商品", Map.of("keyword", request.keyword())));
         }
 
         @AgentCapability(name = "test.product.ping", title = "检查商品能力", description = "验证无参数调用",
