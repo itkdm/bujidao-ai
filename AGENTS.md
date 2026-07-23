@@ -16,7 +16,7 @@
 
 - `backend/`: Java 后端工程，通过 `git subtree` 从 `YunaiV/ruoyi-vue-pro` 引入。
 - `frontend/`: Vue 管理后台前端，通过 `git subtree` 从 `yudaocode/yudao-ui-admin-vue3` 引入。
-- `docs/`: `bujidao-ai` 自己的项目文档、设计说明和上游同步说明。
+- `docs/`: 本地开发参考、设计说明和上游同步说明，仅在本地维护，不提交到 Git。
 - `sql/`: `bujidao-ai` 自己维护的增量 SQL、迁移说明和补充数据。
 
 根目录的本文件适用于整个仓库。未来如果某个子目录新增了自己的 `AGENTS.md`，在该子目录内工作时应优先遵循更近的说明文件。
@@ -183,9 +183,9 @@ node node_modules/vite/bin/vite.js --mode env.local --host 0.0.0.0 --port 80
 
 ## 文档规则
 
-- `README.md` 保持简洁，面向用户介绍项目定位。
+- `README.md` 保持简洁，面向用户介绍项目定位，不引用本地 `docs/` 开发文档。
 - Agent 工作规则写在 `AGENTS.md`。
-- 详细设计、架构决策、同步说明放在 `docs/`。
+- 详细设计、架构决策、同步说明放在本地 `docs/`，不要提交或推送其中的文件。
 - 本项目自己的数据库增量脚本和迁移说明放在 `sql/`。
 - 项目文档优先使用中文，除非所在文件已经明确采用英文。
 

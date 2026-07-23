@@ -16,13 +16,7 @@
 
 - `backend/`: 后端工程
 - `frontend/`: 管理后台前端
-- `docs/`: 项目文档
 - `sql/`: 扩展 SQL
-
-## 开发文档
-
-- [本地开发环境](docs/local-dev.md)
-- [上游同步说明](docs/upstream-sync.md)
 
 ## 上游关系和致谢
 
