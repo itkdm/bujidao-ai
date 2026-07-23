@@ -20,9 +20,21 @@ upstream-frontend  https://github.com/yudaocode/yudao-ui-admin-vue3.git
 
 ## 首次导入
 
+如果网络稳定，可以直接执行：
+
 ```bash
 git subtree add --prefix=backend upstream-backend master --squash
 git subtree add --prefix=frontend upstream-frontend master --squash
+```
+
+如果拉取 GitHub 大仓库时遇到 `RPC failed`、`early EOF` 等网络中断，可以先浅拉取最新分支，再从本地远程跟踪分支导入：
+
+```bash
+git -c http.version=HTTP/1.1 fetch --depth=1 upstream-backend master
+git subtree add --prefix=backend upstream-backend/master --squash
+
+git -c http.version=HTTP/1.1 fetch --depth=1 upstream-frontend master
+git subtree add --prefix=frontend upstream-frontend/master --squash
 ```
 
 ## 月度同步
@@ -36,15 +48,15 @@ git status --short
 拉取后端上游：
 
 ```bash
-git fetch upstream-backend master
-git subtree pull --prefix=backend upstream-backend master --squash
+git -c http.version=HTTP/1.1 fetch --depth=1 upstream-backend master
+git subtree pull --prefix=backend upstream-backend/master --squash
 ```
 
 拉取前端上游：
 
 ```bash
-git fetch upstream-frontend master
-git subtree pull --prefix=frontend upstream-frontend master --squash
+git -c http.version=HTTP/1.1 fetch --depth=1 upstream-frontend master
+git subtree pull --prefix=frontend upstream-frontend/master --squash
 ```
 
 同步后建议至少执行：
