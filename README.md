@@ -23,7 +23,7 @@
 
 本项目基于以下开源项目持续同步：
 
-- 后端: [YunaiV/ruoyi-vue-pro](https://github.com/YunaiV/ruoyi-vue-pro)
-- 前端: [yudaocode/yudao-ui-admin-vue3](https://github.com/yudaocode/yudao-ui-admin-vue3)
+- 后端: [YunaiV/ruoyi-vue-pro](https://github.com/YunaiV/ruoyi-vue-pro) `master-jdk17`
+- 前端: [yudaocode/yudao-ui-admin-vue3](https://github.com/yudaocode/yudao-ui-admin-vue3) `master`
 
 感谢芋道源码提供稳定、完整的开源基础。本项目会尽量保持与上游架构兼容，并在 AI 能力方向做增量扩展。

@@ -18,20 +18,27 @@ upstream-frontend  https://github.com/yudaocode/yudao-ui-admin-vue3.git
 
 `upstream-*` 只用于拉取，不向上游推送。
 
+当前项目主线同步的上游分支：
+
+- 后端：`upstream-backend/master-jdk17`
+- 前端：`upstream-frontend/master`
+
+后端不使用 JDK8 版本的 `master` 作为主线。`master-jdk25` 可作为未来实验方向评估，不作为当前默认同步分支。
+
 ## 首次导入
 
 如果网络稳定，可以直接执行：
 
 ```bash
-git subtree add --prefix=backend upstream-backend master --squash
+git subtree add --prefix=backend upstream-backend master-jdk17 --squash
 git subtree add --prefix=frontend upstream-frontend master --squash
 ```
 
 如果拉取 GitHub 大仓库时遇到 `RPC failed`、`early EOF` 等网络中断，可以先浅拉取最新分支，再从本地远程跟踪分支导入：
 
 ```bash
-git -c http.version=HTTP/1.1 fetch --depth=1 upstream-backend master
-git subtree add --prefix=backend upstream-backend/master --squash
+git -c http.version=HTTP/1.1 fetch --depth=1 upstream-backend master-jdk17
+git subtree add --prefix=backend upstream-backend/master-jdk17 --squash
 
 git -c http.version=HTTP/1.1 fetch --depth=1 upstream-frontend master
 git subtree add --prefix=frontend upstream-frontend/master --squash
@@ -48,8 +55,8 @@ git status --short
 拉取后端上游：
 
 ```bash
-git -c http.version=HTTP/1.1 fetch --depth=1 upstream-backend master
-git subtree pull --prefix=backend upstream-backend/master --squash
+git -c http.version=HTTP/1.1 fetch --depth=1 upstream-backend master-jdk17
+git subtree pull --prefix=backend upstream-backend/master-jdk17 --squash
 ```
 
 拉取前端上游：
