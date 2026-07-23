@@ -39,6 +39,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * ACF 基础能力执行器
@@ -370,40 +371,101 @@ public class CapabilityExecutor {
         audit.success(CapabilityAuditStage.RUNTIME_GUARD, "runtime guards acquired", stepStartedAt);
 
         stepStartedAt = System.currentTimeMillis();
-        audit.targetInvoked();
-        try {
-            CapabilityResult result = invocationExecutor.invoke(
-                    () -> normalizeResult(name, invokeTarget(registration, argument)), runtimePolicy.getTimeoutMs());
-            if (result.isSuccess()) {
-                guardLease.onSuccess(result);
-                audit.success(CapabilityAuditStage.INVOCATION, "target invocation completed", stepStartedAt);
-            } else {
-                guardLease.onFailure(result, null);
-                audit.failure(CapabilityAuditStage.INVOCATION, result, stepStartedAt);
-            }
-            if (!idempotencyAcquired) {
-                return result;
-            }
-            long completionStartedAt = System.currentTimeMillis();
-            CapabilityResult completedResult = completeIdempotency(
-                    effectiveDefinition, context, idempotencyKey, requestDigest, result);
-            if (completedResult == result) {
-                audit.idempotencyStatus(CapabilityIdempotencyAuditStatus.COMPLETED);
-                audit.success(CapabilityAuditStage.IDEMPOTENCY, "result stored", completionStartedAt);
-            } else {
-                audit.idempotencyStatus(CapabilityIdempotencyAuditStatus.ERROR);
-                audit.failure(CapabilityAuditStage.IDEMPOTENCY, completedResult, completionStartedAt);
-            }
-            return completedResult;
-        } catch (Exception exception) {
-            CapabilityResult result = classifyException(name, exception);
-            guardLease.onFailure(result, exception);
+        CapabilityInvocationOutcome invocationOutcome = invokeWithRetry(
+                name, registration, argument, effectiveDefinition, runtimePolicy, audit);
+        CapabilityResult result = invocationOutcome.result();
+        if (result.isSuccess()) {
+            guardLease.onSuccess(result);
+            audit.success(CapabilityAuditStage.INVOCATION, "target invocation completed", stepStartedAt);
+        } else {
+            guardLease.onFailure(result, invocationOutcome.failureCause());
             audit.failure(CapabilityAuditStage.INVOCATION, result, stepStartedAt);
+        }
+        if (invocationOutcome.failureCause() != null) {
             failIdempotency(effectiveDefinition, context, idempotencyKey, requestDigest, result, idempotencyAcquired);
             if (idempotencyAcquired) {
                 audit.idempotencyStatus(CapabilityIdempotencyAuditStatus.FAILED);
             }
             return result;
+        }
+        if (!idempotencyAcquired) {
+            return result;
+        }
+        long completionStartedAt = System.currentTimeMillis();
+        CapabilityResult completedResult = completeIdempotency(
+                effectiveDefinition, context, idempotencyKey, requestDigest, result);
+        if (completedResult == result) {
+            audit.idempotencyStatus(CapabilityIdempotencyAuditStatus.COMPLETED);
+            audit.success(CapabilityAuditStage.IDEMPOTENCY, "result stored", completionStartedAt);
+        } else {
+            audit.idempotencyStatus(CapabilityIdempotencyAuditStatus.ERROR);
+            audit.failure(CapabilityAuditStage.IDEMPOTENCY, completedResult, completionStartedAt);
+        }
+        return completedResult;
+    }
+
+    private CapabilityInvocationOutcome invokeWithRetry(String name, CapabilityRegistration registration,
+                                                        Object argument, CapabilityDefinition definition,
+                                                        CapabilityRuntimePolicy runtimePolicy,
+                                                        CapabilityExecutionAudit audit) {
+        int maxAttempts = runtimePolicy.isRetryEnabled() ? runtimePolicy.getRetryMaxAttempts() : 1;
+        CapabilityInvocationOutcome outcome = null;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            outcome = invokeOnce(name, registration, argument, runtimePolicy.getTimeoutMs());
+            if (outcome.targetInvoked()) {
+                audit.targetInvoked();
+            }
+            if (!shouldRetry(definition, runtimePolicy, outcome, attempt, maxAttempts)) {
+                return outcome;
+            }
+            long retryStartedAt = System.currentTimeMillis();
+            try {
+                sleepBeforeRetry(runtimePolicy.getRetryBackoffMs());
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                return new CapabilityInvocationOutcome(
+                        classifyException(name, exception), exception, outcome.targetInvoked());
+            }
+            audit.retry(attempt + 1, outcome.result().getErrorCode(), retryStartedAt);
+        }
+        return Objects.requireNonNull(outcome, "Capability invocation outcome must not be null");
+    }
+
+    private CapabilityInvocationOutcome invokeOnce(String name, CapabilityRegistration registration,
+                                                   Object argument, int timeoutMs) {
+        AtomicBoolean targetInvoked = new AtomicBoolean();
+        try {
+            CapabilityResult result = invocationExecutor.invoke(() -> {
+                targetInvoked.set(true);
+                return normalizeResult(name, invokeTarget(registration, argument));
+            }, timeoutMs);
+            return new CapabilityInvocationOutcome(result, null, targetInvoked.get());
+        } catch (Exception exception) {
+            return new CapabilityInvocationOutcome(
+                    classifyException(name, exception), exception, targetInvoked.get());
+        }
+    }
+
+    private boolean shouldRetry(CapabilityDefinition definition, CapabilityRuntimePolicy runtimePolicy,
+                                CapabilityInvocationOutcome outcome, int attempt, int maxAttempts) {
+        if (!runtimePolicy.isRetryEnabled() || attempt >= maxAttempts || !outcome.result().isRetryable()) {
+            return false;
+        }
+        // 超时只说明调用方停止等待，不能证明工作线程已经结束，继续重试可能形成重叠执行。
+        if (AcfCapabilityErrorCodes.RUNTIME_TIMEOUT.equals(outcome.result().getErrorCode())) {
+            return false;
+        }
+        if (!definition.isSideEffect()) {
+            return true;
+        }
+        // 副作用能力只允许重试明确发生在目标方法启动前的线程池拒绝。
+        return !outcome.targetInvoked()
+                && AcfCapabilityErrorCodes.RUNTIME_EXECUTOR_REJECTED.equals(outcome.result().getErrorCode());
+    }
+
+    private void sleepBeforeRetry(int backoffMs) throws InterruptedException {
+        if (backoffMs > 0) {
+            Thread.sleep(backoffMs);
         }
     }
 
@@ -619,6 +681,10 @@ public class CapabilityExecutor {
     private String readableMessage(Throwable throwable) {
         return StringUtils.hasText(throwable.getMessage())
                 ? throwable.getMessage() : throwable.getClass().getSimpleName();
+    }
+
+    private record CapabilityInvocationOutcome(CapabilityResult result, Throwable failureCause,
+                                               boolean targetInvoked) {
     }
 
 }

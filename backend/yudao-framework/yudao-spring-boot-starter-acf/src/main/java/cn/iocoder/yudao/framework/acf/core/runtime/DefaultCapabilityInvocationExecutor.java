@@ -1,5 +1,6 @@
 package cn.iocoder.yudao.framework.acf.core.runtime;
 
+import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import com.alibaba.ttl.TtlCallable;
 
 import java.util.Objects;
@@ -53,12 +54,12 @@ public final class DefaultCapabilityInvocationExecutor implements CapabilityInvo
     }
 
     @Override
-    public <T> T invoke(Callable<T> invocation, int timeoutMs) throws Exception {
+    public CapabilityResult invoke(Callable<CapabilityResult> invocation, int timeoutMs) throws Exception {
         Objects.requireNonNull(invocation, "invocation");
         if (timeoutMs <= 0) {
             throw new IllegalArgumentException("timeoutMs must be greater than zero");
         }
-        Future<T> future = executorService.submit(TtlCallable.get(invocation));
+        Future<CapabilityResult> future = executorService.submit(TtlCallable.get(invocation));
         try {
             return future.get(timeoutMs, TimeUnit.MILLISECONDS);
         } catch (TimeoutException exception) {

@@ -23,6 +23,8 @@ public enum CapabilityAuditStage {
 
     RUNTIME_GUARD,
 
+    RUNTIME_RETRY,
+
     INVOCATION,
 
     COMPLETED

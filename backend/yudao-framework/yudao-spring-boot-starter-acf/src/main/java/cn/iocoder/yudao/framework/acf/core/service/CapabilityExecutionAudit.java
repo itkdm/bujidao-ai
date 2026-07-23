@@ -38,6 +38,7 @@ final class CapabilityExecutionAudit {
     private CapabilityIdempotencyAuditStatus idempotencyStatus = CapabilityIdempotencyAuditStatus.NOT_REQUESTED;
     private String runtimePolicySummary;
     private String runtimeGuardCode;
+    private int retryCount;
     private boolean targetInvoked;
     private int stepNo;
 
@@ -68,6 +69,12 @@ final class CapabilityExecutionAudit {
 
     void runtimeGuardCode(String runtimeGuardCode) {
         this.runtimeGuardCode = runtimeGuardCode;
+    }
+
+    void retry(int nextAttempt, String previousErrorCode, long stepStartedAt) {
+        retryCount++;
+        success(CapabilityAuditStage.RUNTIME_RETRY,
+                "retry attempt=" + nextAttempt + ", previousError=" + previousErrorCode, stepStartedAt);
     }
 
     void targetInvoked() {
@@ -112,6 +119,7 @@ final class CapabilityExecutionAudit {
                     .idempotencyStatus(idempotencyStatus)
                     .runtimePolicySummary(runtimePolicySummary)
                     .runtimeGuardCode(runtimeGuardCode)
+                    .retryCount(retryCount)
                     .targetInvoked(targetInvoked)
                     .status(result == null ? null : result.getStatus())
                     .errorCode(result == null ? null : result.getErrorCode())

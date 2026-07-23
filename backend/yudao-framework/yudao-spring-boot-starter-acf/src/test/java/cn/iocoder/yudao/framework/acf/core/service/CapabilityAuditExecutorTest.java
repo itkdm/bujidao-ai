@@ -86,6 +86,7 @@ class CapabilityAuditExecutorTest {
         assertThat(record.getIdempotencyStatus()).isEqualTo(CapabilityIdempotencyAuditStatus.NOT_REQUESTED);
         assertThat(record.getRuntimePolicySummary()).isEqualTo("timeoutMs=30000");
         assertThat(record.getRuntimeGuardCode()).isNull();
+        assertThat(record.getRetryCount()).isZero();
         assertThat(record.isTargetInvoked()).isTrue();
         assertThat(record.getStatus()).isEqualTo(CapabilityStatus.SUCCESS);
         assertThat(record.getErrorCode()).isNull();

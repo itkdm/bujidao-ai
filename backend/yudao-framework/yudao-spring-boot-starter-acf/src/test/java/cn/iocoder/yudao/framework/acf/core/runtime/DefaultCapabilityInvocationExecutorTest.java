@@ -1,5 +1,6 @@
 package cn.iocoder.yudao.framework.acf.core.runtime;
 
+import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import com.alibaba.ttl.TransmittableThreadLocal;
 import org.junit.jupiter.api.Test;
 
@@ -21,7 +22,9 @@ class DefaultCapabilityInvocationExecutorTest {
         context.set("tenant-context");
 
         try (DefaultCapabilityInvocationExecutor executor = executor()) {
-            assertThat(executor.invoke(context::get, 1_000)).isEqualTo("tenant-context");
+            CapabilityResult result = executor.invoke(
+                    () -> CapabilityResult.success("test.context.read", context.get(), null), 1_000);
+            assertThat(result.getData()).isEqualTo("tenant-context");
         } finally {
             context.remove();
         }
@@ -37,7 +40,7 @@ class DefaultCapabilityInvocationExecutorTest {
                 started.countDown();
                 try {
                     Thread.sleep(10_000);
-                    return "late";
+                    return CapabilityResult.success("test.timeout.wait", "late", null);
                 } catch (InterruptedException exception) {
                     interrupted.countDown();
                     throw exception;

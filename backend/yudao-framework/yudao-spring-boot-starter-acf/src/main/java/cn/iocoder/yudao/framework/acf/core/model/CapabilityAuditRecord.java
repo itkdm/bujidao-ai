@@ -34,6 +34,7 @@ public final class CapabilityAuditRecord {
     private final CapabilityIdempotencyAuditStatus idempotencyStatus;
     private final String runtimePolicySummary;
     private final String runtimeGuardCode;
+    private final int retryCount;
     private final boolean targetInvoked;
     private final CapabilityStatus status;
     private final String errorCode;
