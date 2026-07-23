@@ -4,11 +4,10 @@ import cn.iocoder.yudao.framework.test.core.ut.BaseDbUnitTest;
 import cn.iocoder.yudao.module.wms.controller.admin.md.item.vo.brand.WmsItemBrandSaveReqVO;
 import cn.iocoder.yudao.module.wms.dal.dataobject.md.item.WmsItemBrandDO;
 import cn.iocoder.yudao.module.wms.dal.mysql.md.item.WmsItemBrandMapper;
+import jakarta.annotation.Resource;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
-
-import javax.annotation.Resource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import static cn.iocoder.yudao.framework.test.core.util.AssertUtils.assertServiceException;
 import static cn.iocoder.yudao.module.wms.enums.ErrorCodeConstants.ITEM_BRAND_NAME_DUPLICATE;
@@ -22,7 +21,7 @@ public class WmsItemBrandServiceImplTest extends BaseDbUnitTest {
     @Resource
     private WmsItemBrandMapper brandMapper;
 
-    @MockBean
+    @MockitoBean
     private WmsItemService itemService;
 
     @Test

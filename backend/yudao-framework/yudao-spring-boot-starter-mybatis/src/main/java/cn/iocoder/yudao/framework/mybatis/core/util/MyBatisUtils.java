@@ -64,7 +64,7 @@ public class MyBatisUtils {
         if (CollUtil.isEmpty(sortingFields)) {
             return;
         }
-        if (wrapper instanceof QueryWrapper) {
+        if (wrapper instanceof QueryWrapper<T>) {
             QueryWrapper<T> query = (QueryWrapper<T>) wrapper;
             for (SortingField sortingField : sortingFields) {
                 String columnName = buildSafeOrderColumn(sortingField.getField());
@@ -73,7 +73,7 @@ public class MyBatisUtils {
                 }
                 query.orderBy(true, isAscOrder(sortingField.getOrder()), columnName);
             }
-        } else if (wrapper instanceof LambdaQueryWrapper) {
+        } else if (wrapper instanceof LambdaQueryWrapper<T>) {
             // LambdaQueryWrapper 不直接支持字符串字段排序，使用 last 方法拼接 ORDER BY
             LambdaQueryWrapper<T> lambdaQuery = (LambdaQueryWrapper<T>) wrapper;
             StringBuilder orderBy = new StringBuilder();

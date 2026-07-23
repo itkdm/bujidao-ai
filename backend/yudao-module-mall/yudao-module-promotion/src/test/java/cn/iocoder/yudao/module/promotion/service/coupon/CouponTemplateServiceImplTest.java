@@ -16,10 +16,10 @@ import cn.iocoder.yudao.module.promotion.enums.common.PromotionProductScopeEnum;
 import cn.iocoder.yudao.module.promotion.enums.coupon.CouponTakeTypeEnum;
 import cn.iocoder.yudao.module.promotion.enums.coupon.CouponTemplateValidityTypeEnum;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
-import javax.annotation.Resource;
+import jakarta.annotation.Resource;
 import java.time.LocalDateTime;
 import java.util.function.Consumer;
 
@@ -47,9 +47,9 @@ public class CouponTemplateServiceImplTest extends BaseDbUnitTest {
     @Resource
     private CouponTemplateMapper couponTemplateMapper;
 
-    @MockBean
+    @MockitoBean
     private ProductCategoryApi productCategoryApi;
-    @MockBean
+    @MockitoBean
     private ProductSpuApi productSpuApi;
 
     @Test

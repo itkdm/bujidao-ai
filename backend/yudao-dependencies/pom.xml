@@ -14,16 +14,13 @@
     <url>https://github.com/YunaiV/ruoyi-vue-pro</url>
 
     <properties>
-        <revision>2026.06-jdk8-SNAPSHOT</revision>
-        <flatten-maven-plugin.version>1.6.0</flatten-maven-plugin.version>
+        <revision>2026.06-SNAPSHOT</revision>
+        <flatten-maven-plugin.version>1.7.2</flatten-maven-plugin.version>
         <!-- 统一依赖管理 -->
-        <spring.framework.version>5.3.39</spring.framework.version>
-        <spring.security.version>5.8.16</spring.security.version>
-        <spring.boot.version>2.7.18</spring.boot.version>
+        <spring.boot.version>3.5.15</spring.boot.version>
         <!-- Web 相关 -->
-        <springdoc.version>1.8.0</springdoc.version>
+        <springdoc.version>2.8.17</springdoc.version>
         <knife4j.version>4.5.0</knife4j.version>
-        <servlet.versoin>2.5</servlet.versoin>
         <!-- DB 相关 -->
         <druid.version>1.2.28</druid.version>
         <mybatis.version>3.5.19</mybatis.version>
@@ -42,14 +39,14 @@
         <lock4j.version>2.2.7</lock4j.version>
         <!-- 监控相关 -->
         <skywalking.version>9.6.0</skywalking.version>
-        <spring-boot-admin.version>2.7.15</spring-boot-admin.version>
-        <opentelemetry.version>1.39.0</opentelemetry.version>
+        <spring-boot-admin.version>3.5.9</spring-boot-admin.version>
+        <opentracing.version>0.33.0</opentracing.version>
         <!-- Test 测试相关 -->
-        <podam.version>7.2.11.RELEASE</podam.version> <!-- Spring Boot 2.X 最多使用 7.2.11 版本 -->
+        <podam.version>8.0.2.RELEASE</podam.version>
         <jedis-mock.version>1.1.15</jedis-mock.version>
-        <mockito-inline.version>4.11.0</mockito-inline.version>
+        <mockito-inline.version>5.2.0</mockito-inline.version>
         <!-- Bpm 工作流相关 -->
-        <flowable.version>6.8.0</flowable.version> <!-- 不要升级 6.8.1：退回有 bug https://github.com/flowable/flowable-engine/issues/3944 -->
+        <flowable.version>8.0.0</flowable.version>
         <!-- 工具类相关 -->
         <anji-plus-captcha.version>1.4.0</anji-plus-captcha.version>
         <jsoup.version>1.22.2</jsoup.version>
@@ -58,8 +55,9 @@
         <lombok.version>1.18.46</lombok.version>
         <mapstruct.version>1.6.3</mapstruct.version>
         <hutool-5.version>5.8.46</hutool-5.version>
+        <hutool-6.version>6.0.0-M22</hutool-6.version>
         <fastexcel.version>1.3.0</fastexcel.version>
-        <velocity.version>2.4</velocity.version> <!-- JDK8 不能从 2.4 升级到 2.4.1，会报包不存在！！！！ -->
+        <velocity.version>2.4.1</velocity.version>
         <fastjson.version>1.2.83</fastjson.version>
         <fastjson2.version>2.0.62</fastjson2.version>
         <guava.version>33.6.0-jre</guava.version>
@@ -67,7 +65,7 @@
         <commons-net.version>3.13.0</commons-net.version>
         <commons-lang3.version>3.20.0</commons-lang3.version>
         <jsch.version>2.28.3</jsch.version>
-        <tika-core.version>2.9.3</tika-core.version> <!-- JDK8 不能从 2.9.3 升级到 3.X，会报 JDK8 不支持 -->
+        <tika-core.version>3.3.1</tika-core.version>
         <ip2region.version>2.7.0</ip2region.version>
         <bizlog-sdk.version>3.0.6</bizlog-sdk.version>
         <netty.version>4.2.15.Final</netty.version>
@@ -76,8 +74,6 @@
         <okhttp.version>4.12.0</okhttp.version>
         <californium.version>3.14.0</californium.version>
         <j2mod.version>3.3.0</j2mod.version>
-        <httpclient5.version>5.5.1</httpclient5.version> <!-- WxJava 4.8.x 需要 HttpClient5 5.4+，Spring Boot 2.7 默认 5.1.4 不兼容；JDK8 兼容不能升级到 5.5.2+ -->
-        <httpcore5.version>5.3.6</httpcore5.version> <!-- 配套 httpclient5 5.5.1，Spring Boot 2.7 默认 5.1.5 不兼容 -->
         <!-- 三方云服务相关 -->
         <awssdk.version>2.46.17</awssdk.version>
         <justauth.version>1.16.7</justauth.version>
@@ -87,8 +83,6 @@
         <weixin-java.version>4.8.4-20260623.211820</weixin-java.version>
         <bouncycastle.version>1.80</bouncycastle.version>
         <alipay-sdk-java.version>4.40.865.ALL</alipay-sdk-java.version>
-        <!-- 专属于 JDK8 安全漏洞升级 -->
-        <logback.version>1.2.13</logback.version> <!-- 无法使用 1.3.X 版本，启动会报错 -->
     </properties>
 
     <dependencyManagement>
@@ -98,20 +92,6 @@
                 <groupId>io.netty</groupId>
                 <artifactId>netty-bom</artifactId>
                 <version>${netty.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-            <dependency>
-                <groupId>org.springframework</groupId>
-                <artifactId>spring-framework-bom</artifactId> <!-- JDK8 版本独有：保证 Spring Framework 尽量高 -->
-                <version>${spring.framework.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-            <dependency>
-                <groupId>org.springframework.security</groupId>
-                <artifactId>spring-security-bom</artifactId> <!-- JDK8 版本独有：保证 Spring Security 尽量高 -->
-                <version>${spring.security.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -180,12 +160,18 @@
 
             <dependency>
                 <groupId>com.github.xiaoymin</groupId>
-                <artifactId>knife4j-openapi3-spring-boot-starter</artifactId>
+                <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
                 <version>${knife4j.version}</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>org.springdoc</groupId>
+                        <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+                    </exclusion>
+                </exclusions>
             </dependency>
             <dependency>
                 <groupId>org.springdoc</groupId>
-                <artifactId>springdoc-openapi-ui</artifactId>
+                <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
                 <version>${springdoc.version}</version>
             </dependency>
 
@@ -198,7 +184,7 @@
 
             <dependency>
                 <groupId>com.alibaba</groupId>
-                <artifactId>druid-spring-boot-starter</artifactId>
+                <artifactId>druid-spring-boot-3-starter</artifactId>
                 <version>${druid.version}</version>
             </dependency>
             <dependency>
@@ -209,12 +195,12 @@
             </dependency>
             <dependency>
                 <groupId>com.baomidou</groupId>
-                <artifactId>mybatis-plus-boot-starter</artifactId>
+                <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
                 <version>${mybatis-plus.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.baomidou</groupId>
-                <artifactId>mybatis-plus-jsqlparser-4.9</artifactId>
+                <artifactId>mybatis-plus-jsqlparser</artifactId>
                 <version>${mybatis-plus.version}</version>
             </dependency>
             <dependency>
@@ -224,7 +210,7 @@
             </dependency>
             <dependency>
                 <groupId>com.baomidou</groupId>
-                <artifactId>dynamic-datasource-spring-boot-starter</artifactId> <!-- 多数据源 -->
+                <artifactId>dynamic-datasource-spring-boot3-starter</artifactId> <!-- 多数据源 -->
                 <version>${dynamic-datasource.version}</version>
             </dependency>
             <dependency>
@@ -276,14 +262,14 @@
                     </exclusion>
                     <exclusion>
                         <groupId>org.redisson</groupId>
-                        <!-- Redisson 4.6.x 默认依赖 redisson-spring-data-41（适配 Spring Data Redis 4.x），排除后使用下方的 spring-data-27 适配 Spring Boot 2.7 -->
+                        <!-- Redisson 4.6.x 默认依赖 redisson-spring-data-41（适配 Spring Data Redis 4.x），排除后使用下方的 spring-data-35 适配 Spring Boot 3.5 -->
                         <artifactId>redisson-spring-data-41</artifactId>
                     </exclusion>
                 </exclusions>
             </dependency>
             <dependency>
                 <groupId>org.redisson</groupId>
-                <artifactId>redisson-spring-data-27</artifactId>
+                <artifactId>redisson-spring-data-35</artifactId>
                 <version>${redisson.version}</version>
             </dependency>
 
@@ -357,24 +343,44 @@
             </dependency>
 
             <dependency>
-                <groupId>io.opentelemetry</groupId>
-                <artifactId>opentelemetry-api</artifactId>
-                <version>${opentelemetry.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.opentelemetry</groupId>
-                <artifactId>opentelemetry-sdk</artifactId>
-                <version>${opentelemetry.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.opentelemetry</groupId>
-                <artifactId>opentelemetry-exporter-otlp</artifactId>
-                <version>${opentelemetry.version}</version>
+                <groupId>org.apache.skywalking</groupId>
+                <artifactId>apm-toolkit-trace</artifactId>
+                <version>${skywalking.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.skywalking</groupId>
                 <artifactId>apm-toolkit-logback-1.x</artifactId>
                 <version>${skywalking.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.skywalking</groupId>
+                <artifactId>apm-toolkit-opentracing</artifactId>
+                <version>${skywalking.version}</version>
+                <!--                <exclusions>-->
+                <!--                    <exclusion>-->
+                <!--                        <artifactId>opentracing-api</artifactId>-->
+                <!--                        <groupId>io.opentracing</groupId>-->
+                <!--                    </exclusion>-->
+                <!--                    <exclusion>-->
+                <!--                        <artifactId>opentracing-util</artifactId>-->
+                <!--                        <groupId>io.opentracing</groupId>-->
+                <!--                    </exclusion>-->
+                <!--                </exclusions>-->
+            </dependency>
+            <dependency>
+                <groupId>io.opentracing</groupId>
+                <artifactId>opentracing-api</artifactId>
+                <version>${opentracing.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.opentracing</groupId>
+                <artifactId>opentracing-util</artifactId>
+                <version>${opentracing.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.opentracing</groupId>
+                <artifactId>opentracing-noop</artifactId>
+                <version>${opentracing.version}</version>
             </dependency>
 
             <dependency>
@@ -488,6 +494,11 @@
                 <groupId>cn.hutool</groupId>
                 <artifactId>hutool-all</artifactId>
                 <version>${hutool-5.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.dromara.hutool</groupId>
+                <artifactId>hutool-extra</artifactId>
+                <version>${hutool-6.version}</version>
             </dependency>
 
             <dependency>
@@ -629,23 +640,6 @@
                 <version>${j2mod.version}</version>
             </dependency>
 
-            <!-- WxJava 4.8.x 需要 HttpClient5 5.4+，覆盖 Spring Boot 2.7 默认的 5.1.4；JDK8 兼容不能升级到 5.5.2+ -->
-            <dependency>
-                <groupId>org.apache.httpcomponents.client5</groupId>
-                <artifactId>httpclient5</artifactId>
-                <version>${httpclient5.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.apache.httpcomponents.core5</groupId>
-                <artifactId>httpcore5</artifactId>
-                <version>${httpcore5.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.apache.httpcomponents.core5</groupId>
-                <artifactId>httpcore5-h2</artifactId>
-                <version>${httpcore5.version}</version>
-            </dependency>
-
             <!-- 三方云服务相关 -->
             <dependency>
                 <groupId>software.amazon.awssdk</groupId>
@@ -720,12 +714,12 @@
             <!-- 积木报表-->
             <dependency>
                 <groupId>org.jeecgframework.jimureport</groupId>
-                <artifactId>jimureport-spring-boot-starter</artifactId>
+                <artifactId>jimureport-spring-boot3-starter</artifactId>
                 <version>${jimureport.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.jeecgframework.jimureport</groupId>
-                <artifactId>jimubi-spring-boot-starter</artifactId>
+                <artifactId>jimubi-spring-boot3-starter</artifactId>
                 <version>${jimubi.version}</version>
                 <exclusions>
                     <exclusion>

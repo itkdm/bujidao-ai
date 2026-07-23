@@ -10,10 +10,11 @@ import cn.iocoder.yudao.module.mes.service.qc.iqc.MesQcIqcService;
 import cn.iocoder.yudao.module.mes.service.wm.arrivalnotice.MesWmArrivalNoticeService;
 import cn.iocoder.yudao.module.mes.service.wm.transaction.MesWmTransactionService;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
-import javax.annotation.Resource;
+import jakarta.annotation.Resource;
+
 import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.Collections;
@@ -21,9 +22,8 @@ import java.util.Collections;
 import static cn.iocoder.yudao.framework.test.core.util.AssertUtils.assertServiceException;
 import static cn.iocoder.yudao.framework.test.core.util.RandomUtils.randomLongId;
 import static cn.iocoder.yudao.framework.test.core.util.RandomUtils.randomPojo;
-import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_ITEM_RECEIPT_NOT_EXISTS;
-import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_ITEM_RECEIPT_STATUS_ERROR;
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.*;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -42,17 +42,17 @@ public class MesWmItemReceiptServiceImplTest extends BaseDbUnitTest {
     @Resource
     private MesWmItemReceiptMapper itemReceiptMapper;
 
-    @MockBean
+    @MockitoBean
     private MesWmItemReceiptLineService itemReceiptLineService;
-    @MockBean
+    @MockitoBean
     private MesWmItemReceiptDetailService itemReceiptDetailService;
-    @MockBean
+    @MockitoBean
     private MesWmArrivalNoticeService arrivalNoticeService;
-    @MockBean
+    @MockitoBean
     private MesMdVendorService vendorService;
-    @MockBean
+    @MockitoBean
     private MesQcIqcService iqcService;
-    @MockBean
+    @MockitoBean
     private MesWmTransactionService wmTransactionService;
 
     // ========== finishItemReceipt ==========

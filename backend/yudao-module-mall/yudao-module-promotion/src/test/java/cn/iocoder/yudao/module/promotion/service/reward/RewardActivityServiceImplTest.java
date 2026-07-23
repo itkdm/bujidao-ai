@@ -17,7 +17,6 @@ import org.junit.jupiter.api.Test;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 
-import javax.annotation.Resource;
 import java.time.Duration;
 
 import static cn.hutool.core.util.RandomUtil.randomEle;

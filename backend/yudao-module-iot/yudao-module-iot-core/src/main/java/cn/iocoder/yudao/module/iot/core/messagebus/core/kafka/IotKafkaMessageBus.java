@@ -4,6 +4,7 @@ import cn.hutool.core.util.TypeUtil;
 import cn.iocoder.yudao.framework.common.util.json.JsonUtils;
 import cn.iocoder.yudao.module.iot.core.messagebus.core.IotMessageBus;
 import cn.iocoder.yudao.module.iot.core.messagebus.core.IotMessageSubscriber;
+import jakarta.annotation.PreDestroy;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -18,7 +19,6 @@ import org.springframework.kafka.listener.AcknowledgingMessageListener;
 import org.springframework.kafka.listener.ConcurrentMessageListenerContainer;
 import org.springframework.kafka.listener.ContainerProperties;
 
-import javax.annotation.PreDestroy;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.HashMap;

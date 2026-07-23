@@ -7,6 +7,4 @@ package cn.iocoder.yudao.module.bpm.enums;
  */
 public interface DictTypeConstants {
 
-    String COMMENT_TYPE = "bpm_comment_type";
-
 }

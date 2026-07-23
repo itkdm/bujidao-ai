@@ -25,11 +25,11 @@ import cn.iocoder.yudao.module.mes.service.md.vendor.MesMdVendorService;
 import cn.iocoder.yudao.module.mes.service.pro.workorder.MesProWorkOrderService;
 import cn.iocoder.yudao.module.mes.service.wm.transaction.MesWmTransactionService;
 import cn.iocoder.yudao.module.mes.service.wm.transaction.dto.MesWmTransactionSaveReqDTO;
+import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
-import javax.annotation.Resource;
 import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.List;

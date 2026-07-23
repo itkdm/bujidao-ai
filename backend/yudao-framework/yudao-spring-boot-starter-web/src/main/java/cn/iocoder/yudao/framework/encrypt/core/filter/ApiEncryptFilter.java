@@ -14,6 +14,10 @@ import cn.iocoder.yudao.framework.encrypt.core.annotation.ApiEncrypt;
 import cn.iocoder.yudao.framework.web.config.WebProperties;
 import cn.iocoder.yudao.framework.web.core.filter.ApiRequestFilter;
 import cn.iocoder.yudao.framework.web.core.handler.GlobalExceptionHandler;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpMethod;
 import org.springframework.web.method.HandlerMethod;
@@ -21,10 +25,6 @@ import org.springframework.web.servlet.HandlerExecutionChain;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 import org.springframework.web.util.ServletRequestPathUtils;
 
-import javax.servlet.FilterChain;
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.invalidParamException;

@@ -13,7 +13,6 @@ import lombok.Getter;
 @AllArgsConstructor
 public enum BpmCommentTypeEnum {
 
-    COMMENT("0", "评论", "{}"),
     APPROVE("1", "审批通过", "审批通过，原因是：{}"),
     REJECT("2", "不通过", "审批不通过：原因是：{}"),
     CANCEL("3", "已取消", "系统自动取消，原因是：{}"),
@@ -41,7 +40,7 @@ public enum BpmCommentTypeEnum {
     private final String comment;
 
     public String formatComment(Object... params) {
-        return StrUtil.format(comment, params);
+         return StrUtil.format(comment, params);
     }
 
 }

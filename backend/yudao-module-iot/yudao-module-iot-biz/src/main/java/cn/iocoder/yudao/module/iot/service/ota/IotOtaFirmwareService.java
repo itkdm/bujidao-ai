@@ -5,8 +5,7 @@ import cn.iocoder.yudao.module.iot.controller.admin.ota.vo.firmware.IotOtaFirmwa
 import cn.iocoder.yudao.module.iot.controller.admin.ota.vo.firmware.IotOtaFirmwarePageReqVO;
 import cn.iocoder.yudao.module.iot.controller.admin.ota.vo.firmware.IotOtaFirmwareUpdateReqVO;
 import cn.iocoder.yudao.module.iot.dal.dataobject.ota.IotOtaFirmwareDO;
-
-import javax.validation.Valid;
+import jakarta.validation.Valid;
 
 import java.util.Collection;
 import java.util.List;

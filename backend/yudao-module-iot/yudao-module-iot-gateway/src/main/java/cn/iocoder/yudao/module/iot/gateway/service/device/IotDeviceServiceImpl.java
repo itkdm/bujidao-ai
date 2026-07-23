@@ -8,10 +8,10 @@ import cn.iocoder.yudao.module.iot.core.biz.dto.IotDeviceGetReqDTO;
 import cn.iocoder.yudao.module.iot.core.biz.dto.IotDeviceRespDTO;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
+import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import javax.annotation.Resource;
 import java.time.Duration;
 
 import static cn.iocoder.yudao.framework.common.util.cache.CacheUtils.buildAsyncReloadingCache;
@@ -32,7 +32,7 @@ public class IotDeviceServiceImpl implements IotDeviceService {
      */
     private final LoadingCache<Long, IotDeviceRespDTO> deviceCaches = buildAsyncReloadingCache(
             CACHE_EXPIRE,
-            new CacheLoader<Long, IotDeviceRespDTO>() {
+            new CacheLoader<>() {
 
                 @Override
                 public IotDeviceRespDTO load(Long id) {
@@ -51,7 +51,7 @@ public class IotDeviceServiceImpl implements IotDeviceService {
      */
     private final LoadingCache<KeyValue<String, String>, IotDeviceRespDTO> deviceCaches2 = buildAsyncReloadingCache(
             CACHE_EXPIRE,
-            new CacheLoader<KeyValue<String, String>, IotDeviceRespDTO>() {
+            new CacheLoader<>() {
 
                 @Override
                 public IotDeviceRespDTO load(KeyValue<String, String> kv) {

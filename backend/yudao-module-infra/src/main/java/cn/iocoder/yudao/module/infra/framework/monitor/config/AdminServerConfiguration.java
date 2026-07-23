@@ -1,6 +1,7 @@
 package cn.iocoder.yudao.module.infra.framework.monitor.config;
 
 import de.codecentric.boot.admin.server.config.EnableAdminServer;
+import jakarta.servlet.DispatcherType;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.context.annotation.Bean;
@@ -16,8 +17,6 @@ import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.SavedRequestAwareAuthenticationSuccessHandler;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
-
-import javax.servlet.DispatcherType;
 
 /**
  * Spring Boot Admin Server 配置

@@ -38,6 +38,7 @@ import com.binarywang.spring.starter.wxjava.mp.properties.WxMpProperties;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
+import jakarta.annotation.Resource;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import me.chanjar.weixin.common.bean.WxJsapiSignature;
@@ -60,7 +61,6 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
-import javax.annotation.Resource;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.List;
@@ -214,10 +214,6 @@ public class SocialClientServiceImpl implements SocialClientService {
             newAuthConfig.setClientSecret(client.getClientSecret());
             if (client.getAgentId() != null) { // 如果有 agentId 则修改 agentId
                 newAuthConfig.setAgentId(client.getAgentId());
-            }
-            // 如果是阿里的小程序
-            if (SocialTypeEnum.ALIPAY_MINI_PROGRAM.getType().equals(socialType)) {
-                return new AuthAlipayRequest(newAuthConfig, client.getPublicKey());
             }
             // 2.3 设置会 request 里，进行后续使用
             if (SocialTypeEnum.ALIPAY_MINI_PROGRAM.getType().equals(socialType)) {

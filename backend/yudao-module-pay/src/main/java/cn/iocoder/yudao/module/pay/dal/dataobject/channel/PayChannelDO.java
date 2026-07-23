@@ -3,17 +3,19 @@ package cn.iocoder.yudao.module.pay.dal.dataobject.channel;
 import cn.hutool.core.util.StrUtil;
 import cn.iocoder.yudao.framework.common.enums.CommonStatusEnum;
 import cn.iocoder.yudao.framework.common.util.json.JsonUtils;
-import cn.iocoder.yudao.framework.tenant.core.db.TenantBaseDO;
-import cn.iocoder.yudao.module.pay.dal.dataobject.app.PayAppDO;
 import cn.iocoder.yudao.module.pay.enums.PayChannelEnum;
 import cn.iocoder.yudao.module.pay.framework.pay.core.client.PayClientConfig;
+import cn.iocoder.yudao.framework.tenant.core.db.TenantBaseDO;
+import cn.iocoder.yudao.module.pay.dal.dataobject.app.PayAppDO;
 import cn.iocoder.yudao.module.pay.framework.pay.core.client.impl.NonePayClientConfig;
+import cn.iocoder.yudao.module.pay.framework.pay.core.client.impl.alipay.AlipayAppPayClient;
 import cn.iocoder.yudao.module.pay.framework.pay.core.client.impl.alipay.AlipayPayClientConfig;
 import cn.iocoder.yudao.module.pay.framework.pay.core.client.impl.weixin.WxPayClientConfig;
 import com.baomidou.mybatisplus.annotation.KeySequence;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.handlers.AbstractJsonTypeHandler;
+import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 import com.fasterxml.jackson.core.type.TypeReference;
 import lombok.*;
 
@@ -86,7 +88,7 @@ public class PayChannelDO extends TenantBaseDO {
 
         @Override
         public Object parse(String json) {
-            PayClientConfig config = JsonUtils.parseObjectQuietly(json, new TypeReference<PayClientConfig>() {});
+            PayClientConfig config = JsonUtils.parseObjectQuietly(json, new TypeReference<>() {});
             if (config != null) {
                 return config;
             }

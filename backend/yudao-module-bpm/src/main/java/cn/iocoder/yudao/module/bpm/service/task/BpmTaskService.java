@@ -5,6 +5,7 @@ import cn.iocoder.yudao.framework.common.util.collection.CollectionUtils;
 import cn.iocoder.yudao.module.bpm.controller.admin.task.vo.task.*;
 import cn.iocoder.yudao.module.bpm.enums.definition.BpmUserTaskTimeoutHandlerTypeEnum;
 import cn.iocoder.yudao.module.bpm.enums.task.BpmAttachmentTypeEnum;
+import jakarta.validation.Valid;
 import org.flowable.bpmn.model.UserTask;
 import org.flowable.engine.history.HistoricActivityInstance;
 import org.flowable.engine.task.Attachment;
@@ -12,7 +13,6 @@ import org.flowable.task.api.Task;
 import org.flowable.task.api.TaskInfo;
 import org.flowable.task.api.history.HistoricTaskInstance;
 
-import javax.validation.Valid;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -104,14 +104,6 @@ public interface BpmTaskService {
     Task validateTask(Long userId, String taskId);
 
     /**
-     * 校验任务是否存在
-     *
-     * @param id 任务编号
-     * @return 任务
-     */
-    Task validateTaskExists(String id);
-
-    /**
      * 获取任务
      *
      * @param id 任务编号
@@ -134,16 +126,6 @@ public interface BpmTaskService {
      * @return 历史任务列表
      */
     List<HistoricTaskInstance> getHistoricTasks(Collection<String> taskIds);
-
-    /**
-     * 获取历史任务 Map
-     *
-     * @param taskIds 任务编号集合
-     * @return 历史任务 Map
-     */
-    default Map<String, HistoricTaskInstance> getHistoricTaskMap(Collection<String> taskIds) {
-        return CollectionUtils.convertMap(getHistoricTasks(taskIds), HistoricTaskInstance::getId);
-    }
 
     /**
      * 根据条件查询正在进行中的任务

@@ -1,10 +1,9 @@
 package cn.iocoder.yudao.module.infra.api.file;
 
 import cn.iocoder.yudao.module.infra.service.file.FileService;
+import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
-
-import javax.annotation.Resource;
 
 /**
  * 文件 API 实现类

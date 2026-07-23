@@ -2,8 +2,7 @@ package cn.iocoder.yudao.module.im.controller.admin.group.vo;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
-
-import javax.validation.constraints.*;
+import jakarta.validation.constraints.*;
 
 @Schema(description = "管理后台 - 群新增/修改 Request VO")
 @Data

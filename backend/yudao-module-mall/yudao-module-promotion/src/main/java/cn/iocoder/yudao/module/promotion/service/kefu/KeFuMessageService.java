@@ -5,8 +5,7 @@ import cn.iocoder.yudao.module.promotion.controller.admin.kefu.vo.message.KeFuMe
 import cn.iocoder.yudao.module.promotion.controller.app.kefu.vo.message.AppKeFuMessagePageReqVO;
 import cn.iocoder.yudao.module.promotion.controller.app.kefu.vo.message.AppKeFuMessageSendReqVO;
 import cn.iocoder.yudao.module.promotion.dal.dataobject.kefu.KeFuMessageDO;
-
-import javax.validation.Valid;
+import jakarta.validation.Valid;
 
 import java.util.List;
 
