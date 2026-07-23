@@ -12,6 +12,7 @@
 *.log
 **/logs/
 **/runtime-logs/
+/runtime-config/
 
 # Local environment overrides
 **/.env.local

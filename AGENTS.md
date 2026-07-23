@@ -131,7 +131,9 @@ Get-NetTCPConnection -LocalPort 48080,80 -State Listen -ErrorAction SilentlyCont
 Get-CimInstance Win32_Process -Filter "ProcessId=<pid>" | Select-Object ProcessId,CommandLine
 ```
 
-后端默认端口是 `48080`。后端本地配置通常在 `backend/yudao-server/src/main/resources/application-local.yaml`。如果为了本机运行修改了数据库、Redis、对象存储、三方应用等配置：
+详细本地开发流程见 `docs/local-dev.md`。
+
+后端默认端口是 `48080`。仓库内的 `backend/yudao-server/src/main/resources/application-local.yaml` 应保持为可提交的安全配置。真实本机配置放到根目录 `runtime-config/application-local.yaml`，该目录已被 `.gitignore` 忽略。如果为了本机运行修改了数据库、Redis、对象存储、三方应用等配置：
 
 - 将这类修改视为本地运行改动，不要提交或推送。
 - 汇报或排查时必须脱敏，不要把密码、Token、Secret、私钥原文写进对话或日志摘要。
@@ -152,8 +154,9 @@ $logs = Join-Path $repo 'runtime-logs'
 New-Item -ItemType Directory -Force -Path $logs | Out-Null
 $java = 'D:\jdk\jdk17\jdk-17.0.12\bin\java.exe'
 $jar = Join-Path $repo 'backend\yudao-server\target\yudao-server.jar'
+$config = 'optional:file:' + $repo.Replace('\', '/') + '/runtime-config/'
 Start-Process -WindowStyle Hidden -FilePath $java `
-  -ArgumentList @('-jar',('"{0}"' -f $jar),'--spring.profiles.active=local') `
+  -ArgumentList @('-jar',('"{0}"' -f $jar),'--spring.profiles.active=local',("--spring.config.additional-location=$config")) `
   -RedirectStandardOutput (Join-Path $logs 'yudao-server.out.log') `
   -RedirectStandardError (Join-Path $logs 'yudao-server.err.log')
 ```
