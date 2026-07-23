@@ -1,0 +1,24 @@
+# Java / Maven
+**/target/
+**/.flattened-pom.xml
+
+# Node / frontend
+**/node_modules/
+**/dist/
+**/.vite/
+**/coverage/
+
+# Logs and local runtime files
+*.log
+**/logs/
+**/runtime-logs/
+
+# Local environment overrides
+**/.env.local
+**/.env.*.local
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
