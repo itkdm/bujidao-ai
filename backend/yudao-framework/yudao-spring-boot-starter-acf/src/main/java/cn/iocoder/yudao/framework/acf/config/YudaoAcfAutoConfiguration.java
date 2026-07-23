@@ -26,6 +26,7 @@ import cn.iocoder.yudao.framework.acf.core.service.CapabilityRegistry;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityRequestDigestGenerator;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityVisibilityService;
 import cn.iocoder.yudao.framework.acf.core.service.DefaultCapabilityGovernanceService;
+import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolExportService;
 import cn.iocoder.yudao.framework.common.biz.system.permission.PermissionCommonApi;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Validator;
@@ -87,6 +88,12 @@ public class YudaoAcfAutoConfiguration {
     public CapabilityVisibilityService capabilityVisibilityService(CapabilityRegistry capabilityRegistry,
                                                                    CapabilityGovernanceService governanceService) {
         return new CapabilityVisibilityService(capabilityRegistry, governanceService);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(CapabilityToolExportService.class)
+    public CapabilityToolExportService capabilityToolExportService(CapabilityVisibilityService visibilityService) {
+        return new CapabilityToolExportService(visibilityService);
     }
 
     @Bean

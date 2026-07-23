@@ -35,6 +35,7 @@ import cn.iocoder.yudao.framework.acf.core.service.CapabilityRegistry;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityRequestDigestGenerator;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityVisibilityService;
 import cn.iocoder.yudao.framework.acf.core.service.DefaultCapabilityGovernanceService;
+import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolExportService;
 import cn.iocoder.yudao.framework.common.biz.system.permission.PermissionCommonApi;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Validator;
@@ -75,6 +76,7 @@ class YudaoAcfAutoConfigurationTest {
             assertThat(context).hasSingleBean(CapabilityPolicyChain.class);
             assertThat(context).hasSingleBean(CapabilityGovernanceService.class);
             assertThat(context).hasSingleBean(CapabilityVisibilityService.class);
+            assertThat(context).hasSingleBean(CapabilityToolExportService.class);
             assertThat(context).hasSingleBean(CapabilityRequestDigestGenerator.class);
             assertThat(context).hasSingleBean(CapabilityExceptionClassifier.class);
             assertThat(context).hasSingleBean(CapabilityRuntimePolicyService.class);
