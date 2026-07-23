@@ -2,7 +2,7 @@ package cn.iocoder.yudao.module.mes.controller.admin.wm.batch.vo;
 
 import lombok.Data;
 
-import javax.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotNull;
 import java.time.LocalDateTime;
 
 /**

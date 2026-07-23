@@ -20,6 +20,7 @@ import cn.iocoder.yudao.module.system.enums.social.SocialTypeEnum;
 import cn.iocoder.yudao.module.system.framework.justauth.core.AuthRequestFactory;
 import com.binarywang.spring.starter.wxjava.miniapp.properties.WxMaProperties;
 import com.binarywang.spring.starter.wxjava.mp.properties.WxMpProperties;
+import jakarta.annotation.Resource;
 import me.chanjar.weixin.common.bean.WxJsapiSignature;
 import me.chanjar.weixin.common.error.WxError;
 import me.chanjar.weixin.common.error.WxErrorException;
@@ -33,11 +34,9 @@ import me.zhyd.oauth.utils.AuthStateUtils;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.redis.core.StringRedisTemplate;
-
-import javax.annotation.Resource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import static cn.hutool.core.util.RandomUtil.randomEle;
 import static cn.iocoder.yudao.framework.common.util.object.ObjectUtils.cloneIgnoreId;
@@ -62,18 +61,18 @@ public class SocialClientServiceImplTest extends BaseDbUnitTest {
     @Resource
     private SocialClientMapper socialClientMapper;
 
-    @MockBean
+    @MockitoBean
     private AuthRequestFactory authRequestFactory;
 
-    @MockBean
+    @MockitoBean
     private WxMpService wxMpService;
-    @MockBean
+    @MockitoBean
     private WxMpProperties wxMpProperties;
-    @MockBean
+    @MockitoBean
     private StringRedisTemplate stringRedisTemplate;
-    @MockBean
+    @MockitoBean
     private WxMaService wxMaService;
-    @MockBean
+    @MockitoBean
     private WxMaProperties wxMaProperties;
 
     @Test

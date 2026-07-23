@@ -7,10 +7,11 @@ import cn.iocoder.yudao.module.mes.dal.mysql.wm.arrivalnotice.MesWmArrivalNotice
 import cn.iocoder.yudao.module.mes.enums.wm.MesWmArrivalNoticeStatusEnum;
 import cn.iocoder.yudao.module.mes.service.md.vendor.MesMdVendorService;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
-import javax.annotation.Resource;
+import jakarta.annotation.Resource;
+
 import java.math.BigDecimal;
 import java.util.Arrays;
 
@@ -36,9 +37,9 @@ public class MesWmArrivalNoticeServiceImplTest extends BaseDbUnitTest {
     @Resource
     private MesWmArrivalNoticeMapper arrivalNoticeMapper;
 
-    @MockBean
+    @MockitoBean
     private MesWmArrivalNoticeLineService arrivalNoticeLineService;
-    @MockBean
+    @MockitoBean
     private MesMdVendorService vendorService;
 
     @Test

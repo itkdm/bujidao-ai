@@ -11,10 +11,11 @@ import cn.iocoder.yudao.module.mes.service.md.vendor.MesMdVendorService;
 import cn.iocoder.yudao.module.mes.service.pro.workorder.MesProWorkOrderService;
 import cn.iocoder.yudao.module.mes.service.wm.transaction.MesWmTransactionService;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
-import javax.annotation.Resource;
+import jakarta.annotation.Resource;
+
 import java.math.BigDecimal;
 
 import static cn.iocoder.yudao.framework.test.core.util.AssertUtils.assertServiceException;
@@ -39,17 +40,17 @@ public class MesWmOutsourceReceiptServiceImplTest extends BaseDbUnitTest {
     @Resource
     private MesWmOutsourceReceiptMapper outsourceReceiptMapper;
 
-    @MockBean
+    @MockitoBean
     private MesWmOutsourceReceiptLineService outsourceReceiptLineService;
-    @MockBean
+    @MockitoBean
     private MesWmOutsourceReceiptDetailService outsourceReceiptDetailService;
-    @MockBean
+    @MockitoBean
     private MesWmTransactionService wmTransactionService;
-    @MockBean
+    @MockitoBean
     private MesMdVendorService vendorService;
-    @MockBean
+    @MockitoBean
     private MesMdItemService itemService;
-    @MockBean
+    @MockitoBean
     private MesProWorkOrderService workOrderService;
 
     @Test

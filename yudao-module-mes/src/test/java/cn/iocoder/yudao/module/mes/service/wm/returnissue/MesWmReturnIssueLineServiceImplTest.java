@@ -5,12 +5,13 @@ import cn.iocoder.yudao.module.mes.dal.dataobject.wm.returnissue.MesWmReturnIssu
 import cn.iocoder.yudao.module.mes.dal.mysql.wm.returnissue.MesWmReturnIssueLineMapper;
 import cn.iocoder.yudao.module.mes.enums.qc.MesQcCheckResultEnum;
 import cn.iocoder.yudao.module.mes.enums.wm.MesWmQualityStatusEnum;
-import cn.iocoder.yudao.module.mes.service.md.item.MesMdItemService;
+import jakarta.annotation.Resource;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
-import javax.annotation.Resource;
+import cn.iocoder.yudao.module.mes.service.md.item.MesMdItemService;
+
 import java.math.BigDecimal;
 import java.util.List;
 
@@ -32,10 +33,10 @@ public class MesWmReturnIssueLineServiceImplTest extends BaseDbUnitTest {
     @Resource
     private MesWmReturnIssueLineMapper returnIssueLineMapper;
 
-    @MockBean
+    @MockitoBean
     private MesWmReturnIssueService issueService;
 
-    @MockBean
+    @MockitoBean
     private MesMdItemService itemService;
 
     @Test

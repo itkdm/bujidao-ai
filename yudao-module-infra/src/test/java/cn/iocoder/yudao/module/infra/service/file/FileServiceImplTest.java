@@ -10,12 +10,12 @@ import cn.iocoder.yudao.module.infra.controller.admin.file.vo.file.FilePageReqVO
 import cn.iocoder.yudao.module.infra.dal.dataobject.file.FileDO;
 import cn.iocoder.yudao.module.infra.dal.mysql.file.FileMapper;
 import cn.iocoder.yudao.module.infra.framework.file.core.client.FileClient;
+import jakarta.annotation.Resource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
-import javax.annotation.Resource;
 import java.time.LocalDateTime;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -37,7 +37,7 @@ public class FileServiceImplTest extends BaseDbUnitTest {
     @Resource
     private FileMapper fileMapper;
 
-    @MockBean
+    @MockitoBean
     private FileConfigService fileConfigService;
 
     @BeforeEach

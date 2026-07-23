@@ -18,7 +18,6 @@ import cn.iocoder.yudao.module.system.api.dept.dto.DeptRespDTO;
 import cn.iocoder.yudao.module.system.api.user.dto.AdminUserRespDTO;
 import org.flowable.engine.history.HistoricProcessInstance;
 import org.flowable.engine.runtime.ProcessInstance;
-import org.flowable.engine.task.Attachment;
 import org.flowable.task.api.Task;
 import org.flowable.task.api.history.HistoricTaskInstance;
 import org.flowable.task.service.impl.persistence.entity.TaskEntityImpl;
@@ -65,12 +64,10 @@ public interface BpmTaskConvert {
                                                     Map<String, HistoricProcessInstance> processInstanceMap,
                                                     Map<Long, AdminUserRespDTO> userMap,
                                                     Map<Long, DeptRespDTO> deptMap,
-                                                    Map<String, BpmProcessDefinitionInfoDO> processDefinitionInfoMap,
-                                                    Map<String, List<Attachment>> taskAttachmentMap) {
+                                                    Map<String, BpmProcessDefinitionInfoDO> processDefinitionInfoMap) {
         List<BpmTaskRespVO> taskVOList = CollectionUtils.convertList(pageResult.getList(), task -> {
             BpmTaskRespVO taskVO = BeanUtils.toBean(task, BpmTaskRespVO.class);
             taskVO.setStatus(FlowableUtils.getTaskStatus(task)).setReason(FlowableUtils.getTaskReason(task));
-            buildTaskEvidence(taskVO, task, taskAttachmentMap);
             // 用户信息
             AdminUserRespDTO assignUser = userMap.get(NumberUtils.parseLong(task.getAssignee()));
             if (assignUser != null) {
@@ -95,8 +92,7 @@ public interface BpmTaskConvert {
     default List<BpmTaskRespVO> buildTaskListByProcessInstanceId(List<HistoricTaskInstance> taskList,
                                                                  Map<Long, BpmFormDO> formMap,
                                                                  Map<Long, AdminUserRespDTO> userMap,
-                                                                 Map<Long, DeptRespDTO> deptMap,
-                                                                 Map<String, List<Attachment>> taskAttachmentMap) {
+                                                                 Map<Long, DeptRespDTO> deptMap) {
         return CollectionUtils.convertList(taskList, task -> {
             // 特殊：已取消的任务，不返回
             BpmTaskRespVO taskVO = BeanUtils.toBean(task, BpmTaskRespVO.class);
@@ -105,7 +101,6 @@ public interface BpmTaskConvert {
                 return null;
             }
             taskVO.setStatus(taskStatus).setReason(FlowableUtils.getTaskReason(task));
-            buildTaskEvidence(taskVO, task, taskAttachmentMap);
             // 表单信息
             BpmFormDO form = MapUtil.get(formMap, NumberUtils.parseLong(task.getFormKey()), BpmFormDO.class);
             if (form != null) {
@@ -198,20 +193,6 @@ public interface BpmTaskConvert {
             task.setAssigneeUser(BeanUtils.toBean(assignUser, UserSimpleBaseVO.class));
             findAndThen(deptMap, assignUser.getDeptId(), dept -> task.getAssigneeUser().setDeptName(dept.getName()));
         }
-    }
-
-    /**
-     * 构建任务审批证据
-     *
-     * @param taskVO            任务 VO
-     * @param task              历史任务
-     * @param taskAttachmentMap 任务附件 Map
-     */
-    default void buildTaskEvidence(BpmTaskRespVO taskVO, HistoricTaskInstance task,
-                                   Map<String, List<Attachment>> taskAttachmentMap) {
-        taskVO.setSignPicUrl(FlowableUtils.getTaskSignPicUrl(task));
-        taskVO.setAttachments(convertList(
-                taskAttachmentMap != null ? taskAttachmentMap.get(task.getId()) : null, Attachment::getUrl));
     }
 
     /**

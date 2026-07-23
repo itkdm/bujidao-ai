@@ -10,14 +10,14 @@ import cn.iocoder.yudao.module.crm.dal.dataobject.business.CrmBusinessDO;
 import cn.iocoder.yudao.module.crm.service.statistics.CrmStatisticsFunnelService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.annotation.Resource;
+import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import javax.annotation.Resource;
-import javax.validation.Valid;
 import java.util.List;
 
 import static cn.iocoder.yudao.framework.common.pojo.CommonResult.success;
@@ -43,13 +43,6 @@ public class CrmStatisticsFunnelController {
     @PreAuthorize("@ss.hasPermission('crm:statistics-funnel:query')")
     public CommonResult<List<CrmStatisticsBusinessSummaryByEndStatusRespVO>> getBusinessSummaryByEndStatus(@Valid CrmStatisticsFunnelReqVO reqVO) {
         return success(funnelService.getBusinessSummaryByEndStatus(reqVO));
-    }
-
-    @GetMapping("/get-business-summary-by-status")
-    @Operation(summary = "获取商机阶段统计", description = "用于【销售漏斗】页面的【销售漏斗分析】")
-    @PreAuthorize("@ss.hasPermission('crm:statistics-funnel:query')")
-    public CommonResult<List<CrmStatisticsBusinessSummaryByStatusRespVO>> getBusinessSummaryByStatus(@Valid CrmStatisticsFunnelReqVO reqVO) {
-        return success(funnelService.getBusinessSummaryByStatus(reqVO));
     }
 
     @GetMapping("/get-business-summary-by-date")

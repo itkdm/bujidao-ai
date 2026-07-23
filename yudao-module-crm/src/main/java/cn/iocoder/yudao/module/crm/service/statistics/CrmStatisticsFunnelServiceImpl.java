@@ -14,9 +14,9 @@ import cn.iocoder.yudao.module.system.api.dept.DeptApi;
 import cn.iocoder.yudao.module.system.api.dept.dto.DeptRespDTO;
 import cn.iocoder.yudao.module.system.api.user.AdminUserApi;
 import cn.iocoder.yudao.module.system.api.user.dto.AdminUserRespDTO;
+import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 
-import javax.annotation.Resource;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Collections;
@@ -68,18 +68,6 @@ public class CrmStatisticsFunnelServiceImpl implements CrmStatisticsFunnelServic
 
         // 2. 获得统计数据
         return funnelMapper.selectBusinessSummaryListGroupByEndStatus(reqVO);
-    }
-
-    @Override
-    public List<CrmStatisticsBusinessSummaryByStatusRespVO> getBusinessSummaryByStatus(CrmStatisticsFunnelReqVO reqVO) {
-        // 1. 获得用户编号数组
-        reqVO.setUserIds(getUserIds(reqVO));
-        if (CollUtil.isEmpty(reqVO.getUserIds())) {
-            return Collections.emptyList();
-        }
-
-        // 2. 获得统计数据
-        return funnelMapper.selectBusinessSummaryListGroupByStatus(reqVO);
     }
 
     @Override

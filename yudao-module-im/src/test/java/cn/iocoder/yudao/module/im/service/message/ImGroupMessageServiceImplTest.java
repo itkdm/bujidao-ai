@@ -8,14 +8,13 @@ import cn.iocoder.yudao.module.im.controller.admin.message.vo.group.ImGroupMessa
 import cn.iocoder.yudao.module.im.controller.admin.message.vo.group.ImGroupMessageSendReqVO;
 import cn.iocoder.yudao.module.im.dal.dataobject.group.ImGroupDO;
 import cn.iocoder.yudao.module.im.dal.dataobject.group.ImGroupMemberDO;
-import cn.iocoder.yudao.module.im.dal.dataobject.message.content.RecallMessage;
 import cn.iocoder.yudao.module.im.dal.dataobject.message.ImGroupMessageDO;
 import cn.iocoder.yudao.module.im.dal.mysql.message.ImGroupMessageMapper;
-import cn.iocoder.yudao.module.im.enums.ImContentTypeEnum;
 import cn.iocoder.yudao.module.im.enums.ImConversationTypeEnum;
 import cn.iocoder.yudao.module.im.enums.group.ImGroupMemberRoleEnum;
 import cn.iocoder.yudao.module.im.enums.message.ImMessageReceiptStatusEnum;
 import cn.iocoder.yudao.module.im.enums.message.ImMessageStatusEnum;
+import cn.iocoder.yudao.module.im.enums.ImContentTypeEnum;
 import cn.iocoder.yudao.module.im.framework.config.ImProperties;
 import cn.iocoder.yudao.module.im.service.conversation.ImConversationReadService;
 import cn.iocoder.yudao.module.im.service.group.ImGroupMemberService;
@@ -24,6 +23,7 @@ import cn.iocoder.yudao.module.im.service.message.dto.ImGroupMessageSendDTO;
 import cn.iocoder.yudao.module.im.service.sensitiveword.ImSensitiveWordService;
 import cn.iocoder.yudao.module.im.service.websocket.ImWebSocketService;
 import cn.iocoder.yudao.module.im.service.websocket.notification.message.ImGroupMessageNotification;
+import cn.iocoder.yudao.module.im.dal.dataobject.message.content.RecallMessage;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
@@ -32,14 +32,7 @@ import org.mockito.MockedStatic;
 import org.mockito.Spy;
 
 import java.time.LocalDateTime;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 import static cn.iocoder.yudao.module.im.enums.ErrorCodeConstants.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -104,7 +97,7 @@ public class ImGroupMessageServiceImplTest extends BaseMockitoUnitTest {
             when(groupMemberService.validateMemberInGroup(10L, 1L)).thenReturn(member);
 
             when(groupMemberService.getActiveGroupMemberUserIdsByGroupId(10L))
-                    .thenReturn(Arrays.asList(1L, 2L, 3L));
+                    .thenReturn(List.of(1L, 2L, 3L));
             when(groupMessageMapper.insert(any(ImGroupMessageDO.class))).thenAnswer(invocation -> {
                 ImGroupMessageDO msg = invocation.getArgument(0);
                 msg.setId(99L);
@@ -131,7 +124,7 @@ public class ImGroupMessageServiceImplTest extends BaseMockitoUnitTest {
             ImGroupMessageNotification payload = payloadCaptor.getValue();
             assertEquals(ImMessageReceiptStatusEnum.PENDING.getStatus(), payload.getReceiptStatus());
             assertEquals(0, payload.getReadCount());
-            assertEquals(Arrays.asList(1L, 2L, 3L), payload.getReceiverUserIds());
+            assertEquals(List.of(1L, 2L, 3L), payload.getReceiverUserIds());
         }
     }
 
@@ -154,7 +147,7 @@ public class ImGroupMessageServiceImplTest extends BaseMockitoUnitTest {
             when(groupMemberService.validateMemberInGroup(10L, 1L)).thenReturn(member);
             // 成员缓存只返回 {2,3}，漏掉发送者 1
             when(groupMemberService.getActiveGroupMemberUserIdsByGroupId(10L))
-                    .thenReturn(Arrays.asList(2L, 3L));
+                    .thenReturn(List.of(2L, 3L));
             when(groupMessageMapper.insert(any(ImGroupMessageDO.class))).thenAnswer(invocation -> {
                 ImGroupMessageDO msg = invocation.getArgument(0);
                 msg.setId(99L);
@@ -220,10 +213,10 @@ public class ImGroupMessageServiceImplTest extends BaseMockitoUnitTest {
         ImGroupMemberDO member = ImGroupMemberDO.builder().groupId(10L).userId(1L)
                 .status(CommonStatusEnum.ENABLE.getStatus()).build();
         when(groupMemberService.validateMemberInGroup(10L, 1L)).thenReturn(member);
-        when(groupMemberService.getActiveGroupMemberUserIdsByGroupId(10L)).thenReturn(Arrays.asList(1L, 2L, 3L));
+        when(groupMemberService.getActiveGroupMemberUserIdsByGroupId(10L)).thenReturn(List.of(1L, 2L, 3L));
         // 被引用原消息：定向给 {1,2}（对发送人 1 可见，但不覆盖广播受众 {1,2,3}）
         ImGroupMessageDO original = ImGroupMessageDO.builder().id(500L).groupId(10L).senderId(2L)
-                .status(ImMessageStatusEnum.NORMAL.getStatus()).receiverUserIds(Arrays.asList(1L, 2L))
+                .status(ImMessageStatusEnum.NORMAL.getStatus()).receiverUserIds(List.of(1L, 2L))
                 .type(ImContentTypeEnum.TEXT.getType()).content("{\"content\":\"密\"}")
                 .sendTime(LocalDateTime.now()).build();
         when(groupMessageMapper.selectById(500L)).thenReturn(original);
@@ -247,9 +240,9 @@ public class ImGroupMessageServiceImplTest extends BaseMockitoUnitTest {
         ImGroupMemberDO member = ImGroupMemberDO.builder().groupId(10L).userId(1L)
                 .status(CommonStatusEnum.ENABLE.getStatus()).build();
         when(groupMemberService.validateMemberInGroup(10L, 1L)).thenReturn(member);
-        when(groupMemberService.getActiveGroupMemberUserIdsByGroupId(10L)).thenReturn(Arrays.asList(1L, 2L, 3L));
+        when(groupMemberService.getActiveGroupMemberUserIdsByGroupId(10L)).thenReturn(List.of(1L, 2L, 3L));
         ImGroupMessageDO original = ImGroupMessageDO.builder().id(500L).groupId(10L).senderId(2L)
-                .status(ImMessageStatusEnum.NORMAL.getStatus()).receiverUserIds(Arrays.asList(1L, 2L, 3L))
+                .status(ImMessageStatusEnum.NORMAL.getStatus()).receiverUserIds(List.of(1L, 2L, 3L))
                 .type(ImContentTypeEnum.TEXT.getType()).content("{\"content\":\"公开\"}")
                 .sendTime(LocalDateTime.now()).build();
         when(groupMessageMapper.selectById(500L)).thenReturn(original);
@@ -274,19 +267,19 @@ public class ImGroupMessageServiceImplTest extends BaseMockitoUnitTest {
                 .groupId(10L).userId(1L)
                 .status(CommonStatusEnum.ENABLE.getStatus())
                 .joinTime(now.minusDays(10)).build();
-        when(groupMemberService.getGroupMemberListByUserId(1L)).thenReturn(Arrays.asList(member));
+        when(groupMemberService.getGroupMemberListByUserId(1L)).thenReturn(List.of(member));
 
         ImGroupMessageDO low = ImGroupMessageDO.builder()
-                .id(5L).groupId(10L).senderId(2L).receiverUserIds(Arrays.asList(1L))
+                .id(5L).groupId(10L).senderId(2L).receiverUserIds(List.of(1L))
                 .status(ImMessageStatusEnum.NORMAL.getStatus())
                 .sendTime(now.minusHours(2)).build();
         ImGroupMessageDO high = ImGroupMessageDO.builder()
-                .id(10L).groupId(10L).senderId(2L).receiverUserIds(Arrays.asList(1L))
+                .id(10L).groupId(10L).senderId(2L).receiverUserIds(List.of(1L))
                 .status(ImMessageStatusEnum.NORMAL.getStatus())
                 .sendTime(now.minusHours(1)).build();
         when(groupMessageMapper.selectListByMinId(eq(1L), anyCollection(), eq(0L),
                 any(LocalDateTime.class), eq(100)))
-                .thenReturn(Arrays.asList(low, high));
+                .thenReturn(List.of(low, high));
 
         List<ImGroupMessageDO> result = groupMessageService.pullGroupMessageList(1L, 0L, 100);
 
@@ -304,17 +297,17 @@ public class ImGroupMessageServiceImplTest extends BaseMockitoUnitTest {
                 .groupId(10L).userId(1L)
                 .status(CommonStatusEnum.ENABLE.getStatus())
                 .joinTime(now.minusDays(10)).build();
-        when(groupMemberService.getGroupMemberListByUserId(1L)).thenReturn(Arrays.asList(member));
+        when(groupMemberService.getGroupMemberListByUserId(1L)).thenReturn(List.of(member));
 
         ImGroupMessageDO receiptMsg = ImGroupMessageDO.builder()
                 .id(100L).groupId(10L).senderId(1L)
-                .receiverUserIds(Arrays.asList(1L, 2L, 3L))
+                .receiverUserIds(List.of(1L, 2L, 3L))
                 .status(ImMessageStatusEnum.NORMAL.getStatus())
                 .receiptStatus(ImMessageReceiptStatusEnum.PENDING.getStatus())
                 .sendTime(now.minusHours(1)).build();
         when(groupMessageMapper.selectListByMinId(eq(1L), anyCollection(), eq(0L),
                 any(LocalDateTime.class), eq(100)))
-                .thenReturn(Arrays.asList(receiptMsg));
+                .thenReturn(List.of(receiptMsg));
 
         Map<Long, Long> positions = new HashMap<>();
         positions.put(1L, 100L);
@@ -323,7 +316,7 @@ public class ImGroupMessageServiceImplTest extends BaseMockitoUnitTest {
         when(conversationReadService.getUserReadMessageIdMap(eq(ImConversationTypeEnum.GROUP.getType()), eq(10L)))
                 .thenReturn(positions);
 
-        List<ImGroupMemberDO> allMembers = Arrays.asList(
+        List<ImGroupMemberDO> allMembers = List.of(
                 member,
                 ImGroupMemberDO.builder().groupId(10L).userId(2L)
                         .status(CommonStatusEnum.ENABLE.getStatus())
@@ -349,17 +342,17 @@ public class ImGroupMessageServiceImplTest extends BaseMockitoUnitTest {
                 .groupId(10L).userId(1L)
                 .status(CommonStatusEnum.ENABLE.getStatus())
                 .joinTime(now.minusDays(10)).build();
-        when(groupMemberService.getGroupMemberListByUserId(1L)).thenReturn(Arrays.asList(member));
+        when(groupMemberService.getGroupMemberListByUserId(1L)).thenReturn(List.of(member));
 
         ImGroupMessageDO noReceiptMsg = ImGroupMessageDO.builder()
                 .id(100L).groupId(10L).senderId(1L)
-                .receiverUserIds(Arrays.asList(1L, 2L, 3L))
+                .receiverUserIds(List.of(1L, 2L, 3L))
                 .status(ImMessageStatusEnum.NORMAL.getStatus())
                 .receiptStatus(ImMessageReceiptStatusEnum.NO_RECEIPT.getStatus())
                 .sendTime(now.minusHours(1)).build();
         when(groupMessageMapper.selectListByMinId(eq(1L), anyCollection(), eq(0L),
                 any(LocalDateTime.class), eq(100)))
-                .thenReturn(Arrays.asList(noReceiptMsg));
+                .thenReturn(List.of(noReceiptMsg));
 
         List<ImGroupMessageDO> result = groupMessageService.pullGroupMessageList(1L, 0L, 100);
 
@@ -392,7 +385,7 @@ public class ImGroupMessageServiceImplTest extends BaseMockitoUnitTest {
             when(groupMessageMapper.insert(any(ImGroupMessageDO.class))).thenReturn(1);
 
             when(groupMemberService.getActiveGroupMemberUserIdsByGroupId(10L))
-                    .thenReturn(Arrays.asList(1L, 2L));
+                    .thenReturn(List.of(1L, 2L));
 
             // 调用
             ImGroupMessageDO result = groupMessageService.recallGroupMessage(1L, 50L);
@@ -469,7 +462,7 @@ public class ImGroupMessageServiceImplTest extends BaseMockitoUnitTest {
     public void testReadMessages_messageInvisible() {
         // 准备：消息不在用户接收快照内
         when(groupMessageMapper.selectById(100L)).thenReturn(ImGroupMessageDO.builder()
-                .id(100L).groupId(10L).senderId(2L).receiverUserIds(Arrays.asList(2L))
+                .id(100L).groupId(10L).senderId(2L).receiverUserIds(List.of(2L))
                 .sendTime(LocalDateTime.now()).build());
 
         // 调用并断言
@@ -491,7 +484,7 @@ public class ImGroupMessageServiceImplTest extends BaseMockitoUnitTest {
         // 准备：消息由用户 5 发，快照可见范围为 {1,2,5}（用户 3 不在快照内 → 不可见）
         ImGroupMessageDO message = ImGroupMessageDO.builder()
                 .id(80L).groupId(10L).senderId(5L)
-                .receiverUserIds(Arrays.asList(1L, 2L, 5L))
+                .receiverUserIds(List.of(1L, 2L, 5L))
                 .sendTime(LocalDateTime.of(2026, 4, 12, 10, 0, 0)).build();
         when(groupMessageMapper.selectById(80L)).thenReturn(message);
 
@@ -500,7 +493,7 @@ public class ImGroupMessageServiceImplTest extends BaseMockitoUnitTest {
         // 用户 2: 在快照内
         // 用户 3: 不在快照内 → 不可见
         // 用户 5: 发送者，不计入回执
-        List<ImGroupMemberDO> allMembers = Arrays.asList(
+        List<ImGroupMemberDO> allMembers = List.of(
                 currentMember,
                 ImGroupMemberDO.builder().groupId(10L).userId(1L)
                         .status(CommonStatusEnum.ENABLE.getStatus())
@@ -571,7 +564,7 @@ public class ImGroupMessageServiceImplTest extends BaseMockitoUnitTest {
             ImGroupMemberDO member = ImGroupMemberDO.builder()
                     .groupId(10L).userId(1L).status(CommonStatusEnum.ENABLE.getStatus()).build();
             when(groupMemberService.validateMemberInGroup(10L, 1L)).thenReturn(member);
-            when(groupMemberService.getActiveGroupMemberUserIdsByGroupId(10L)).thenReturn(Arrays.asList(1L));
+            when(groupMemberService.getActiveGroupMemberUserIdsByGroupId(10L)).thenReturn(List.of(1L));
             when(groupMessageMapper.insert(any(ImGroupMessageDO.class))).thenReturn(1);
 
             // 调用
@@ -646,14 +639,14 @@ public class ImGroupMessageServiceImplTest extends BaseMockitoUnitTest {
 
             // 准备：消息对用户可见；已读位置从 5 前进到 100
             when(groupMessageMapper.selectById(100L)).thenReturn(ImGroupMessageDO.builder()
-                    .id(100L).groupId(10L).senderId(2L).receiverUserIds(Arrays.asList(1L))
+                    .id(100L).groupId(10L).senderId(2L).receiverUserIds(List.of(1L))
                     .sendTime(LocalDateTime.now()).build());
             when(conversationReadService.getConversationReadMessageId(1L, ImConversationTypeEnum.GROUP.getType(), 10L))
                     .thenReturn(5L);
             when(conversationReadService.updateConversationReadPosition(1L, ImConversationTypeEnum.GROUP.getType(), 10L, 100L))
                     .thenReturn(true);
             // readGroupMessageEvent 内部会调 selectListByGroupIdAndPendingReceipt → 返回空简化流程
-            when(groupMessageMapper.selectListByGroupIdAndPendingReceipt(10L, 5L, 100L)).thenReturn(Collections.emptyList());
+            when(groupMessageMapper.selectListByGroupIdAndPendingReceipt(10L, 5L, 100L)).thenReturn(List.of());
 
             // 调用
             groupMessageService.readGroupMessages(1L, 10L, 100L);
@@ -708,7 +701,7 @@ public class ImGroupMessageServiceImplTest extends BaseMockitoUnitTest {
             ImGroupMemberDO member = ImGroupMemberDO.builder()
                     .groupId(10L).userId(1L).status(CommonStatusEnum.ENABLE.getStatus()).build();
             when(groupMemberService.validateMemberInGroup(10L, 1L)).thenReturn(member);
-            when(groupMemberService.getActiveGroupMemberUserIdsByGroupId(10L)).thenReturn(Arrays.asList(1L, 2L));
+            when(groupMemberService.getActiveGroupMemberUserIdsByGroupId(10L)).thenReturn(List.of(1L, 2L));
 
             ImGroupMessageDO result = groupMessageService.sendGroupMessage(1L, reqVO);
 
@@ -721,7 +714,7 @@ public class ImGroupMessageServiceImplTest extends BaseMockitoUnitTest {
     public void testReadGroupMessages_cursorAlreadyAhead() {
         // 准备：已读游标已 >= 目标，直接返回
         when(groupMessageMapper.selectById(100L)).thenReturn(ImGroupMessageDO.builder()
-                .id(100L).groupId(10L).senderId(2L).receiverUserIds(Arrays.asList(1L))
+                .id(100L).groupId(10L).senderId(2L).receiverUserIds(List.of(1L))
                 .sendTime(LocalDateTime.now()).build());
         when(conversationReadService.getConversationReadMessageId(1L, ImConversationTypeEnum.GROUP.getType(), 10L))
                 .thenReturn(200L);
@@ -758,13 +751,13 @@ public class ImGroupMessageServiceImplTest extends BaseMockitoUnitTest {
 
             // 准备：历史消息的接收快照包含用户
             when(groupMessageMapper.selectById(100L)).thenReturn(ImGroupMessageDO.builder()
-                    .id(100L).groupId(10L).senderId(2L).receiverUserIds(Arrays.asList(1L, 2L))
+                    .id(100L).groupId(10L).senderId(2L).receiverUserIds(List.of(1L, 2L))
                     .sendTime(LocalDateTime.now().minusMinutes(1)).build());
             when(conversationReadService.getConversationReadMessageId(1L, ImConversationTypeEnum.GROUP.getType(), 10L))
                     .thenReturn(0L);
             when(conversationReadService.updateConversationReadPosition(1L, ImConversationTypeEnum.GROUP.getType(), 10L, 100L))
                     .thenReturn(true);
-            when(groupMessageMapper.selectListByGroupIdAndPendingReceipt(10L, 0L, 100L)).thenReturn(Collections.emptyList());
+            when(groupMessageMapper.selectListByGroupIdAndPendingReceipt(10L, 0L, 100L)).thenReturn(List.of());
 
             // 调用
             groupMessageService.readGroupMessages(1L, 10L, 100L);
@@ -779,7 +772,7 @@ public class ImGroupMessageServiceImplTest extends BaseMockitoUnitTest {
     public void testReadGroupMessages_quitMemberInvisibleMessage() {
         // 准备：消息不在历史接收快照内
         when(groupMessageMapper.selectById(100L)).thenReturn(ImGroupMessageDO.builder()
-                .id(100L).groupId(10L).senderId(2L).receiverUserIds(Arrays.asList(2L))
+                .id(100L).groupId(10L).senderId(2L).receiverUserIds(List.of(2L))
                 .sendTime(LocalDateTime.now()).build());
 
         // 调用并断言
@@ -797,13 +790,13 @@ public class ImGroupMessageServiceImplTest extends BaseMockitoUnitTest {
         //       已读位置 1→100、2→100 → 全部已读 → 迁移为 DONE
         ImGroupMessageDO pending = ImGroupMessageDO.builder()
                 .id(100L).groupId(10L).senderId(5L)
-                .receiverUserIds(Arrays.asList(5L, 1L, 2L))
+                .receiverUserIds(List.of(5L, 1L, 2L))
                 .sendTime(LocalDateTime.now().minusMinutes(1))
                 .receiptStatus(ImMessageReceiptStatusEnum.PENDING.getStatus())
                 .status(ImMessageStatusEnum.NORMAL.getStatus()).build();
         when(groupMessageMapper.selectListByGroupIdAndPendingReceipt(10L, 0L, 100L))
-                .thenReturn(Arrays.asList(pending));
-        List<ImGroupMemberDO> activeMembers = Arrays.asList(
+                .thenReturn(List.of(pending));
+        List<ImGroupMemberDO> activeMembers = List.of(
                 ImGroupMemberDO.builder().groupId(10L).userId(5L)
                         .status(CommonStatusEnum.ENABLE.getStatus())
                         .joinTime(LocalDateTime.now().minusDays(10)).build(),
@@ -838,13 +831,13 @@ public class ImGroupMessageServiceImplTest extends BaseMockitoUnitTest {
         // 准备：用户 2 还没读到 100 → 仍为 PENDING，不更新 DB
         ImGroupMessageDO pending = ImGroupMessageDO.builder()
                 .id(100L).groupId(10L).senderId(5L)
-                .receiverUserIds(Arrays.asList(5L, 1L, 2L))
+                .receiverUserIds(List.of(5L, 1L, 2L))
                 .sendTime(LocalDateTime.now().minusMinutes(1))
                 .receiptStatus(ImMessageReceiptStatusEnum.PENDING.getStatus())
                 .status(ImMessageStatusEnum.NORMAL.getStatus()).build();
         when(groupMessageMapper.selectListByGroupIdAndPendingReceipt(10L, 0L, 100L))
-                .thenReturn(Arrays.asList(pending));
-        List<ImGroupMemberDO> activeMembers = Arrays.asList(
+                .thenReturn(List.of(pending));
+        List<ImGroupMemberDO> activeMembers = List.of(
                 ImGroupMemberDO.builder().groupId(10L).userId(5L)
                         .status(CommonStatusEnum.ENABLE.getStatus())
                         .joinTime(LocalDateTime.now().minusDays(10)).build(),
@@ -879,7 +872,7 @@ public class ImGroupMessageServiceImplTest extends BaseMockitoUnitTest {
                 .setGroupId(10L).setType(ImContentTypeEnum.RECALL.getType())
                 .setContent("{\"messageId\":1}");
         when(groupMemberService.getActiveGroupMemberUserIdsByGroupId(10L))
-                .thenReturn(Arrays.asList(1L, 2L, 3L, 4L));
+                .thenReturn(List.of(1L, 2L, 3L, 4L));
 
         groupMessageService.sendGroupMessage(1L, dto);
 
@@ -896,9 +889,9 @@ public class ImGroupMessageServiceImplTest extends BaseMockitoUnitTest {
         ImGroupMessageSendDTO dto = new ImGroupMessageSendDTO()
                 .setGroupId(10L).setType(ImContentTypeEnum.RECALL.getType())
                 .setContent("{\"messageId\":1}")
-                .setReceiverUserIds(Arrays.asList(2L, 3L));
+                .setReceiverUserIds(List.of(2L, 3L));
         when(groupMemberService.getActiveGroupMemberUserIdsByGroupId(10L))
-                .thenReturn(Arrays.asList(1L, 2L, 3L, 4L));
+                .thenReturn(List.of(1L, 2L, 3L, 4L));
 
         groupMessageService.sendGroupMessage(1L, dto);
 
@@ -915,9 +908,9 @@ public class ImGroupMessageServiceImplTest extends BaseMockitoUnitTest {
         ImGroupMessageSendDTO dto = new ImGroupMessageSendDTO()
                 .setGroupId(10L).setType(ImContentTypeEnum.RECALL.getType())
                 .setContent("{\"messageId\":1}")
-                .setReceiverUserIds(Arrays.asList(2L, 3L));
+                .setReceiverUserIds(List.of(2L, 3L));
         when(groupMemberService.getActiveGroupMemberUserIdsByGroupId(10L))
-                .thenReturn(Arrays.asList(1L, 2L, 3L, 4L));
+                .thenReturn(List.of(1L, 2L, 3L, 4L));
 
         groupMessageService.sendGroupMessage(99L, dto);
 
@@ -935,7 +928,7 @@ public class ImGroupMessageServiceImplTest extends BaseMockitoUnitTest {
         ImGroupMessageSendDTO dto = new ImGroupMessageSendDTO()
                 .setGroupId(10L).setType(ImContentTypeEnum.RECALL.getType())
                 .setContent(new RecallMessage().setMessageId(50L));
-        when(groupMemberService.getActiveGroupMemberUserIdsByGroupId(10L)).thenReturn(Arrays.asList(1L));
+        when(groupMemberService.getActiveGroupMemberUserIdsByGroupId(10L)).thenReturn(List.of(1L));
 
         groupMessageService.sendGroupMessage(1L, dto);
 
@@ -959,7 +952,7 @@ public class ImGroupMessageServiceImplTest extends BaseMockitoUnitTest {
         ImGroupMessageSendDTO dto = new ImGroupMessageSendDTO()
                 .setGroupId(10L).setType(ImContentTypeEnum.RECALL.getType())
                 .setContent("{\"messageId\":50}").setReceipt(true);
-        when(groupMemberService.getActiveGroupMemberUserIdsByGroupId(10L)).thenReturn(Arrays.asList(1L));
+        when(groupMemberService.getActiveGroupMemberUserIdsByGroupId(10L)).thenReturn(List.of(1L));
 
         groupMessageService.sendGroupMessage(1L, dto);
 
@@ -973,7 +966,7 @@ public class ImGroupMessageServiceImplTest extends BaseMockitoUnitTest {
         // 准备：persistent=false 类型（RECEIPT 回执）→ 不入库，仅推送
         ImGroupMessageSendDTO dto = new ImGroupMessageSendDTO()
                 .setGroupId(10L).setType(ImContentTypeEnum.RECEIPT.getType());
-        when(groupMemberService.getActiveGroupMemberUserIdsByGroupId(10L)).thenReturn(Arrays.asList(1L, 2L));
+        when(groupMemberService.getActiveGroupMemberUserIdsByGroupId(10L)).thenReturn(List.of(1L, 2L));
 
         groupMessageService.sendGroupMessage(1L, dto);
 
@@ -985,7 +978,7 @@ public class ImGroupMessageServiceImplTest extends BaseMockitoUnitTest {
     public void testSendGroupMessage_dto_groupMemberNicknameUpdateNotInserted() {
         // 准备：成员昵称变更只做在线同步，不入库
         ImGroupMessageSendDTO dto = ImGroupMessageSendDTO.ofGroupMemberNicknameUpdate(10L, 1L, "群昵称");
-        when(groupMemberService.getActiveGroupMemberUserIdsByGroupId(10L)).thenReturn(Arrays.asList(1L, 2L));
+        when(groupMemberService.getActiveGroupMemberUserIdsByGroupId(10L)).thenReturn(List.of(1L, 2L));
 
         groupMessageService.sendGroupMessage(1L, dto);
 
@@ -998,7 +991,7 @@ public class ImGroupMessageServiceImplTest extends BaseMockitoUnitTest {
     @Test
     public void testSendGroupMessage_threeArg_explicitTargetsBypassActiveMembers() {
         // 准备：调用方传入显式 targets（解散场景成员已被批量 DISABLE，必须按移除前快照推送）
-        Set<Long> targets = new HashSet<>(Arrays.asList(1L, 2L, 3L));
+        Set<Long> targets = Set.of(1L, 2L, 3L);
         ImGroupMessageSendDTO dto = new ImGroupMessageSendDTO()
                 .setGroupId(10L).setType(ImContentTypeEnum.GROUP_DISSOLVE.getType()).setContent("{}");
 
@@ -1025,9 +1018,9 @@ public class ImGroupMessageServiceImplTest extends BaseMockitoUnitTest {
         reqVO.setMaxId(100L);
         reqVO.setLimit(20);
 
-        List<ImGroupMessageDO> mockList = Arrays.asList(
+        List<ImGroupMessageDO> mockList = List.of(
                 ImGroupMessageDO.builder().id(99L).groupId(10L).senderId(2L)
-                        .receiverUserIds(Arrays.asList(1L)).sendTime(LocalDateTime.now()).build()
+                        .receiverUserIds(List.of(1L)).sendTime(LocalDateTime.now()).build()
         );
         when(groupMessageMapper.selectHistoryListByUser(1L, 10L, 100L, 20)).thenReturn(mockList);
 

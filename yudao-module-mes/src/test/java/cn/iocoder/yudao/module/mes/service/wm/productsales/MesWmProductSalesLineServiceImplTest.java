@@ -5,13 +5,13 @@ import cn.iocoder.yudao.module.mes.dal.dataobject.wm.productsales.MesWmProductSa
 import cn.iocoder.yudao.module.mes.dal.mysql.wm.productsales.MesWmProductSalesLineMapper;
 import cn.iocoder.yudao.module.mes.enums.qc.MesQcCheckResultEnum;
 import cn.iocoder.yudao.module.mes.enums.wm.MesWmQualityStatusEnum;
+import jakarta.annotation.Resource;
+import org.junit.jupiter.api.Test;
+import org.springframework.context.annotation.Import;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+
 import cn.iocoder.yudao.module.mes.service.md.item.MesMdItemService;
 import cn.iocoder.yudao.module.mes.service.wm.batch.MesWmBatchService;
-import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.context.annotation.Import;
-
-import javax.annotation.Resource;
 
 import static cn.iocoder.yudao.framework.test.core.util.RandomUtils.randomLongId;
 import static cn.iocoder.yudao.framework.test.core.util.RandomUtils.randomPojo;
@@ -32,15 +32,15 @@ public class MesWmProductSalesLineServiceImplTest extends BaseDbUnitTest {
     @Resource
     private MesWmProductSalesLineMapper productSalesLineMapper;
 
-    @MockBean
+    @MockitoBean
     private MesWmProductSalesService productSalesService;
 
-    @MockBean
+    @MockitoBean
     private MesWmProductSalesDetailService productSalesDetailService;
 
-    @MockBean
+    @MockitoBean
     private MesMdItemService itemService;
-    @MockBean
+    @MockitoBean
     private MesWmBatchService batchService;
 
     @Test

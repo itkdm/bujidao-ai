@@ -9,7 +9,7 @@ import me.chanjar.weixin.mp.api.WxMpService;
 import me.chanjar.weixin.mp.bean.message.WxMpXmlMessage;
 import me.chanjar.weixin.mp.bean.message.WxMpXmlOutMessage;
 
-import javax.validation.Valid;
+import jakarta.validation.Valid;
 
 /**
  * 公众号消息 Service 接口

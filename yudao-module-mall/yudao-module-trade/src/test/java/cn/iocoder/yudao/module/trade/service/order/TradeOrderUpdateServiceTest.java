@@ -31,13 +31,13 @@ import cn.iocoder.yudao.module.trade.service.message.TradeMessageServiceImpl;
 import cn.iocoder.yudao.module.trade.service.order.handler.TradeOrderHandler;
 import cn.iocoder.yudao.module.trade.service.price.TradePriceServiceImpl;
 import cn.iocoder.yudao.module.trade.service.price.calculator.TradePriceCalculator;
+import jakarta.annotation.Resource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
-import javax.annotation.Resource;
 import java.time.Duration;
 
 import static cn.iocoder.yudao.framework.test.core.util.AssertUtils.assertPojoEquals;
@@ -67,34 +67,34 @@ public class TradeOrderUpdateServiceTest extends BaseDbUnitTest {
     @Resource
     private TradeOrderItemMapper tradeOrderItemMapper;
 
-    @MockBean
+    @MockitoBean
     private MemberUserApi memberUserApi;
-    @MockBean
+    @MockitoBean
     private ProductSpuApi productSpuApi;
-    @MockBean
+    @MockitoBean
     private ProductSkuApi productSkuApi;
-    @MockBean
+    @MockitoBean
     private ProductCommentApi productCommentApi;
-    //    @MockBean
+    //    @MockitoBean
 //    private PriceApi priceApi;
-    @MockBean
+    @MockitoBean
     private PayOrderApi payOrderApi;
-    @MockBean
+    @MockitoBean
     private MemberAddressApi addressApi;
-    @MockBean
+    @MockitoBean
     private CouponApi couponApi;
 
-    @MockBean
+    @MockitoBean
     private TradeOrderProperties tradeOrderProperties;
-    @MockBean
+    @MockitoBean
     private TradeNoRedisDAO tradeNoRedisDAO;
-    @MockBean
+    @MockitoBean
     private TradeOrderHandler tradeOrderHandler;
-    @MockBean
+    @MockitoBean
     private TradePriceCalculator tradePriceCalculator;
-    @MockBean
+    @MockitoBean
     private NotifyMessageSendApi notifyMessageSendApi;
-    @MockBean
+    @MockitoBean
     private DeliveryExpressService deliveryExpressService;
 
     @BeforeEach

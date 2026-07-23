@@ -28,13 +28,13 @@ import cn.iocoder.yudao.module.im.service.websocket.notification.message.ImPriva
 import cn.iocoder.yudao.module.im.dal.dataobject.message.content.QuoteMessage;
 import cn.iocoder.yudao.module.im.dal.dataobject.message.content.RecallMessage;
 import cn.iocoder.yudao.module.im.util.ImMessageUtils;
+import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
-import javax.annotation.Resource;
 import java.time.LocalDateTime;
 import java.util.List;
 

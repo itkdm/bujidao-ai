@@ -11,6 +11,7 @@ import cn.iocoder.yudao.module.im.dal.mysql.group.ImGroupMemberMapper;
 import cn.iocoder.yudao.module.im.enums.group.ImGroupMemberRoleEnum;
 import cn.iocoder.yudao.module.im.service.message.ImGroupMessageService;
 import cn.iocoder.yudao.module.im.service.message.dto.ImGroupMessageSendDTO;
+import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
@@ -19,7 +20,6 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 
-import javax.annotation.Resource;
 import java.time.LocalDateTime;
 import java.util.*;
 

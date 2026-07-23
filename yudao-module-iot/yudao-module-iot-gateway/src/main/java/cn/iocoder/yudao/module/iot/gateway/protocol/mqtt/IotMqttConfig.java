@@ -1,9 +1,8 @@
 package cn.iocoder.yudao.module.iot.gateway.protocol.mqtt;
 
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
 import lombok.Data;
-
-import javax.validation.constraints.Min;
-import javax.validation.constraints.NotNull;
 
 /**
  * IoT 网关 MQTT 协议配置

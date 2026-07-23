@@ -1,9 +1,8 @@
 package cn.iocoder.yudao.module.promotion.controller.admin.point.vo.product;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.NotNull;
 import lombok.Data;
-
-import javax.validation.constraints.NotNull;
 
 @Schema(description = "管理后台 - 积分商城商品新增/修改 Request VO")
 @Data

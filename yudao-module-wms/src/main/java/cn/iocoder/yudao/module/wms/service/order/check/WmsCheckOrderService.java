@@ -4,8 +4,7 @@ import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.module.wms.controller.admin.order.check.vo.order.WmsCheckOrderPageReqVO;
 import cn.iocoder.yudao.module.wms.controller.admin.order.check.vo.order.WmsCheckOrderSaveReqVO;
 import cn.iocoder.yudao.module.wms.dal.dataobject.order.check.WmsCheckOrderDO;
-
-import javax.validation.Valid;
+import jakarta.validation.Valid;
 
 /**
  * WMS 盘库单 Service 接口

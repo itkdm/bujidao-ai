@@ -5,13 +5,12 @@ import cn.hutool.core.net.url.UrlBuilder;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.http.HttpRequest;
 import cn.hutool.http.HttpResponse;
-import lombok.SneakyThrows;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.util.StringUtils;
 import org.springframework.web.util.UriComponents;
 import org.springframework.web.util.UriComponentsBuilder;
 import org.springframework.web.util.UriUtils;
 
-import javax.servlet.http.HttpServletRequest;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
@@ -32,9 +31,8 @@ public class HttpUtils {
      * @param value 参数
      * @return 编码后的参数
      */
-    @SneakyThrows
     public static String encodeUtf8(String value) {
-        return URLEncoder.encode(value, StandardCharsets.UTF_8.name());
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
     /**
@@ -45,9 +43,8 @@ public class HttpUtils {
      * @param value 参数
      * @return 解码后的参数
      */
-    @SneakyThrows
     public static String decodeUtf8(String value) {
-        return URLDecoder.decode(value, StandardCharsets.UTF_8.name());
+        return URLDecoder.decode(value, StandardCharsets.UTF_8);
     }
 
     /**
@@ -58,14 +55,13 @@ public class HttpUtils {
      * @param path URL 路径
      * @return 解码后的路径
      */
-    @SneakyThrows
     public static String decodeUrlPath(String path) {
         if (StrUtil.isEmpty(path)) {
             return path;
         }
         // 先将 + 替换为 %2B，避免被 URLDecoder 解码为空格
         String encoded = path.replace("+", "%2B");
-        return URLDecoder.decode(encoded, StandardCharsets.UTF_8.name());
+        return URLDecoder.decode(encoded, StandardCharsets.UTF_8);
     }
 
     /**

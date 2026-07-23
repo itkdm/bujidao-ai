@@ -9,12 +9,12 @@ import cn.iocoder.yudao.module.system.dal.dataobject.sms.SmsCodeDO;
 import cn.iocoder.yudao.module.system.dal.mysql.sms.SmsCodeMapper;
 import cn.iocoder.yudao.module.system.enums.sms.SmsSceneEnum;
 import cn.iocoder.yudao.module.system.framework.sms.config.SmsCodeProperties;
+import jakarta.annotation.Resource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
-import javax.annotation.Resource;
 import java.time.Duration;
 import java.time.LocalDateTime;
 
@@ -38,9 +38,9 @@ public class SmsCodeServiceImplTest extends BaseDbUnitTest {
     @Resource
     private SmsCodeMapper smsCodeMapper;
 
-    @MockBean
+    @MockitoBean
     private SmsCodeProperties smsCodeProperties;
-    @MockBean
+    @MockitoBean
     private SmsSendService smsSendService;
 
     @BeforeEach

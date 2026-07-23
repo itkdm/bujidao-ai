@@ -27,13 +27,13 @@ import cn.iocoder.yudao.module.mes.service.wm.transaction.dto.MesWmTransactionSa
 import cn.iocoder.yudao.module.mes.service.wm.warehouse.MesWmWarehouseAreaService;
 import cn.iocoder.yudao.module.mes.service.wm.warehouse.MesWmWarehouseLocationService;
 import cn.iocoder.yudao.module.mes.service.wm.warehouse.MesWmWarehouseService;
+import jakarta.annotation.Resource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
-import javax.annotation.Resource;
 import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.Collections;
@@ -62,23 +62,23 @@ public class MesWmItemConsumeServiceImplTest extends BaseDbUnitTest {
     @Resource
     private MesWmItemConsumeMapper itemConsumeMapper;
 
-    @MockBean
+    @MockitoBean
     private MesWmItemConsumeLineService itemConsumeLineService;
-    @MockBean
+    @MockitoBean
     private MesWmItemConsumeDetailService itemConsumeDetailService;
-    @MockBean
+    @MockitoBean
     private MesProRouteProductBomService routeProductBomService;
-    @MockBean
+    @MockitoBean
     private MesProRouteService routeService;
-    @MockBean
+    @MockitoBean
     private MesWmTransactionService wmTransactionService;
-    @MockBean
+    @MockitoBean
     private MesWmWarehouseService warehouseService;
-    @MockBean
+    @MockitoBean
     private MesWmWarehouseLocationService locationService;
-    @MockBean
+    @MockitoBean
     private MesWmWarehouseAreaService areaService;
-    @MockBean
+    @MockitoBean
     private MesWmMaterialStockService materialStockService;
 
     // ========== 公共 mock 数据 ==========
