@@ -22,4 +22,7 @@ public class CapabilityInvokeCommand {
     /** 原始调用参数，由执行器按能力声明的参数类型完成转换 */
     private Object arguments;
 
+    /** 调用治理上下文 */
+    private CapabilityContext context;
+
 }

@@ -1,7 +1,9 @@
 package cn.iocoder.yudao.framework.acf.core.service;
 
+import cn.iocoder.yudao.framework.acf.core.model.CapabilityContext;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityDefinition;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityInvokeCommand;
+import cn.iocoder.yudao.framework.acf.core.model.CapabilityPolicyResult;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -14,13 +16,14 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Type;
 import java.util.Comparator;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
  * ACF 基础能力执行器
  *
- * 负责把外部参数转换为能力方法声明的 Java 类型，完成 Bean Validation 校验并调用已注册方法。
- * 权限、确认、幂等、审计与运行时策略由后续治理链在该执行入口外扩展。
+ * 负责执行调用前治理，把外部参数转换为能力方法声明的 Java 类型，
+ * 完成 Bean Validation 校验并调用已注册方法。
  *
  * @author bujidao
  */
@@ -29,9 +32,12 @@ public class CapabilityExecutor {
 
     public static final String ERROR_BAD_REQUEST = "BAD_REQUEST";
     public static final String ERROR_CAPABILITY_NOT_FOUND = "CAPABILITY_NOT_FOUND";
+    public static final String ERROR_POLICY = "POLICY_ERROR";
+    public static final String ERROR_POLICY_DENIED = "POLICY_DENIED";
     public static final String ERROR_INVOKE = "INVOKE_ERROR";
 
     private final CapabilityRegistry capabilityRegistry;
+    private final CapabilityGovernanceService governanceService;
     private final ObjectMapper objectMapper;
     private final Validator validator;
 
@@ -48,8 +54,24 @@ public class CapabilityExecutor {
             return CapabilityResult.failure(name, ERROR_CAPABILITY_NOT_FOUND, exception.getMessage());
         }
 
+        CapabilityPolicyResult policyResult;
         try {
-            Object argument = convertArgument(registration.definition(), command.getArguments());
+            CapabilityContext context = command.getContext() == null ? CapabilityContext.empty() : command.getContext();
+            policyResult = Objects.requireNonNull(governanceService.evaluateExecution(registration.definition(), context),
+                    "Capability governance result must not be null");
+        } catch (RuntimeException exception) {
+            return CapabilityResult.failure(name, ERROR_POLICY, readableMessage(exception));
+        }
+        if (!policyResult.isAllowed()) {
+            String errorCode = StringUtils.hasText(policyResult.getErrorCode())
+                    ? policyResult.getErrorCode() : ERROR_POLICY_DENIED;
+            return CapabilityResult.failure(name, errorCode, policyResult.getReason());
+        }
+
+        CapabilityDefinition effectiveDefinition = policyResult.getDefinition() == null
+                ? registration.definition() : policyResult.getDefinition();
+        try {
+            Object argument = convertArgument(effectiveDefinition, command.getArguments());
             validateArgument(argument);
             Object data = invokeTarget(registration, argument);
             return CapabilityResult.success(name, data);

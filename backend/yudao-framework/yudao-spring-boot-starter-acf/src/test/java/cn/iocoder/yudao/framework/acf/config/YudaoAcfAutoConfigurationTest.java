@@ -2,9 +2,15 @@ package cn.iocoder.yudao.framework.acf.config;
 
 import cn.iocoder.yudao.framework.acf.core.annotation.AgentCapability;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityInvokeCommand;
+import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicy;
+import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyChain;
+import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyContext;
+import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyDecision;
 import cn.iocoder.yudao.framework.acf.core.schema.CapabilitySchemaGenerator;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityExecutor;
+import cn.iocoder.yudao.framework.acf.core.service.CapabilityGovernanceService;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityRegistry;
+import cn.iocoder.yudao.framework.acf.core.service.DefaultCapabilityGovernanceService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Validator;
 import org.junit.jupiter.api.Test;
@@ -17,6 +23,8 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -31,6 +39,8 @@ class YudaoAcfAutoConfigurationTest {
         contextRunner.run(context -> {
             assertThat(context).hasSingleBean(CapabilitySchemaGenerator.class);
             assertThat(context).hasSingleBean(CapabilityRegistry.class);
+            assertThat(context).hasSingleBean(CapabilityPolicyChain.class);
+            assertThat(context).hasSingleBean(CapabilityGovernanceService.class);
             assertThat(context).hasSingleBean(CapabilityExecutor.class);
         });
     }
@@ -56,13 +66,32 @@ class YudaoAcfAutoConfigurationTest {
                 .run(context -> {
                     assertThat(context).hasSingleBean(CapabilitySchemaGenerator.class);
                     assertThat(context).hasSingleBean(CapabilityRegistry.class);
+                    assertThat(context).hasSingleBean(CapabilityPolicyChain.class);
+                    assertThat(context).hasSingleBean(CapabilityGovernanceService.class);
                     assertThat(context).hasSingleBean(CapabilityExecutor.class);
                     assertThat(context).hasBean("customCapabilitySchemaGenerator");
                     assertThat(context).hasBean("customCapabilityRegistry");
+                    assertThat(context).hasBean("customCapabilityPolicyChain");
+                    assertThat(context).hasBean("customCapabilityGovernanceService");
                     assertThat(context).hasBean("customCapabilityExecutor");
                     assertThat(context).doesNotHaveBean("capabilitySchemaGenerator");
                     assertThat(context).doesNotHaveBean("capabilityRegistry");
+                    assertThat(context).doesNotHaveBean("capabilityPolicyChain");
+                    assertThat(context).doesNotHaveBean("capabilityGovernanceService");
                     assertThat(context).doesNotHaveBean("capabilityExecutor");
+                });
+    }
+
+    @Test
+    void shouldCollectBusinessPoliciesAutomatically() {
+        contextRunner.withUserConfiguration(CapabilityProviderConfig.class, DenyPolicyConfig.class)
+                .run(context -> {
+                    CapabilityExecutor executor = context.getBean(CapabilityExecutor.class);
+
+                    assertThat(executor.invoke(CapabilityInvokeCommand.builder()
+                            .name("test.auto.echo")
+                            .arguments("hello")
+                            .build()).getErrorCode()).isEqualTo("AUTO_DENIED");
                 });
     }
 
@@ -115,9 +144,44 @@ class YudaoAcfAutoConfigurationTest {
         }
 
         @Bean
+        CapabilityPolicyChain customCapabilityPolicyChain() {
+            return new CapabilityPolicyChain(List.of());
+        }
+
+        @Bean
+        CapabilityGovernanceService customCapabilityGovernanceService(CapabilityPolicyChain policyChain) {
+            return new DefaultCapabilityGovernanceService(policyChain);
+        }
+
+        @Bean
         CapabilityExecutor customCapabilityExecutor(CapabilityRegistry capabilityRegistry,
+                                                    CapabilityGovernanceService governanceService,
                                                     ObjectMapper objectMapper, Validator validator) {
-            return new CapabilityExecutor(capabilityRegistry, objectMapper, validator);
+            return new CapabilityExecutor(capabilityRegistry, governanceService, objectMapper, validator);
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class DenyPolicyConfig {
+
+        @Bean
+        CapabilityPolicy autoDenyPolicy() {
+            return new CapabilityPolicy() {
+                @Override
+                public String code() {
+                    return "AUTO_DENY";
+                }
+
+                @Override
+                public int order() {
+                    return 100;
+                }
+
+                @Override
+                public CapabilityPolicyDecision evaluate(CapabilityPolicyContext context) {
+                    return CapabilityPolicyDecision.deny(code(), "AUTO_DENIED", "denied by test policy");
+                }
+            };
         }
     }
 

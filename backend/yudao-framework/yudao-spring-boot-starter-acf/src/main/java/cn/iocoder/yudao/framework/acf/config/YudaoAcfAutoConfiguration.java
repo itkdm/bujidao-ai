@@ -1,10 +1,15 @@
 package cn.iocoder.yudao.framework.acf.config;
 
 import cn.iocoder.yudao.framework.acf.core.schema.CapabilitySchemaGenerator;
+import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicy;
+import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyChain;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityExecutor;
+import cn.iocoder.yudao.framework.acf.core.service.CapabilityGovernanceService;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityRegistry;
+import cn.iocoder.yudao.framework.acf.core.service.DefaultCapabilityGovernanceService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Validator;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.jackson.JacksonAutoConfiguration;
@@ -34,10 +39,23 @@ public class YudaoAcfAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnMissingBean(CapabilityPolicyChain.class)
+    public CapabilityPolicyChain capabilityPolicyChain(ObjectProvider<CapabilityPolicy> policies) {
+        return new CapabilityPolicyChain(policies.stream().toList());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(CapabilityGovernanceService.class)
+    public CapabilityGovernanceService capabilityGovernanceService(CapabilityPolicyChain policyChain) {
+        return new DefaultCapabilityGovernanceService(policyChain);
+    }
+
+    @Bean
     @ConditionalOnMissingBean(CapabilityExecutor.class)
     public CapabilityExecutor capabilityExecutor(CapabilityRegistry capabilityRegistry,
+                                                 CapabilityGovernanceService governanceService,
                                                  ObjectMapper objectMapper, Validator validator) {
-        return new CapabilityExecutor(capabilityRegistry, objectMapper, validator);
+        return new CapabilityExecutor(capabilityRegistry, governanceService, objectMapper, validator);
     }
 
 }

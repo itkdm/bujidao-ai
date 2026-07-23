@@ -1,9 +1,15 @@
 package cn.iocoder.yudao.framework.acf.core.service;
 
 import cn.iocoder.yudao.framework.acf.core.annotation.AgentCapability;
+import cn.iocoder.yudao.framework.acf.core.enums.CapabilityConsumerType;
 import cn.iocoder.yudao.framework.acf.core.enums.CapabilityStatus;
+import cn.iocoder.yudao.framework.acf.core.model.CapabilityContext;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityInvokeCommand;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
+import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicy;
+import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyChain;
+import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyContext;
+import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyDecision;
 import cn.iocoder.yudao.framework.acf.core.schema.CapabilitySchemaGenerator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Validation;
@@ -19,6 +25,7 @@ import org.springframework.context.annotation.AnnotationConfigApplicationContext
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -26,6 +33,9 @@ class CapabilityExecutorTest {
 
     private AnnotationConfigApplicationContext applicationContext;
     private ValidatorFactory validatorFactory;
+    private CapabilityRegistry registry;
+    private ObjectMapper objectMapper;
+    private Validator validator;
     private CapabilityExecutor executor;
     private ProductCapability productCapability;
 
@@ -38,8 +48,10 @@ class CapabilityExecutorTest {
         applicationContext.refresh();
 
         validatorFactory = Validation.buildDefaultValidatorFactory();
-        CapabilityRegistry registry = new CapabilityRegistry(applicationContext, new CapabilitySchemaGenerator());
-        executor = new CapabilityExecutor(registry, new ObjectMapper(), validatorFactory.getValidator());
+        registry = new CapabilityRegistry(applicationContext, new CapabilitySchemaGenerator());
+        objectMapper = new ObjectMapper();
+        validator = validatorFactory.getValidator();
+        executor = createExecutor(List.of());
     }
 
     @AfterEach
@@ -113,6 +125,47 @@ class CapabilityExecutorTest {
     }
 
     @Test
+    void shouldApplyGovernanceBeforeInvokingTarget() {
+        AtomicReference<CapabilityPolicyContext> observedContext = new AtomicReference<>();
+        CapabilityPolicy denyPolicy = new CapabilityPolicy() {
+            @Override
+            public String code() {
+                return "TEST_DENY";
+            }
+
+            @Override
+            public int order() {
+                return 100;
+            }
+
+            @Override
+            public CapabilityPolicyDecision evaluate(CapabilityPolicyContext context) {
+                observedContext.set(context);
+                return CapabilityPolicyDecision.deny(code(), "CAPABILITY_DISABLED", "capability disabled");
+            }
+        };
+        executor = createExecutor(List.of(denyPolicy));
+        CapabilityContext invocationContext = CapabilityContext.builder()
+                .userId(10L)
+                .tenantId(20L)
+                .consumerType(CapabilityConsumerType.AGENT)
+                .consumerId("agent-1")
+                .build();
+
+        CapabilityResult result = executor.invoke(CapabilityInvokeCommand.builder()
+                .name("test.product.search")
+                .arguments(Map.of("keyword", "keyboard", "limit", 5))
+                .context(invocationContext)
+                .build());
+
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.getErrorCode()).isEqualTo("CAPABILITY_DISABLED");
+        assertThat(productCapability.invocationCount).isZero();
+        assertThat(observedContext.get().invocationContext()).isSameAs(invocationContext);
+        assertThat(observedContext.get().definition().getName()).isEqualTo("test.product.search");
+    }
+
+    @Test
     void shouldInvokeJdkProxyCapability() {
         CapabilityResult result = invoke("test.product.proxy", "hello");
 
@@ -125,6 +178,12 @@ class CapabilityExecutorTest {
                 .name(name)
                 .arguments(arguments)
                 .build());
+    }
+
+    private CapabilityExecutor createExecutor(List<CapabilityPolicy> policies) {
+        CapabilityGovernanceService governanceService = new DefaultCapabilityGovernanceService(
+                new CapabilityPolicyChain(policies));
+        return new CapabilityExecutor(registry, governanceService, objectMapper, validator);
     }
 
     private ProxyCapabilityApi createProxyCapability() {

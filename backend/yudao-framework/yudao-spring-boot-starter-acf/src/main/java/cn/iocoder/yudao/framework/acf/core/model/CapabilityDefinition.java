@@ -15,7 +15,7 @@ import java.util.Map;
  * @author bujidao
  */
 @Getter
-@Builder
+@Builder(toBuilder = true)
 public final class CapabilityDefinition {
 
     private final String name;
