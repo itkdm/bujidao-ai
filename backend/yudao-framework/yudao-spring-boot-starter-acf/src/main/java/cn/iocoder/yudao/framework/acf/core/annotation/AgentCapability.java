@@ -18,7 +18,7 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 public @interface AgentCapability {
 
-    /** 能力唯一名称，建议使用“模块.功能”格式 */
+    /** 能力唯一名称，使用“领域.资源.动作”格式，例如 erp.product.search */
     String name();
 
     /** 面向用户展示的能力标题 */
