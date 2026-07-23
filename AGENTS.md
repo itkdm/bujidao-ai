@@ -122,6 +122,62 @@ pnpm build:local
 
 前端要求 Node.js `>= 20.19.0`、pnpm `>= 8.6.0`，以 `frontend/package.json` 为准。
 
+## 本地运行规则
+
+本地启动前后端时，优先确认端口和进程来源。不要只按端口杀进程，先确认命令行确实属于当前要替换的本地项目。
+
+```powershell
+Get-NetTCPConnection -LocalPort 48080,80 -State Listen -ErrorAction SilentlyContinue
+Get-CimInstance Win32_Process -Filter "ProcessId=<pid>" | Select-Object ProcessId,CommandLine
+```
+
+后端默认端口是 `48080`。后端本地配置通常在 `backend/yudao-server/src/main/resources/application-local.yaml`。如果为了本机运行修改了数据库、Redis、对象存储、三方应用等配置：
+
+- 将这类修改视为本地运行改动，不要提交或推送。
+- 汇报或排查时必须脱敏，不要把密码、Token、Secret、私钥原文写进对话或日志摘要。
+- 结束前用 `git status --short --branch` 明确列出本地改动，尤其是包含本地凭据的配置文件。
+
+后端本地启动常用流程：
+
+```bash
+cd backend
+mvn package -DskipTests -pl yudao-server -am
+```
+
+在仓库根目录使用 PowerShell 后台启动：
+
+```powershell
+$repo = (Resolve-Path '.').Path
+$logs = Join-Path $repo 'runtime-logs'
+New-Item -ItemType Directory -Force -Path $logs | Out-Null
+$java = 'D:\jdk\jdk17\jdk-17.0.12\bin\java.exe'
+$jar = Join-Path $repo 'backend\yudao-server\target\yudao-server.jar'
+Start-Process -WindowStyle Hidden -FilePath $java `
+  -ArgumentList @('-jar',('"{0}"' -f $jar),'--spring.profiles.active=local') `
+  -RedirectStandardOutput (Join-Path $logs 'yudao-server.out.log') `
+  -RedirectStandardError (Join-Path $logs 'yudao-server.err.log')
+```
+
+如果本机 JDK17 路径不同，先以 `backend/pom.xml` 的 Java 版本为准调整 `$java`，不要改 Maven 项目的 Java 基线。
+
+前端开发服务默认使用 `80`，本地请求地址优先查看 `frontend/.env.local`。前端本地启动常用流程：
+
+```bash
+cd frontend
+pnpm install
+pnpm dev
+```
+
+如果需要通过脚本或 Agent 后台启动并显式指定 Vite 端口，优先直接调用 Vite，避免把额外的 `--` 当作字面量参数传入：
+
+```bash
+node node_modules/vite/bin/vite.js --mode env.local --host 0.0.0.0 --port 80
+```
+
+启动后不要只看进程存在，应同时确认监听端口、启动日志和 HTTP 接口。后端启动验证可优先请求 `http://localhost:48080/admin-api/system/auth/captcha-image`，前端启动验证可优先请求 `http://localhost/`。
+
+不要把一次性的本地环境迁移步骤写成长期规则；`AGENTS.md` 只沉淀可复用的项目约定、运行流程和安全边界。
+
 ## 文档规则
 
 - `README.md` 保持简洁，面向用户介绍项目定位。
