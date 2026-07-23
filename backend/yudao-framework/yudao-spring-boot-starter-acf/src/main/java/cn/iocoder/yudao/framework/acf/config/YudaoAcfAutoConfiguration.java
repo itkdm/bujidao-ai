@@ -10,6 +10,7 @@ import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityExceptionClassifier
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityInvocationExecutor;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuard;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuardChain;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeMetricsRecorder;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRateLimitGuard;
 import cn.iocoder.yudao.framework.acf.core.runtime.DefaultCapabilityExceptionClassifier;
 import cn.iocoder.yudao.framework.acf.core.runtime.DefaultCapabilityInvocationExecutor;
@@ -137,6 +138,12 @@ public class YudaoAcfAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnMissingBean(CapabilityRuntimeMetricsRecorder.class)
+    public CapabilityRuntimeMetricsRecorder capabilityRuntimeMetricsRecorder() {
+        return CapabilityRuntimeMetricsRecorder.noop();
+    }
+
+    @Bean
     @ConditionalOnMissingBean(CapabilityExecutor.class)
     public CapabilityExecutor capabilityExecutor(CapabilityRegistry capabilityRegistry,
                                                  CapabilityGovernanceService governanceService,
@@ -144,14 +151,15 @@ public class YudaoAcfAutoConfiguration {
                                                  ObjectProvider<CapabilityIdempotencyService> idempotencyService,
                                                  ObjectProvider<CapabilityAuditService> auditService,
                                                  CapabilityExceptionClassifier exceptionClassifier,
-                                                 CapabilityRuntimePolicyService runtimePolicyService,
-                                                 CapabilityRuntimeGuardChain runtimeGuardChain,
-                                                 CapabilityInvocationExecutor invocationExecutor,
-                                                 CapabilityRequestDigestGenerator requestDigestGenerator,
-                                                 ObjectMapper objectMapper, Validator validator) {
+                                                  CapabilityRuntimePolicyService runtimePolicyService,
+                                                  CapabilityRuntimeGuardChain runtimeGuardChain,
+                                                  CapabilityInvocationExecutor invocationExecutor,
+                                                  CapabilityRuntimeMetricsRecorder metricsRecorder,
+                                                  CapabilityRequestDigestGenerator requestDigestGenerator,
+                                                  ObjectMapper objectMapper, Validator validator) {
         return new CapabilityExecutor(capabilityRegistry, governanceService, confirmationService.getIfAvailable(),
                 idempotencyService.getIfAvailable(), auditService.getIfAvailable(), exceptionClassifier,
-                runtimePolicyService, runtimeGuardChain, invocationExecutor,
+                runtimePolicyService, runtimeGuardChain, invocationExecutor, metricsRecorder,
                 requestDigestGenerator, objectMapper, validator);
     }
 

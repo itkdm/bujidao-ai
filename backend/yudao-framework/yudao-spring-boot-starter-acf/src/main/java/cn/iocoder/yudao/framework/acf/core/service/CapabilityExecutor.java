@@ -5,6 +5,7 @@ import cn.iocoder.yudao.framework.acf.core.enums.CapabilityConfirmationStatus;
 import cn.iocoder.yudao.framework.acf.core.enums.CapabilityIdempotencyAuditStatus;
 import cn.iocoder.yudao.framework.acf.core.enums.CapabilityIdempotencyStatus;
 import cn.iocoder.yudao.framework.acf.core.enums.CapabilityStatus;
+import cn.iocoder.yudao.framework.acf.core.model.CapabilityAuditRecord;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityContext;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityConfirmationChallenge;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityConfirmationCheck;
@@ -19,6 +20,8 @@ import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityInvocationExecutor;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuardChain;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuardContext;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuardResult;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeMetricRecord;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeMetricsRecorder;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimePolicy;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimePolicyService;
 import cn.iocoder.yudao.framework.acf.core.runtime.DefaultCapabilityExceptionClassifier;
@@ -29,6 +32,8 @@ import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.util.StringUtils;
 
 import java.lang.reflect.InvocationTargetException;
@@ -51,6 +56,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public class CapabilityExecutor {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(CapabilityExecutor.class);
+
     private static final CapabilityExceptionClassifier FALLBACK_EXCEPTION_CLASSIFIER =
             new DefaultCapabilityExceptionClassifier();
     private static final CapabilityRuntimePolicyService DEFAULT_RUNTIME_POLICY_SERVICE =
@@ -59,6 +66,8 @@ public class CapabilityExecutor {
             new CapabilityRuntimeGuardChain(List.of());
     private static final CapabilityInvocationExecutor DEFAULT_INVOCATION_EXECUTOR =
             DefaultCapabilityInvocationExecutor.shared();
+    private static final CapabilityRuntimeMetricsRecorder NOOP_METRICS_RECORDER =
+            CapabilityRuntimeMetricsRecorder.noop();
 
     public static final String ERROR_BAD_REQUEST = AcfCapabilityErrorCodes.BAD_REQUEST;
     public static final String ERROR_CAPABILITY_NOT_FOUND = AcfCapabilityErrorCodes.CAPABILITY_NOT_FOUND;
@@ -83,6 +92,7 @@ public class CapabilityExecutor {
     private final CapabilityRuntimePolicyService runtimePolicyService;
     private final CapabilityRuntimeGuardChain runtimeGuardChain;
     private final CapabilityInvocationExecutor invocationExecutor;
+    private final CapabilityRuntimeMetricsRecorder metricsRecorder;
     private final CapabilityRequestDigestGenerator requestDigestGenerator;
     private final ObjectMapper objectMapper;
     private final Validator validator;
@@ -161,6 +171,22 @@ public class CapabilityExecutor {
                               CapabilityInvocationExecutor invocationExecutor,
                               CapabilityRequestDigestGenerator requestDigestGenerator,
                               ObjectMapper objectMapper, Validator validator) {
+        this(capabilityRegistry, governanceService, confirmationService, idempotencyService, auditService,
+                exceptionClassifier, runtimePolicyService, runtimeGuardChain, invocationExecutor,
+                NOOP_METRICS_RECORDER, requestDigestGenerator, objectMapper, validator);
+    }
+
+    public CapabilityExecutor(CapabilityRegistry capabilityRegistry, CapabilityGovernanceService governanceService,
+                              CapabilityConfirmationService confirmationService,
+                              CapabilityIdempotencyService idempotencyService,
+                              CapabilityAuditService auditService,
+                              CapabilityExceptionClassifier exceptionClassifier,
+                              CapabilityRuntimePolicyService runtimePolicyService,
+                              CapabilityRuntimeGuardChain runtimeGuardChain,
+                              CapabilityInvocationExecutor invocationExecutor,
+                              CapabilityRuntimeMetricsRecorder metricsRecorder,
+                              CapabilityRequestDigestGenerator requestDigestGenerator,
+                              ObjectMapper objectMapper, Validator validator) {
         this.capabilityRegistry = capabilityRegistry;
         this.governanceService = governanceService;
         this.confirmationService = confirmationService;
@@ -170,6 +196,7 @@ public class CapabilityExecutor {
         this.runtimePolicyService = Objects.requireNonNull(runtimePolicyService, "runtimePolicyService");
         this.runtimeGuardChain = Objects.requireNonNull(runtimeGuardChain, "runtimeGuardChain");
         this.invocationExecutor = Objects.requireNonNull(invocationExecutor, "invocationExecutor");
+        this.metricsRecorder = Objects.requireNonNull(metricsRecorder, "metricsRecorder");
         this.requestDigestGenerator = requestDigestGenerator;
         this.objectMapper = objectMapper;
         this.validator = validator;
@@ -194,8 +221,29 @@ public class CapabilityExecutor {
             audit.failure(CapabilityAuditStage.INVOCATION, result, startedAt);
         }
         result = result.withTraceId(traceId);
-        audit.finish(result);
+        recordMetrics(audit.finish(result));
         return result;
+    }
+
+    private void recordMetrics(CapabilityAuditRecord auditRecord) {
+        CapabilityRuntimeMetricRecord metricRecord = CapabilityRuntimeMetricRecord.builder()
+                .capabilityName(auditRecord.getCapabilityName())
+                .capabilityVersion(auditRecord.getCapabilityVersion())
+                .finalStage(auditRecord.getFinalStage())
+                .status(auditRecord.getStatus())
+                .errorCode(auditRecord.getErrorCode())
+                .runtimeGuardCode(auditRecord.getRuntimeGuardCode())
+                .retryCount(auditRecord.getRetryCount())
+                .targetInvoked(auditRecord.isTargetInvoked())
+                .retryable(auditRecord.isRetryable())
+                .latencyMs(auditRecord.getLatencyMs())
+                .build();
+        try {
+            metricsRecorder.record(metricRecord);
+        } catch (RuntimeException exception) {
+            // 指标属于旁路观测能力，记录失败不能覆盖已经确定的业务调用结果。
+            LOGGER.warn("记录 ACF 运行指标失败，capability={}", auditRecord.getCapabilityName(), exception);
+        }
     }
 
     private CapabilityResult doInvoke(CapabilityInvokeCommand command, String name, CapabilityContext context,

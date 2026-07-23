@@ -1,6 +1,8 @@
 package cn.iocoder.yudao.framework.acf.core.service;
 
 import cn.iocoder.yudao.framework.acf.core.annotation.AgentCapability;
+import cn.iocoder.yudao.framework.acf.core.enums.CapabilityAuditStage;
+import cn.iocoder.yudao.framework.acf.core.enums.CapabilityStatus;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityAuditRecord;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityContext;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityDefinition;
@@ -13,6 +15,8 @@ import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuard;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuardChain;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuardContext;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuardResult;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeMetricRecord;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeMetricsRecorder;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRateLimitGuard;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityExceptionClassification;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityExceptionClassifier;
@@ -171,9 +175,10 @@ class CapabilityRuntimeExecutorTest {
         CapturingRuntimeGuard guard = CapturingRuntimeGuard.allowed();
         CapturingIdempotencyService idempotencyService = new CapturingIdempotencyService();
         CapturingAuditService auditService = new CapturingAuditService();
+        CapturingMetricsRecorder metricsRecorder = new CapturingMetricsRecorder();
 
         CapabilityResult result = executor(retryPolicy(1_000), guard, idempotencyService, auditService,
-                DefaultCapabilityInvocationExecutor.shared(), retryableClassifier())
+                DefaultCapabilityInvocationExecutor.shared(), retryableClassifier(), metricsRecorder)
                 .invoke(command("test.runtime.flaky", "runtime-004"));
 
         assertThat(result.isSuccess()).isTrue();
@@ -183,6 +188,7 @@ class CapabilityRuntimeExecutorTest {
         assertThat(idempotencyService.completeCount).isOne();
         assertThat(idempotencyService.failCount).isZero();
         assertThat(auditService.record.getRetryCount()).isOne();
+        assertThat(metricsRecorder.record.getRetryCount()).isOne();
     }
 
     @Test
@@ -259,6 +265,7 @@ class CapabilityRuntimeExecutorTest {
     @Test
     void shouldRejectInvocationBeforeTargetWhenCircuitIsOpen() {
         CapturingAuditService auditService = new CapturingAuditService();
+        CapturingMetricsRecorder metricsRecorder = new CapturingMetricsRecorder();
         CapabilityRuntimePolicy policy = CapabilityRuntimePolicy.builder()
                 .timeoutMs(1_000)
                 .circuitBreakerEnabled(true)
@@ -267,7 +274,9 @@ class CapabilityRuntimeExecutorTest {
                 .circuitHalfOpenMaxCalls(1)
                 .build();
         CapabilityExecutor circuitProtectedExecutor = executor((definition, context) -> policy,
-                new CapabilityCircuitBreakerGuard(), null, auditService);
+                new CapabilityCircuitBreakerGuard(), null, auditService,
+                DefaultCapabilityInvocationExecutor.shared(), new DefaultCapabilityExceptionClassifier(),
+                metricsRecorder);
 
         CapabilityResult first = circuitProtectedExecutor.invoke(command("test.runtime.throwing", null));
         CapabilityResult second = circuitProtectedExecutor.invoke(command("test.runtime.throwing", null));
@@ -280,6 +289,41 @@ class CapabilityRuntimeExecutorTest {
         assertThat(capability.invocationCount).isEqualTo(2);
         assertThat(auditService.record.getRuntimeGuardCode()).isEqualTo(CapabilityCircuitBreakerGuard.CODE);
         assertThat(auditService.record.isTargetInvoked()).isFalse();
+        assertThat(metricsRecorder.record.getRuntimeGuardCode()).isEqualTo(CapabilityCircuitBreakerGuard.CODE);
+        assertThat(metricsRecorder.record.getErrorCode()).isEqualTo(AcfCapabilityErrorCodes.RUNTIME_CIRCUIT_OPEN);
+        assertThat(metricsRecorder.record.isTargetInvoked()).isFalse();
+    }
+
+    @Test
+    void shouldRecordCompletedInvocationMetrics() {
+        CapturingMetricsRecorder metricsRecorder = new CapturingMetricsRecorder();
+
+        CapabilityResult result = executor(runtimePolicy(), CapturingRuntimeGuard.allowed(), null, null,
+                DefaultCapabilityInvocationExecutor.shared(), new DefaultCapabilityExceptionClassifier(),
+                metricsRecorder).invoke(command("test.runtime.success", null));
+
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(metricsRecorder.record.getCapabilityName()).isEqualTo("test.runtime.success");
+        assertThat(metricsRecorder.record.getFinalStage()).isEqualTo(CapabilityAuditStage.COMPLETED);
+        assertThat(metricsRecorder.record.getStatus()).isEqualTo(CapabilityStatus.SUCCESS);
+        assertThat(metricsRecorder.record.getErrorCode()).isNull();
+        assertThat(metricsRecorder.record.getRetryCount()).isZero();
+        assertThat(metricsRecorder.record.isTargetInvoked()).isTrue();
+        assertThat(metricsRecorder.record.getLatencyMs()).isGreaterThanOrEqualTo(0);
+    }
+
+    @Test
+    void shouldNotChangeResultWhenMetricsRecorderFails() {
+        CapabilityRuntimeMetricsRecorder failingRecorder = record -> {
+            throw new IllegalStateException("metrics unavailable");
+        };
+
+        CapabilityResult result = executor(runtimePolicy(), CapturingRuntimeGuard.allowed(), null, null,
+                DefaultCapabilityInvocationExecutor.shared(), new DefaultCapabilityExceptionClassifier(),
+                failingRecorder).invoke(command("test.runtime.success", null));
+
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(capability.invocationCount).isOne();
     }
 
     private CapabilityExecutor executor(CapabilityRuntimePolicyService runtimePolicyService,
@@ -305,11 +349,22 @@ class CapabilityRuntimeExecutorTest {
                                         CapabilityAuditService auditService,
                                         CapabilityInvocationExecutor invocationExecutor,
                                         CapabilityExceptionClassifier exceptionClassifier) {
+        return executor(runtimePolicyService, guard, idempotencyService, auditService,
+                invocationExecutor, exceptionClassifier, CapabilityRuntimeMetricsRecorder.noop());
+    }
+
+    private CapabilityExecutor executor(CapabilityRuntimePolicyService runtimePolicyService,
+                                        CapabilityRuntimeGuard guard,
+                                        CapabilityIdempotencyService idempotencyService,
+                                        CapabilityAuditService auditService,
+                                        CapabilityInvocationExecutor invocationExecutor,
+                                        CapabilityExceptionClassifier exceptionClassifier,
+                                        CapabilityRuntimeMetricsRecorder metricsRecorder) {
         CapabilityGovernanceService governanceService = new DefaultCapabilityGovernanceService(
                 new CapabilityPolicyChain(List.of()));
         return new CapabilityExecutor(registry, governanceService, null, idempotencyService, auditService,
                 exceptionClassifier, runtimePolicyService,
-                new CapabilityRuntimeGuardChain(List.of(guard)), invocationExecutor,
+                new CapabilityRuntimeGuardChain(List.of(guard)), invocationExecutor, metricsRecorder,
                 new CapabilityRequestDigestGenerator(objectMapper), objectMapper, validator);
     }
 
@@ -510,6 +565,16 @@ class CapabilityRuntimeExecutorTest {
 
         @Override
         public void record(CapabilityAuditRecord record) {
+            this.record = record;
+        }
+    }
+
+    static class CapturingMetricsRecorder implements CapabilityRuntimeMetricsRecorder {
+
+        private CapabilityRuntimeMetricRecord record;
+
+        @Override
+        public void record(CapabilityRuntimeMetricRecord record) {
             this.record = record;
         }
     }

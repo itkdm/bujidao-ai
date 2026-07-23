@@ -21,6 +21,8 @@ import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityConcurrencyGuard;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityExceptionClassifier;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityInvocationExecutor;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuardChain;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeMetricRecord;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeMetricsRecorder;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRateLimitGuard;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimePolicyService;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityAuditService;
@@ -81,6 +83,7 @@ class YudaoAcfAutoConfigurationTest {
             assertThat(context).hasSingleBean(CapabilityConcurrencyGuard.class);
             assertThat(context).hasSingleBean(CapabilityRateLimitGuard.class);
             assertThat(context).hasSingleBean(CapabilityRuntimeGuardChain.class);
+            assertThat(context).hasSingleBean(CapabilityRuntimeMetricsRecorder.class);
             assertThat(context).hasSingleBean(CapabilityExecutor.class);
             assertThat(context).doesNotHaveBean(CapabilityConfirmationService.class);
             assertThat(context).doesNotHaveBean(CapabilityIdempotencyService.class);
@@ -104,6 +107,26 @@ class YudaoAcfAutoConfigurationTest {
                     assertThat(auditService.record).isNotNull();
                     assertThat(auditService.record.getTraceId()).isEqualTo(result.getTraceId());
                     assertThat(auditService.record.getCapabilityName()).isEqualTo("test.auto.echo");
+                });
+    }
+
+    @Test
+    void shouldUseBusinessMetricsRecorderWhenProvided() {
+        contextRunner.withUserConfiguration(CapabilityProviderConfig.class, MetricsRecorderConfig.class)
+                .run(context -> {
+                    CapabilityResult result = context.getBean(CapabilityExecutor.class)
+                            .invoke(CapabilityInvokeCommand.builder()
+                                    .name("test.auto.echo")
+                                    .arguments("hello")
+                                    .context(CapabilityContext.builder().userId(1L).build())
+                                    .build());
+
+                    CapturingMetricsRecorder metricsRecorder = context.getBean(CapturingMetricsRecorder.class);
+                    assertThat(result.isSuccess()).isTrue();
+                    assertThat(metricsRecorder.record).isNotNull();
+                    assertThat(metricsRecorder.record.getCapabilityName()).isEqualTo("test.auto.echo");
+                    assertThat(metricsRecorder.record.getStatus()).isEqualTo(CapabilityStatus.SUCCESS);
+                    assertThat(metricsRecorder.record.isTargetInvoked()).isTrue();
                 });
     }
 
@@ -311,6 +334,25 @@ class YudaoAcfAutoConfigurationTest {
 
         @Override
         public void record(CapabilityAuditRecord record) {
+            this.record = record;
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class MetricsRecorderConfig {
+
+        @Bean
+        CapturingMetricsRecorder capabilityRuntimeMetricsRecorder() {
+            return new CapturingMetricsRecorder();
+        }
+    }
+
+    static class CapturingMetricsRecorder implements CapabilityRuntimeMetricsRecorder {
+
+        private CapabilityRuntimeMetricRecord record;
+
+        @Override
+        public void record(CapabilityRuntimeMetricRecord record) {
             this.record = record;
         }
     }

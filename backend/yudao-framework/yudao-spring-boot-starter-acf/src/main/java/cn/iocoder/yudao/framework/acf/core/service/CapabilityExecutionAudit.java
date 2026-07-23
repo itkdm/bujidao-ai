@@ -94,43 +94,48 @@ final class CapabilityExecutionAudit {
                 stepStartedAt);
     }
 
-    void finish(CapabilityResult result) {
+    CapabilityAuditRecord finish(CapabilityResult result) {
         if (result != null && result.isSuccess()) {
             finalStage = CapabilityAuditStage.COMPLETED;
         } else if (failureStage != null) {
             finalStage = failureStage;
         }
-        if (auditService == null) {
-            return;
+        CapabilityAuditRecord record = buildRecord(result);
+        if (auditService != null) {
+            try {
+                auditService.record(record);
+            } catch (RuntimeException exception) {
+                LOGGER.warn("记录 ACF 能力执行审计失败，traceId={}，capability={}",
+                        traceId, capabilityName, exception);
+            }
         }
-        try {
-            auditService.record(CapabilityAuditRecord.builder()
-                    .traceId(traceId)
-                    .capabilityName(capabilityName)
-                    .capabilityVersion(definition == null ? null : definition.getVersion())
-                    .userId(context.getUserId())
-                    .tenantId(context.getTenantId())
-                    .source(context.getSource())
-                    .consumerType(context.getConsumerType())
-                    .consumerId(context.getConsumerId())
-                    .clientRequestId(context.getClientRequestId())
-                    .finalStage(finalStage)
-                    .confirmationStatus(confirmationStatus)
-                    .idempotencyStatus(idempotencyStatus)
-                    .runtimePolicySummary(runtimePolicySummary)
-                    .runtimeGuardCode(runtimeGuardCode)
-                    .retryCount(retryCount)
-                    .targetInvoked(targetInvoked)
-                    .status(result == null ? null : result.getStatus())
-                    .errorCode(result == null ? null : result.getErrorCode())
-                    .message(result == null ? null : result.getMessage())
-                    .retryable(result != null && result.isRetryable())
-                    .latencyMs(elapsed(startedAt))
-                    .build());
-        } catch (RuntimeException exception) {
-            LOGGER.warn("记录 ACF 能力执行审计失败，traceId={}，capability={}",
-                    traceId, capabilityName, exception);
-        }
+        return record;
+    }
+
+    private CapabilityAuditRecord buildRecord(CapabilityResult result) {
+        return CapabilityAuditRecord.builder()
+                .traceId(traceId)
+                .capabilityName(capabilityName)
+                .capabilityVersion(definition == null ? null : definition.getVersion())
+                .userId(context.getUserId())
+                .tenantId(context.getTenantId())
+                .source(context.getSource())
+                .consumerType(context.getConsumerType())
+                .consumerId(context.getConsumerId())
+                .clientRequestId(context.getClientRequestId())
+                .finalStage(finalStage)
+                .confirmationStatus(confirmationStatus)
+                .idempotencyStatus(idempotencyStatus)
+                .runtimePolicySummary(runtimePolicySummary)
+                .runtimeGuardCode(runtimeGuardCode)
+                .retryCount(retryCount)
+                .targetInvoked(targetInvoked)
+                .status(result == null ? null : result.getStatus())
+                .errorCode(result == null ? null : result.getErrorCode())
+                .message(result == null ? null : result.getMessage())
+                .retryable(result != null && result.isRetryable())
+                .latencyMs(elapsed(startedAt))
+                .build();
     }
 
     private void recordStep(CapabilityAuditStepStatus status, CapabilityAuditStage stage, String summary,
