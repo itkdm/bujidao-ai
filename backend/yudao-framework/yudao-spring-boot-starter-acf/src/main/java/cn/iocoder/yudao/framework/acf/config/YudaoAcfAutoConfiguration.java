@@ -5,6 +5,7 @@ import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicy;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyChain;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPermissionPolicy;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityConfirmationService;
+import cn.iocoder.yudao.framework.acf.core.service.CapabilityAuditService;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityExecutor;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityGovernanceService;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityIdempotencyService;
@@ -88,10 +89,12 @@ public class YudaoAcfAutoConfiguration {
                                                  CapabilityGovernanceService governanceService,
                                                  ObjectProvider<CapabilityConfirmationService> confirmationService,
                                                  ObjectProvider<CapabilityIdempotencyService> idempotencyService,
+                                                 ObjectProvider<CapabilityAuditService> auditService,
                                                  CapabilityRequestDigestGenerator requestDigestGenerator,
                                                  ObjectMapper objectMapper, Validator validator) {
         return new CapabilityExecutor(capabilityRegistry, governanceService, confirmationService.getIfAvailable(),
-                idempotencyService.getIfAvailable(), requestDigestGenerator, objectMapper, validator);
+                idempotencyService.getIfAvailable(), auditService.getIfAvailable(), requestDigestGenerator,
+                objectMapper, validator);
     }
 
 }

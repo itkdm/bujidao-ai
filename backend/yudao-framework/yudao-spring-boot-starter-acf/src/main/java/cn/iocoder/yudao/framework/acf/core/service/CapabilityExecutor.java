@@ -1,6 +1,10 @@
 package cn.iocoder.yudao.framework.acf.core.service;
 
+import cn.iocoder.yudao.framework.acf.core.enums.CapabilityAuditStage;
+import cn.iocoder.yudao.framework.acf.core.enums.CapabilityConfirmationStatus;
+import cn.iocoder.yudao.framework.acf.core.enums.CapabilityIdempotencyAuditStatus;
 import cn.iocoder.yudao.framework.acf.core.enums.CapabilityIdempotencyStatus;
+import cn.iocoder.yudao.framework.acf.core.enums.CapabilityStatus;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityContext;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityConfirmationChallenge;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityConfirmationCheck;
@@ -22,6 +26,7 @@ import java.util.Comparator;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * ACF 基础能力执行器
@@ -50,21 +55,22 @@ public class CapabilityExecutor {
     private final CapabilityGovernanceService governanceService;
     private final CapabilityConfirmationService confirmationService;
     private final CapabilityIdempotencyService idempotencyService;
+    private final CapabilityAuditService auditService;
     private final CapabilityRequestDigestGenerator requestDigestGenerator;
     private final ObjectMapper objectMapper;
     private final Validator validator;
 
     public CapabilityExecutor(CapabilityRegistry capabilityRegistry, CapabilityGovernanceService governanceService,
                               ObjectMapper objectMapper, Validator validator) {
-        this(capabilityRegistry, governanceService, null, null, new CapabilityRequestDigestGenerator(objectMapper),
-                objectMapper, validator);
+        this(capabilityRegistry, governanceService, null, null, null,
+                new CapabilityRequestDigestGenerator(objectMapper), objectMapper, validator);
     }
 
     public CapabilityExecutor(CapabilityRegistry capabilityRegistry, CapabilityGovernanceService governanceService,
                               CapabilityConfirmationService confirmationService,
                               CapabilityRequestDigestGenerator requestDigestGenerator,
                               ObjectMapper objectMapper, Validator validator) {
-        this(capabilityRegistry, governanceService, confirmationService, null, requestDigestGenerator,
+        this(capabilityRegistry, governanceService, confirmationService, null, null, requestDigestGenerator,
                 objectMapper, validator);
     }
 
@@ -73,101 +79,233 @@ public class CapabilityExecutor {
                               CapabilityIdempotencyService idempotencyService,
                               CapabilityRequestDigestGenerator requestDigestGenerator,
                               ObjectMapper objectMapper, Validator validator) {
+        this(capabilityRegistry, governanceService, confirmationService, idempotencyService, null,
+                requestDigestGenerator, objectMapper, validator);
+    }
+
+    public CapabilityExecutor(CapabilityRegistry capabilityRegistry, CapabilityGovernanceService governanceService,
+                              CapabilityConfirmationService confirmationService,
+                              CapabilityIdempotencyService idempotencyService,
+                              CapabilityAuditService auditService,
+                              CapabilityRequestDigestGenerator requestDigestGenerator,
+                              ObjectMapper objectMapper, Validator validator) {
         this.capabilityRegistry = capabilityRegistry;
         this.governanceService = governanceService;
         this.confirmationService = confirmationService;
         this.idempotencyService = idempotencyService;
+        this.auditService = auditService;
         this.requestDigestGenerator = requestDigestGenerator;
         this.objectMapper = objectMapper;
         this.validator = validator;
     }
 
     public CapabilityResult invoke(CapabilityInvokeCommand command) {
+        long startedAt = System.currentTimeMillis();
         String name = command == null ? null : command.getName();
-        if (!StringUtils.hasText(name)) {
-            return CapabilityResult.failure(name, ERROR_BAD_REQUEST, "Capability name is required");
+        CapabilityContext suppliedContext = command == null || command.getContext() == null
+                ? CapabilityContext.empty() : command.getContext();
+        String traceId = StringUtils.hasText(suppliedContext.getTraceId())
+                ? suppliedContext.getTraceId() : "acf-" + UUID.randomUUID();
+        CapabilityContext context = suppliedContext.withTraceId(traceId);
+        CapabilityExecutionAudit audit = new CapabilityExecutionAudit(
+                auditService, traceId, name, context, startedAt);
+
+        CapabilityResult result;
+        try {
+            result = doInvoke(command, name, context, audit);
+        } catch (RuntimeException exception) {
+            result = CapabilityResult.failure(name, ERROR_INVOKE, readableMessage(exception));
+            audit.failure(CapabilityAuditStage.INVOCATION, result, startedAt);
         }
+        result = result.withTraceId(traceId);
+        audit.finish(result);
+        return result;
+    }
+
+    private CapabilityResult doInvoke(CapabilityInvokeCommand command, String name, CapabilityContext context,
+                                      CapabilityExecutionAudit audit) {
+        long stepStartedAt = System.currentTimeMillis();
+        if (!StringUtils.hasText(name)) {
+            CapabilityResult result = CapabilityResult.failure(name, ERROR_BAD_REQUEST, "Capability name is required");
+            audit.failure(CapabilityAuditStage.REQUEST_VALIDATION, result, stepStartedAt);
+            return result;
+        }
+        audit.success(CapabilityAuditStage.REQUEST_VALIDATION, "capability name is valid", stepStartedAt);
 
         CapabilityRegistration registration;
+        stepStartedAt = System.currentTimeMillis();
         try {
             registration = capabilityRegistry.getRegistration(name);
         } catch (IllegalArgumentException exception) {
-            return CapabilityResult.failure(name, ERROR_CAPABILITY_NOT_FOUND, exception.getMessage());
+            CapabilityResult result = CapabilityResult.failure(
+                    name, ERROR_CAPABILITY_NOT_FOUND, exception.getMessage());
+            audit.failure(CapabilityAuditStage.CAPABILITY_LOOKUP, result, stepStartedAt);
+            return result;
         }
+        audit.definition(registration.definition());
+        audit.success(CapabilityAuditStage.CAPABILITY_LOOKUP, "capability registered", stepStartedAt);
 
-        CapabilityContext context = command.getContext() == null ? CapabilityContext.empty() : command.getContext();
         CapabilityPolicyResult policyResult;
+        stepStartedAt = System.currentTimeMillis();
         try {
-            policyResult = Objects.requireNonNull(governanceService.evaluateExecution(registration.definition(), context),
+            policyResult = Objects.requireNonNull(
+                    governanceService.evaluateExecution(registration.definition(), context),
                     "Capability governance result must not be null");
         } catch (RuntimeException exception) {
-            return CapabilityResult.failure(name, ERROR_POLICY, readableMessage(exception));
+            CapabilityResult result = CapabilityResult.failure(name, ERROR_POLICY, readableMessage(exception));
+            audit.failure(CapabilityAuditStage.GOVERNANCE, result, stepStartedAt);
+            return result;
         }
         if (!policyResult.isAllowed()) {
             String errorCode = StringUtils.hasText(policyResult.getErrorCode())
                     ? policyResult.getErrorCode() : ERROR_POLICY_DENIED;
-            return CapabilityResult.denied(name, errorCode, policyResult.getReason());
+            CapabilityResult result = CapabilityResult.denied(name, errorCode, policyResult.getReason());
+            audit.failure(CapabilityAuditStage.GOVERNANCE, result, stepStartedAt);
+            return result;
         }
 
         CapabilityDefinition effectiveDefinition = policyResult.getDefinition() == null
                 ? registration.definition() : policyResult.getDefinition();
+        audit.definition(effectiveDefinition);
+        audit.success(CapabilityAuditStage.GOVERNANCE, "execution allowed", stepStartedAt);
         Object argument;
+        stepStartedAt = System.currentTimeMillis();
         try {
             argument = convertArgument(effectiveDefinition, command.getArguments());
             validateArgument(argument);
         } catch (IllegalArgumentException exception) {
-            return CapabilityResult.failure(name, ERROR_BAD_REQUEST, readableMessage(exception));
+            CapabilityResult result = CapabilityResult.failure(name, ERROR_BAD_REQUEST, readableMessage(exception));
+            audit.failure(CapabilityAuditStage.ARGUMENT_VALIDATION, result, stepStartedAt);
+            return result;
         }
+        audit.success(CapabilityAuditStage.ARGUMENT_VALIDATION, "arguments converted and validated", stepStartedAt);
 
         String idempotencyKey = command.getIdempotencyKey();
         String requestDigest;
+        stepStartedAt = System.currentTimeMillis();
         try {
             requestDigest = requiresRequestDigest(effectiveDefinition, idempotencyKey)
                     ? requestDigestGenerator.generate(effectiveDefinition.getName(), argument) : null;
         } catch (RuntimeException exception) {
             String errorCode = StringUtils.hasText(idempotencyKey) ? ERROR_IDEMPOTENCY : ERROR_CONFIRMATION;
-            return CapabilityResult.failure(name, errorCode, readableMessage(exception));
+            CapabilityResult result = CapabilityResult.failure(name, errorCode, readableMessage(exception));
+            CapabilityAuditStage stage = StringUtils.hasText(idempotencyKey)
+                    ? CapabilityAuditStage.IDEMPOTENCY : CapabilityAuditStage.CONFIRMATION;
+            audit.failure(stage, result, stepStartedAt);
+            return result;
         }
 
+        stepStartedAt = System.currentTimeMillis();
         CapabilityResult confirmationChallengeResult = createConfirmationChallengeIfNecessary(effectiveDefinition,
                 context, command.getConfirmationToken(), idempotencyKey, requestDigest);
         if (confirmationChallengeResult != null) {
+            if (confirmationChallengeResult.getStatus() == CapabilityStatus.CONFIRM_REQUIRED) {
+                audit.confirmationStatus(CapabilityConfirmationStatus.CHALLENGE_CREATED);
+                audit.success(CapabilityAuditStage.CONFIRMATION, "confirmation challenge created", stepStartedAt);
+            } else {
+                audit.confirmationStatus(CapabilityConfirmationStatus.ERROR);
+                audit.failure(CapabilityAuditStage.CONFIRMATION, confirmationChallengeResult, stepStartedAt);
+            }
             return confirmationChallengeResult;
         }
+        if (!effectiveDefinition.isConfirmationRequired()) {
+            audit.confirmationStatus(CapabilityConfirmationStatus.NOT_REQUIRED);
+            audit.success(CapabilityAuditStage.CONFIRMATION, "confirmation not required", stepStartedAt);
+        }
 
+        stepStartedAt = System.currentTimeMillis();
         CapabilityIdempotencyCheck idempotencyCheck = acquireIdempotency(effectiveDefinition, context,
                 idempotencyKey, requestDigest);
         if (idempotencyCheck != null && idempotencyCheck.getStatus() != CapabilityIdempotencyStatus.ACQUIRED) {
-            return toIdempotencyResult(name, idempotencyCheck);
+            CapabilityResult idempotencyResult = toIdempotencyResult(name, idempotencyCheck);
+            if (idempotencyCheck.getStatus() == CapabilityIdempotencyStatus.REPLAYED) {
+                audit.idempotencyStatus(CapabilityIdempotencyAuditStatus.REPLAYED);
+                audit.success(CapabilityAuditStage.IDEMPOTENCY, "stored result replayed", stepStartedAt);
+            } else if (idempotencyCheck.getStatus() == CapabilityIdempotencyStatus.ERROR) {
+                audit.idempotencyStatus(CapabilityIdempotencyAuditStatus.ERROR);
+                audit.failure(CapabilityAuditStage.IDEMPOTENCY, idempotencyResult, stepStartedAt);
+            } else {
+                audit.idempotencyStatus(CapabilityIdempotencyAuditStatus.CONFLICT);
+                audit.failure(CapabilityAuditStage.IDEMPOTENCY, idempotencyResult, stepStartedAt);
+            }
+            return idempotencyResult;
         }
         boolean idempotencyAcquired = idempotencyCheck != null;
+        if (idempotencyAcquired) {
+            audit.idempotencyStatus(CapabilityIdempotencyAuditStatus.ACQUIRED);
+            audit.success(CapabilityAuditStage.IDEMPOTENCY, "execution right acquired", stepStartedAt);
+        } else {
+            audit.idempotencyStatus(CapabilityIdempotencyAuditStatus.NOT_REQUESTED);
+            audit.success(CapabilityAuditStage.IDEMPOTENCY, "idempotency not requested", stepStartedAt);
+        }
 
+        stepStartedAt = System.currentTimeMillis();
         CapabilityResult confirmationResult = verifyConfirmation(effectiveDefinition, context,
                 command.getConfirmationToken(), idempotencyKey, requestDigest);
         if (confirmationResult != null) {
+            audit.confirmationStatus(ERROR_CONFIRMATION.equals(confirmationResult.getErrorCode())
+                    ? CapabilityConfirmationStatus.ERROR
+                    : CapabilityConfirmationStatus.TOKEN_INVALID);
+            audit.failure(CapabilityAuditStage.CONFIRMATION, confirmationResult, stepStartedAt);
             if (idempotencyAcquired) {
+                long releaseStartedAt = System.currentTimeMillis();
                 CapabilityResult releaseFailure = releaseIdempotency(effectiveDefinition, context,
                         idempotencyKey, requestDigest);
                 if (releaseFailure != null) {
+                    audit.idempotencyStatus(CapabilityIdempotencyAuditStatus.ERROR);
+                    audit.failure(CapabilityAuditStage.IDEMPOTENCY, releaseFailure, releaseStartedAt);
                     return releaseFailure;
                 }
+                audit.idempotencyStatus(CapabilityIdempotencyAuditStatus.RELEASED);
+                audit.success(CapabilityAuditStage.IDEMPOTENCY, "execution right released", releaseStartedAt);
             }
             return confirmationResult;
         }
+        if (effectiveDefinition.isConfirmationRequired()) {
+            audit.confirmationStatus(CapabilityConfirmationStatus.TOKEN_VALID);
+            audit.success(CapabilityAuditStage.CONFIRMATION, "confirmation token accepted", stepStartedAt);
+        }
 
+        stepStartedAt = System.currentTimeMillis();
+        audit.targetInvoked();
         try {
             Object rawResult = invokeTarget(registration, argument);
             CapabilityResult result = normalizeResult(name, rawResult);
-            return idempotencyAcquired
-                    ? completeIdempotency(effectiveDefinition, context, idempotencyKey, requestDigest, result) : result;
+            if (result.isSuccess()) {
+                audit.success(CapabilityAuditStage.INVOCATION, "target invocation completed", stepStartedAt);
+            } else {
+                audit.failure(CapabilityAuditStage.INVOCATION, result, stepStartedAt);
+            }
+            if (!idempotencyAcquired) {
+                return result;
+            }
+            long completionStartedAt = System.currentTimeMillis();
+            CapabilityResult completedResult = completeIdempotency(
+                    effectiveDefinition, context, idempotencyKey, requestDigest, result);
+            if (completedResult == result) {
+                audit.idempotencyStatus(CapabilityIdempotencyAuditStatus.COMPLETED);
+                audit.success(CapabilityAuditStage.IDEMPOTENCY, "result stored", completionStartedAt);
+            } else {
+                audit.idempotencyStatus(CapabilityIdempotencyAuditStatus.ERROR);
+                audit.failure(CapabilityAuditStage.IDEMPOTENCY, completedResult, completionStartedAt);
+            }
+            return completedResult;
         } catch (InvocationTargetException exception) {
             CapabilityResult result = CapabilityResult.failure(
                     name, ERROR_INVOKE, readableMessage(exception.getTargetException()));
+            audit.failure(CapabilityAuditStage.INVOCATION, result, stepStartedAt);
             failIdempotency(effectiveDefinition, context, idempotencyKey, requestDigest, result, idempotencyAcquired);
+            if (idempotencyAcquired) {
+                audit.idempotencyStatus(CapabilityIdempotencyAuditStatus.FAILED);
+            }
             return result;
         } catch (ReflectiveOperationException exception) {
             CapabilityResult result = CapabilityResult.failure(name, ERROR_INVOKE, readableMessage(exception));
+            audit.failure(CapabilityAuditStage.INVOCATION, result, stepStartedAt);
             failIdempotency(effectiveDefinition, context, idempotencyKey, requestDigest, result, idempotencyAcquired);
+            if (idempotencyAcquired) {
+                audit.idempotencyStatus(CapabilityIdempotencyAuditStatus.FAILED);
+            }
             return result;
         }
     }
@@ -257,7 +395,7 @@ public class CapabilityExecutor {
             return null;
         }
         if (idempotencyService == null) {
-            return CapabilityIdempotencyCheck.conflict(ERROR_IDEMPOTENCY_UNAVAILABLE,
+            return CapabilityIdempotencyCheck.error(ERROR_IDEMPOTENCY_UNAVAILABLE,
                     "Capability idempotency service is not configured");
         }
         try {
@@ -269,7 +407,7 @@ public class CapabilityExecutor {
             }
             return check;
         } catch (RuntimeException exception) {
-            return CapabilityIdempotencyCheck.conflict(ERROR_IDEMPOTENCY, readableMessage(exception));
+            return CapabilityIdempotencyCheck.error(ERROR_IDEMPOTENCY, readableMessage(exception));
         }
     }
 

@@ -177,7 +177,12 @@ class CapabilityExecutorTest {
         assertThat(result.getStatus()).isEqualTo(CapabilityStatus.DENIED);
         assertThat(result.getErrorCode()).isEqualTo("CAPABILITY_DISABLED");
         assertThat(productCapability.invocationCount).isZero();
-        assertThat(observedContext.get().invocationContext()).isSameAs(invocationContext);
+        CapabilityContext observedInvocationContext = observedContext.get().invocationContext();
+        assertThat(observedInvocationContext.getTraceId()).isEqualTo(result.getTraceId());
+        assertThat(observedInvocationContext.getUserId()).isEqualTo(invocationContext.getUserId());
+        assertThat(observedInvocationContext.getTenantId()).isEqualTo(invocationContext.getTenantId());
+        assertThat(observedInvocationContext.getConsumerType()).isEqualTo(invocationContext.getConsumerType());
+        assertThat(observedInvocationContext.getConsumerId()).isEqualTo(invocationContext.getConsumerId());
         assertThat(observedContext.get().definition().getName()).isEqualTo("test.product.search");
     }
 

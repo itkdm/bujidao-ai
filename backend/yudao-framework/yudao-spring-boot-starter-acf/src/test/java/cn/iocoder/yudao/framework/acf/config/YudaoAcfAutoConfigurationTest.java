@@ -2,6 +2,7 @@ package cn.iocoder.yudao.framework.acf.config;
 
 import cn.iocoder.yudao.framework.acf.core.annotation.AgentCapability;
 import cn.iocoder.yudao.framework.acf.core.enums.CapabilityStatus;
+import cn.iocoder.yudao.framework.acf.core.model.CapabilityAuditRecord;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityConfirmationChallenge;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityConfirmationCheck;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityContext;
@@ -15,6 +16,7 @@ import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyContext;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyDecision;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPermissionPolicy;
 import cn.iocoder.yudao.framework.acf.core.schema.CapabilitySchemaGenerator;
+import cn.iocoder.yudao.framework.acf.core.service.CapabilityAuditService;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityConfirmationService;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityExecutor;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityGovernanceService;
@@ -68,7 +70,27 @@ class YudaoAcfAutoConfigurationTest {
             assertThat(context).hasSingleBean(CapabilityExecutor.class);
             assertThat(context).doesNotHaveBean(CapabilityConfirmationService.class);
             assertThat(context).doesNotHaveBean(CapabilityIdempotencyService.class);
+            assertThat(context).doesNotHaveBean(CapabilityAuditService.class);
         });
+    }
+
+    @Test
+    void shouldUseBusinessAuditServiceWhenProvided() {
+        contextRunner.withUserConfiguration(CapabilityProviderConfig.class, AuditServiceConfig.class)
+                .run(context -> {
+                    CapabilityResult result = context.getBean(CapabilityExecutor.class)
+                            .invoke(CapabilityInvokeCommand.builder()
+                                    .name("test.auto.echo")
+                                    .arguments("hello")
+                                    .context(CapabilityContext.builder().userId(1L).build())
+                                    .build());
+
+                    CapturingAuditService auditService = context.getBean(CapturingAuditService.class);
+                    assertThat(result.isSuccess()).isTrue();
+                    assertThat(auditService.record).isNotNull();
+                    assertThat(auditService.record.getTraceId()).isEqualTo(result.getTraceId());
+                    assertThat(auditService.record.getCapabilityName()).isEqualTo("test.auto.echo");
+                });
     }
 
     @Test
@@ -257,6 +279,25 @@ class YudaoAcfAutoConfigurationTest {
                     return CapabilityConfirmationCheck.valid("acf-confirm-auto");
                 }
             };
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class AuditServiceConfig {
+
+        @Bean
+        CapturingAuditService capabilityAuditService() {
+            return new CapturingAuditService();
+        }
+    }
+
+    static class CapturingAuditService implements CapabilityAuditService {
+
+        private CapabilityAuditRecord record;
+
+        @Override
+        public void record(CapabilityAuditRecord record) {
+            this.record = record;
         }
     }
 

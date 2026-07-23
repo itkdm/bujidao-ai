@@ -18,26 +18,35 @@ import java.util.Map;
 @Getter
 public final class CapabilityContext {
 
+    private final String traceId;
     private final Long userId;
     private final Long tenantId;
     private final String source;
     private final CapabilityConsumerType consumerType;
     private final String consumerId;
+    private final String clientRequestId;
     private final Map<String, Object> attributes;
 
-    @Builder
-    private CapabilityContext(Long userId, Long tenantId, String source, CapabilityConsumerType consumerType,
-                              String consumerId, Map<String, Object> attributes) {
+    @Builder(toBuilder = true)
+    private CapabilityContext(String traceId, Long userId, Long tenantId, String source,
+                              CapabilityConsumerType consumerType, String consumerId, String clientRequestId,
+                              Map<String, Object> attributes) {
+        this.traceId = traceId;
         this.userId = userId;
         this.tenantId = tenantId;
         this.source = source;
         this.consumerType = consumerType;
         this.consumerId = consumerId;
+        this.clientRequestId = clientRequestId;
         this.attributes = attributes == null ? Map.of() : Map.copyOf(attributes);
     }
 
     public static CapabilityContext empty() {
         return CapabilityContext.builder().build();
+    }
+
+    public CapabilityContext withTraceId(String traceId) {
+        return toBuilder().traceId(traceId).build();
     }
 
 }

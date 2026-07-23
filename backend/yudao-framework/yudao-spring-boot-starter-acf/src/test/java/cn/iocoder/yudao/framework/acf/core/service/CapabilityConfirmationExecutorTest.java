@@ -75,7 +75,9 @@ class CapabilityConfirmationExecutorTest {
         CapabilityConfirmationChallenge challenge = (CapabilityConfirmationChallenge) result.getData();
         assertThat(challenge.getChallengeId()).isEqualTo("acf-confirm-001");
         assertThat(challenge.getRequestDigest()).isEqualTo(confirmationService.requestDigest);
-        assertThat(confirmationService.context).isSameAs(context);
+        assertThat(confirmationService.context.getTraceId()).isEqualTo(result.getTraceId());
+        assertThat(confirmationService.context.getUserId()).isEqualTo(context.getUserId());
+        assertThat(confirmationService.context.getTenantId()).isEqualTo(context.getTenantId());
         assertThat(capability.confirmedInvocationCount).isZero();
     }
 

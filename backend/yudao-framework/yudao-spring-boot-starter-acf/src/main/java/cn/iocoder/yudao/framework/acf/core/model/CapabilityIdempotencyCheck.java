@@ -39,4 +39,12 @@ public final class CapabilityIdempotencyCheck {
                 .build();
     }
 
+    public static CapabilityIdempotencyCheck error(String errorCode, String reason) {
+        return CapabilityIdempotencyCheck.builder()
+                .status(CapabilityIdempotencyStatus.ERROR)
+                .errorCode(errorCode)
+                .reason(reason)
+                .build();
+    }
+
 }

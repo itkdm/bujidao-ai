@@ -14,6 +14,9 @@ public enum CapabilityIdempotencyStatus {
     REPLAYED,
 
     /** 幂等键已被执行中请求或不同请求占用 */
-    CONFLICT
+    CONFLICT,
+
+    /** 幂等基础设施不可用或执行检查失败 */
+    ERROR
 
 }
