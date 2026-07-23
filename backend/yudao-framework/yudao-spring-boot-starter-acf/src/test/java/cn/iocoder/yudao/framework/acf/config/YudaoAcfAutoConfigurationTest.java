@@ -1,6 +1,7 @@
 package cn.iocoder.yudao.framework.acf.config;
 
 import cn.iocoder.yudao.framework.acf.core.annotation.AgentCapability;
+import cn.iocoder.yudao.framework.acf.core.enums.CapabilityConsumerType;
 import cn.iocoder.yudao.framework.acf.core.enums.CapabilityStatus;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityAuditRecord;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityConfirmationChallenge;
@@ -36,6 +37,8 @@ import cn.iocoder.yudao.framework.acf.core.service.CapabilityRequestDigestGenera
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityVisibilityService;
 import cn.iocoder.yudao.framework.acf.core.service.DefaultCapabilityGovernanceService;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolExportService;
+import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCall;
+import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import cn.iocoder.yudao.framework.common.biz.system.permission.PermissionCommonApi;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Validator;
@@ -77,6 +80,7 @@ class YudaoAcfAutoConfigurationTest {
             assertThat(context).hasSingleBean(CapabilityGovernanceService.class);
             assertThat(context).hasSingleBean(CapabilityVisibilityService.class);
             assertThat(context).hasSingleBean(CapabilityToolExportService.class);
+            assertThat(context).hasSingleBean(CapabilityToolInvoker.class);
             assertThat(context).hasSingleBean(CapabilityRequestDigestGenerator.class);
             assertThat(context).hasSingleBean(CapabilityExceptionClassifier.class);
             assertThat(context).hasSingleBean(CapabilityRuntimePolicyService.class);
@@ -129,6 +133,25 @@ class YudaoAcfAutoConfigurationTest {
                     assertThat(metricsRecorder.record.getCapabilityName()).isEqualTo("test.auto.echo");
                     assertThat(metricsRecorder.record.getStatus()).isEqualTo(CapabilityStatus.SUCCESS);
                     assertThat(metricsRecorder.record.isTargetInvoked()).isTrue();
+                });
+    }
+
+    @Test
+    void shouldInvokeCapabilityThroughToolBoundary() {
+        contextRunner.withUserConfiguration(CapabilityProviderConfig.class)
+                .run(context -> {
+                    CapabilityResult result = context.getBean(CapabilityToolInvoker.class)
+                            .invoke(CapabilityToolCall.builder()
+                                    .capabilityName("test.auto.echo")
+                                    .arguments("hello")
+                                    .context(CapabilityContext.builder()
+                                            .userId(1L)
+                                            .consumerType(CapabilityConsumerType.AGENT)
+                                            .build())
+                                    .build());
+
+                    assertThat(result.isSuccess()).isTrue();
+                    assertThat(result.getData()).isEqualTo("hello");
                 });
     }
 
