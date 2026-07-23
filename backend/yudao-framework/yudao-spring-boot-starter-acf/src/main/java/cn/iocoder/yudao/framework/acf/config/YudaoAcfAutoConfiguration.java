@@ -6,6 +6,8 @@ import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyChain;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPermissionPolicy;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityExceptionClassifier;
 import cn.iocoder.yudao.framework.acf.core.runtime.DefaultCapabilityExceptionClassifier;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimePolicyService;
+import cn.iocoder.yudao.framework.acf.core.runtime.DefaultCapabilityRuntimePolicyService;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityConfirmationService;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityAuditService;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityExecutor;
@@ -89,6 +91,12 @@ public class YudaoAcfAutoConfiguration {
     @ConditionalOnMissingBean(CapabilityExceptionClassifier.class)
     public CapabilityExceptionClassifier capabilityExceptionClassifier() {
         return new DefaultCapabilityExceptionClassifier();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(CapabilityRuntimePolicyService.class)
+    public CapabilityRuntimePolicyService capabilityRuntimePolicyService() {
+        return new DefaultCapabilityRuntimePolicyService();
     }
 
     @Bean
