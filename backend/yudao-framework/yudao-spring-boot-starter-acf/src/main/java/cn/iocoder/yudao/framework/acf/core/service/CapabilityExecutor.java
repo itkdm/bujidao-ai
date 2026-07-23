@@ -1,6 +1,8 @@
 package cn.iocoder.yudao.framework.acf.core.service;
 
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityContext;
+import cn.iocoder.yudao.framework.acf.core.model.CapabilityConfirmationChallenge;
+import cn.iocoder.yudao.framework.acf.core.model.CapabilityConfirmationCheck;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityDefinition;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityInvokeCommand;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityPolicyResult;
@@ -9,7 +11,6 @@ import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
-import lombok.RequiredArgsConstructor;
 import org.springframework.util.StringUtils;
 
 import java.lang.reflect.InvocationTargetException;
@@ -27,19 +28,41 @@ import java.util.Set;
  *
  * @author bujidao
  */
-@RequiredArgsConstructor
 public class CapabilityExecutor {
 
     public static final String ERROR_BAD_REQUEST = "BAD_REQUEST";
     public static final String ERROR_CAPABILITY_NOT_FOUND = "CAPABILITY_NOT_FOUND";
     public static final String ERROR_POLICY = "POLICY_ERROR";
     public static final String ERROR_POLICY_DENIED = "POLICY_DENIED";
+    public static final String ERROR_CONFIRMATION = "CONFIRMATION_ERROR";
+    public static final String ERROR_CONFIRMATION_UNAVAILABLE = "CONFIRMATION_UNAVAILABLE";
+    public static final String ERROR_CONFIRMATION_TOKEN_INVALID = "CONFIRM_TOKEN_INVALID";
     public static final String ERROR_INVOKE = "INVOKE_ERROR";
 
     private final CapabilityRegistry capabilityRegistry;
     private final CapabilityGovernanceService governanceService;
+    private final CapabilityConfirmationService confirmationService;
+    private final CapabilityRequestDigestGenerator requestDigestGenerator;
     private final ObjectMapper objectMapper;
     private final Validator validator;
+
+    public CapabilityExecutor(CapabilityRegistry capabilityRegistry, CapabilityGovernanceService governanceService,
+                              ObjectMapper objectMapper, Validator validator) {
+        this(capabilityRegistry, governanceService, null, new CapabilityRequestDigestGenerator(objectMapper),
+                objectMapper, validator);
+    }
+
+    public CapabilityExecutor(CapabilityRegistry capabilityRegistry, CapabilityGovernanceService governanceService,
+                              CapabilityConfirmationService confirmationService,
+                              CapabilityRequestDigestGenerator requestDigestGenerator,
+                              ObjectMapper objectMapper, Validator validator) {
+        this.capabilityRegistry = capabilityRegistry;
+        this.governanceService = governanceService;
+        this.confirmationService = confirmationService;
+        this.requestDigestGenerator = requestDigestGenerator;
+        this.objectMapper = objectMapper;
+        this.validator = validator;
+    }
 
     public CapabilityResult invoke(CapabilityInvokeCommand command) {
         String name = command == null ? null : command.getName();
@@ -54,9 +77,9 @@ public class CapabilityExecutor {
             return CapabilityResult.failure(name, ERROR_CAPABILITY_NOT_FOUND, exception.getMessage());
         }
 
+        CapabilityContext context = command.getContext() == null ? CapabilityContext.empty() : command.getContext();
         CapabilityPolicyResult policyResult;
         try {
-            CapabilityContext context = command.getContext() == null ? CapabilityContext.empty() : command.getContext();
             policyResult = Objects.requireNonNull(governanceService.evaluateExecution(registration.definition(), context),
                     "Capability governance result must not be null");
         } catch (RuntimeException exception) {
@@ -73,6 +96,11 @@ public class CapabilityExecutor {
         try {
             Object argument = convertArgument(effectiveDefinition, command.getArguments());
             validateArgument(argument);
+            CapabilityResult confirmationResult = evaluateConfirmation(effectiveDefinition, context,
+                    command.getConfirmationToken(), argument);
+            if (confirmationResult != null) {
+                return confirmationResult;
+            }
             Object data = invokeTarget(registration, argument);
             return CapabilityResult.success(name, data);
         } catch (IllegalArgumentException exception) {
@@ -95,6 +123,37 @@ public class CapabilityExecutor {
         Object source = arguments == null ? Map.of() : arguments;
         JavaType javaType = objectMapper.getTypeFactory().constructType(argumentType);
         return objectMapper.convertValue(source, javaType);
+    }
+
+    private CapabilityResult evaluateConfirmation(CapabilityDefinition definition, CapabilityContext context,
+                                                  String confirmationToken, Object argument) {
+        if (!definition.isConfirmationRequired()) {
+            return null;
+        }
+        if (confirmationService == null) {
+            return CapabilityResult.failure(definition.getName(), ERROR_CONFIRMATION_UNAVAILABLE,
+                    "Capability confirmation service is not configured");
+        }
+        try {
+            String requestDigest = requestDigestGenerator.generate(definition.getName(), argument);
+            if (!StringUtils.hasText(confirmationToken)) {
+                CapabilityConfirmationChallenge challenge = Objects.requireNonNull(
+                        confirmationService.createChallenge(definition, context, requestDigest),
+                        "Capability confirmation challenge must not be null");
+                return CapabilityResult.confirmationRequired(definition.getName(), challenge);
+            }
+            CapabilityConfirmationCheck check = Objects.requireNonNull(
+                    confirmationService.verifyAndConsumeToken(definition, context, confirmationToken, requestDigest),
+                    "Capability confirmation check must not be null");
+            if (check.isValid()) {
+                return null;
+            }
+            String errorCode = StringUtils.hasText(check.getErrorCode())
+                    ? check.getErrorCode() : ERROR_CONFIRMATION_TOKEN_INVALID;
+            return CapabilityResult.failure(definition.getName(), errorCode, check.getReason());
+        } catch (RuntimeException exception) {
+            return CapabilityResult.failure(definition.getName(), ERROR_CONFIRMATION, readableMessage(exception));
+        }
     }
 
     private void validateArgument(Object argument) {

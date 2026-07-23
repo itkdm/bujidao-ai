@@ -1,9 +1,13 @@
 package cn.iocoder.yudao.framework.acf.config;
 
 import cn.iocoder.yudao.framework.acf.core.annotation.AgentCapability;
+import cn.iocoder.yudao.framework.acf.core.enums.CapabilityStatus;
+import cn.iocoder.yudao.framework.acf.core.model.CapabilityConfirmationChallenge;
+import cn.iocoder.yudao.framework.acf.core.model.CapabilityConfirmationCheck;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityContext;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityDefinition;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityInvokeCommand;
+import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityVisibilityQuery;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicy;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyChain;
@@ -11,10 +15,12 @@ import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyContext;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyDecision;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPermissionPolicy;
 import cn.iocoder.yudao.framework.acf.core.schema.CapabilitySchemaGenerator;
+import cn.iocoder.yudao.framework.acf.core.service.CapabilityConfirmationService;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityExecutor;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityGovernanceService;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityPermissionEvaluator;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityRegistry;
+import cn.iocoder.yudao.framework.acf.core.service.CapabilityRequestDigestGenerator;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityVisibilityService;
 import cn.iocoder.yudao.framework.acf.core.service.DefaultCapabilityGovernanceService;
 import cn.iocoder.yudao.framework.common.biz.system.permission.PermissionCommonApi;
@@ -57,8 +63,26 @@ class YudaoAcfAutoConfigurationTest {
             assertThat(context).hasSingleBean(CapabilityPolicyChain.class);
             assertThat(context).hasSingleBean(CapabilityGovernanceService.class);
             assertThat(context).hasSingleBean(CapabilityVisibilityService.class);
+            assertThat(context).hasSingleBean(CapabilityRequestDigestGenerator.class);
             assertThat(context).hasSingleBean(CapabilityExecutor.class);
+            assertThat(context).doesNotHaveBean(CapabilityConfirmationService.class);
         });
+    }
+
+    @Test
+    void shouldUseBusinessConfirmationServiceWhenProvided() {
+        contextRunner.withUserConfiguration(ConfirmedCapabilityConfig.class, ConfirmationServiceConfig.class)
+                .run(context -> {
+                    CapabilityResult result = context.getBean(CapabilityExecutor.class)
+                            .invoke(CapabilityInvokeCommand.builder()
+                                    .name("test.auto.order.update")
+                                    .arguments("confirmed")
+                                    .context(CapabilityContext.builder().userId(1L).build())
+                                    .build());
+
+                    assertThat(result.getStatus()).isEqualTo(CapabilityStatus.CONFIRM_REQUIRED);
+                    assertThat(result.getData()).isInstanceOf(CapabilityConfirmationChallenge.class);
+                });
     }
 
     @Test
@@ -115,18 +139,21 @@ class YudaoAcfAutoConfigurationTest {
                     assertThat(context).hasSingleBean(CapabilityPolicyChain.class);
                     assertThat(context).hasSingleBean(CapabilityGovernanceService.class);
                     assertThat(context).hasSingleBean(CapabilityVisibilityService.class);
+                    assertThat(context).hasSingleBean(CapabilityRequestDigestGenerator.class);
                     assertThat(context).hasSingleBean(CapabilityExecutor.class);
                     assertThat(context).hasBean("customCapabilitySchemaGenerator");
                     assertThat(context).hasBean("customCapabilityRegistry");
                     assertThat(context).hasBean("customCapabilityPolicyChain");
                     assertThat(context).hasBean("customCapabilityGovernanceService");
                     assertThat(context).hasBean("customCapabilityVisibilityService");
+                    assertThat(context).hasBean("customCapabilityRequestDigestGenerator");
                     assertThat(context).hasBean("customCapabilityExecutor");
                     assertThat(context).doesNotHaveBean("capabilitySchemaGenerator");
                     assertThat(context).doesNotHaveBean("capabilityRegistry");
                     assertThat(context).doesNotHaveBean("capabilityPolicyChain");
                     assertThat(context).doesNotHaveBean("capabilityGovernanceService");
                     assertThat(context).doesNotHaveBean("capabilityVisibilityService");
+                    assertThat(context).doesNotHaveBean("capabilityRequestDigestGenerator");
                     assertThat(context).doesNotHaveBean("capabilityExecutor");
                 });
     }
@@ -180,6 +207,55 @@ class YudaoAcfAutoConfigurationTest {
     }
 
     @Configuration(proxyBeanMethods = false)
+    static class ConfirmedCapabilityConfig {
+
+        @Bean
+        ConfirmedCapability confirmedCapability() {
+            return new ConfirmedCapability();
+        }
+    }
+
+    static class ConfirmedCapability {
+
+        @AgentCapability(name = "test.auto.order.update", title = "确认更新订单",
+                description = "验证确认服务自动装配", permissions = "test:auto:order:update",
+                sideEffect = true, confirmationRequired = true)
+        public String update(String value) {
+            return value;
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class ConfirmationServiceConfig {
+
+        @Bean
+        CapabilityConfirmationService capabilityConfirmationService() {
+            return new CapabilityConfirmationService() {
+                @Override
+                public CapabilityConfirmationChallenge createChallenge(CapabilityDefinition definition,
+                                                                       CapabilityContext context,
+                                                                       String requestDigest) {
+                    return CapabilityConfirmationChallenge.builder()
+                            .challengeId("acf-confirm-auto")
+                            .capabilityName(definition.getName())
+                            .capabilityVersion(definition.getVersion())
+                            .riskLevel(definition.getRiskLevel())
+                            .requestDigest(requestDigest)
+                            .build();
+                }
+
+                @Override
+                public CapabilityConfirmationCheck verifyAndConsumeToken(CapabilityDefinition definition,
+                                                                         CapabilityContext context,
+                                                                         String confirmationToken,
+                                                                         String requestDigest) {
+                    return CapabilityConfirmationCheck.valid("acf-confirm-auto");
+                }
+            };
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
     static class CustomCoreBeansConfig {
 
         @Bean
@@ -207,6 +283,11 @@ class YudaoAcfAutoConfigurationTest {
         CapabilityVisibilityService customCapabilityVisibilityService(CapabilityRegistry capabilityRegistry,
                                                                       CapabilityGovernanceService governanceService) {
             return new CapabilityVisibilityService(capabilityRegistry, governanceService);
+        }
+
+        @Bean
+        CapabilityRequestDigestGenerator customCapabilityRequestDigestGenerator(ObjectMapper objectMapper) {
+            return new CapabilityRequestDigestGenerator(objectMapper);
         }
 
         @Bean

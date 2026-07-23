@@ -4,10 +4,12 @@ import cn.iocoder.yudao.framework.acf.core.schema.CapabilitySchemaGenerator;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicy;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyChain;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPermissionPolicy;
+import cn.iocoder.yudao.framework.acf.core.service.CapabilityConfirmationService;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityExecutor;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityGovernanceService;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityPermissionEvaluator;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityRegistry;
+import cn.iocoder.yudao.framework.acf.core.service.CapabilityRequestDigestGenerator;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityVisibilityService;
 import cn.iocoder.yudao.framework.acf.core.service.DefaultCapabilityGovernanceService;
 import cn.iocoder.yudao.framework.common.biz.system.permission.PermissionCommonApi;
@@ -74,11 +76,20 @@ public class YudaoAcfAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnMissingBean(CapabilityRequestDigestGenerator.class)
+    public CapabilityRequestDigestGenerator capabilityRequestDigestGenerator(ObjectMapper objectMapper) {
+        return new CapabilityRequestDigestGenerator(objectMapper);
+    }
+
+    @Bean
     @ConditionalOnMissingBean(CapabilityExecutor.class)
     public CapabilityExecutor capabilityExecutor(CapabilityRegistry capabilityRegistry,
                                                  CapabilityGovernanceService governanceService,
+                                                 ObjectProvider<CapabilityConfirmationService> confirmationService,
+                                                 CapabilityRequestDigestGenerator requestDigestGenerator,
                                                  ObjectMapper objectMapper, Validator validator) {
-        return new CapabilityExecutor(capabilityRegistry, governanceService, objectMapper, validator);
+        return new CapabilityExecutor(capabilityRegistry, governanceService, confirmationService.getIfAvailable(),
+                requestDigestGenerator, objectMapper, validator);
     }
 
 }

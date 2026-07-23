@@ -25,4 +25,7 @@ public class CapabilityInvokeCommand {
     /** 调用治理上下文 */
     private CapabilityContext context;
 
+    /** 执行需要确认的能力时，由确认流程签发的令牌 */
+    private String confirmationToken;
+
 }

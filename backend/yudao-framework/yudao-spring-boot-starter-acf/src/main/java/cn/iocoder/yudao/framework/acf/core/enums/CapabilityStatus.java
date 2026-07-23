@@ -8,6 +8,7 @@ package cn.iocoder.yudao.framework.acf.core.enums;
 public enum CapabilityStatus {
 
     SUCCESS,
+    CONFIRM_REQUIRED,
     FAILURE
 
 }

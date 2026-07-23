@@ -27,6 +27,16 @@ public class CapabilityResult {
                 .build();
     }
 
+    public static CapabilityResult confirmationRequired(String name, CapabilityConfirmationChallenge challenge) {
+        return CapabilityResult.builder()
+                .name(name)
+                .status(CapabilityStatus.CONFIRM_REQUIRED)
+                .data(challenge)
+                .errorCode("CONFIRM_REQUIRED")
+                .message("Capability requires confirmation before execution")
+                .build();
+    }
+
     public static CapabilityResult failure(String name, String errorCode, String message) {
         return CapabilityResult.builder()
                 .name(name)
