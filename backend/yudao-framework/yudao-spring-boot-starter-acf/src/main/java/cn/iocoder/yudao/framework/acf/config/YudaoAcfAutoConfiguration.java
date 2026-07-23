@@ -4,6 +4,8 @@ import cn.iocoder.yudao.framework.acf.core.schema.CapabilitySchemaGenerator;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicy;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyChain;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPermissionPolicy;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityExceptionClassifier;
+import cn.iocoder.yudao.framework.acf.core.runtime.DefaultCapabilityExceptionClassifier;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityConfirmationService;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityAuditService;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityExecutor;
@@ -84,17 +86,24 @@ public class YudaoAcfAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnMissingBean(CapabilityExceptionClassifier.class)
+    public CapabilityExceptionClassifier capabilityExceptionClassifier() {
+        return new DefaultCapabilityExceptionClassifier();
+    }
+
+    @Bean
     @ConditionalOnMissingBean(CapabilityExecutor.class)
     public CapabilityExecutor capabilityExecutor(CapabilityRegistry capabilityRegistry,
                                                  CapabilityGovernanceService governanceService,
                                                  ObjectProvider<CapabilityConfirmationService> confirmationService,
                                                  ObjectProvider<CapabilityIdempotencyService> idempotencyService,
                                                  ObjectProvider<CapabilityAuditService> auditService,
+                                                 CapabilityExceptionClassifier exceptionClassifier,
                                                  CapabilityRequestDigestGenerator requestDigestGenerator,
                                                  ObjectMapper objectMapper, Validator validator) {
         return new CapabilityExecutor(capabilityRegistry, governanceService, confirmationService.getIfAvailable(),
-                idempotencyService.getIfAvailable(), auditService.getIfAvailable(), requestDigestGenerator,
-                objectMapper, validator);
+                idempotencyService.getIfAvailable(), auditService.getIfAvailable(), exceptionClassifier,
+                requestDigestGenerator, objectMapper, validator);
     }
 
 }

@@ -13,6 +13,9 @@ import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyChain;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyContext;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyDecision;
 import cn.iocoder.yudao.framework.acf.core.schema.CapabilitySchemaGenerator;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityExceptionClassification;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityExceptionClassifier;
+import cn.iocoder.yudao.framework.acf.core.runtime.DefaultCapabilityExceptionClassifier;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -124,6 +127,33 @@ class CapabilityExecutorTest {
         assertThat(result.isSuccess()).isFalse();
         assertThat(result.getErrorCode()).isEqualTo(CapabilityExecutor.ERROR_INVOKE);
         assertThat(result.getMessage()).isEqualTo("inventory unavailable");
+        assertThat(result.isRetryable()).isFalse();
+    }
+
+    @Test
+    void shouldUseCustomExceptionClassifier() {
+        CapabilityExceptionClassifier classifier = throwable -> CapabilityExceptionClassification.of(
+                "INVENTORY_TEMPORARILY_UNAVAILABLE", "inventory service is busy", true, throwable);
+        executor = createExecutor(List.of(), classifier);
+
+        CapabilityResult result = invoke("test.product.fail", Map.of());
+
+        assertThat(result.getErrorCode()).isEqualTo("INVENTORY_TEMPORARILY_UNAVAILABLE");
+        assertThat(result.getMessage()).isEqualTo("inventory service is busy");
+        assertThat(result.isRetryable()).isTrue();
+    }
+
+    @Test
+    void shouldPreserveOriginalFailureWhenCustomClassifierThrows() {
+        executor = createExecutor(List.of(), throwable -> {
+            throw new IllegalStateException("classifier unavailable");
+        });
+
+        CapabilityResult result = invoke("test.product.fail", Map.of());
+
+        assertThat(result.getErrorCode()).isEqualTo(CapabilityExecutor.ERROR_INVOKE);
+        assertThat(result.getMessage()).isEqualTo("inventory unavailable");
+        assertThat(result.isRetryable()).isFalse();
     }
 
     @Test
@@ -202,9 +232,15 @@ class CapabilityExecutorTest {
     }
 
     private CapabilityExecutor createExecutor(List<CapabilityPolicy> policies) {
+        return createExecutor(policies, new DefaultCapabilityExceptionClassifier());
+    }
+
+    private CapabilityExecutor createExecutor(List<CapabilityPolicy> policies,
+                                              CapabilityExceptionClassifier exceptionClassifier) {
         CapabilityGovernanceService governanceService = new DefaultCapabilityGovernanceService(
                 new CapabilityPolicyChain(policies));
-        return new CapabilityExecutor(registry, governanceService, objectMapper, validator);
+        return new CapabilityExecutor(registry, governanceService, null, null, null, exceptionClassifier,
+                new CapabilityRequestDigestGenerator(objectMapper), objectMapper, validator);
     }
 
     private ProxyCapabilityApi createProxyCapability() {

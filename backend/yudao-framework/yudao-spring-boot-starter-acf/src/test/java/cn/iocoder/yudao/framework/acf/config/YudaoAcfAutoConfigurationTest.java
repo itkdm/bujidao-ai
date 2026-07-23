@@ -16,6 +16,7 @@ import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyContext;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyDecision;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPermissionPolicy;
 import cn.iocoder.yudao.framework.acf.core.schema.CapabilitySchemaGenerator;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityExceptionClassifier;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityAuditService;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityConfirmationService;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityExecutor;
@@ -67,6 +68,7 @@ class YudaoAcfAutoConfigurationTest {
             assertThat(context).hasSingleBean(CapabilityGovernanceService.class);
             assertThat(context).hasSingleBean(CapabilityVisibilityService.class);
             assertThat(context).hasSingleBean(CapabilityRequestDigestGenerator.class);
+            assertThat(context).hasSingleBean(CapabilityExceptionClassifier.class);
             assertThat(context).hasSingleBean(CapabilityExecutor.class);
             assertThat(context).doesNotHaveBean(CapabilityConfirmationService.class);
             assertThat(context).doesNotHaveBean(CapabilityIdempotencyService.class);

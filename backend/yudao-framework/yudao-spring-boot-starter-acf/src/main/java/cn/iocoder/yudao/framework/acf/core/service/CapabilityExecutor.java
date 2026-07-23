@@ -13,6 +13,9 @@ import cn.iocoder.yudao.framework.acf.core.model.CapabilityIdempotencyCheck;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityInvokeCommand;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityPolicyResult;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityExceptionClassification;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityExceptionClassifier;
+import cn.iocoder.yudao.framework.acf.core.runtime.DefaultCapabilityExceptionClassifier;
 import cn.iocoder.yudao.framework.acf.core.standard.AcfCapabilityErrorCodes;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -38,6 +41,9 @@ import java.util.UUID;
  */
 public class CapabilityExecutor {
 
+    private static final CapabilityExceptionClassifier FALLBACK_EXCEPTION_CLASSIFIER =
+            new DefaultCapabilityExceptionClassifier();
+
     public static final String ERROR_BAD_REQUEST = AcfCapabilityErrorCodes.BAD_REQUEST;
     public static final String ERROR_CAPABILITY_NOT_FOUND = AcfCapabilityErrorCodes.CAPABILITY_NOT_FOUND;
     public static final String ERROR_POLICY = AcfCapabilityErrorCodes.POLICY_ERROR;
@@ -56,6 +62,7 @@ public class CapabilityExecutor {
     private final CapabilityConfirmationService confirmationService;
     private final CapabilityIdempotencyService idempotencyService;
     private final CapabilityAuditService auditService;
+    private final CapabilityExceptionClassifier exceptionClassifier;
     private final CapabilityRequestDigestGenerator requestDigestGenerator;
     private final ObjectMapper objectMapper;
     private final Validator validator;
@@ -63,15 +70,16 @@ public class CapabilityExecutor {
     public CapabilityExecutor(CapabilityRegistry capabilityRegistry, CapabilityGovernanceService governanceService,
                               ObjectMapper objectMapper, Validator validator) {
         this(capabilityRegistry, governanceService, null, null, null,
-                new CapabilityRequestDigestGenerator(objectMapper), objectMapper, validator);
+                new DefaultCapabilityExceptionClassifier(), new CapabilityRequestDigestGenerator(objectMapper),
+                objectMapper, validator);
     }
 
     public CapabilityExecutor(CapabilityRegistry capabilityRegistry, CapabilityGovernanceService governanceService,
                               CapabilityConfirmationService confirmationService,
                               CapabilityRequestDigestGenerator requestDigestGenerator,
                               ObjectMapper objectMapper, Validator validator) {
-        this(capabilityRegistry, governanceService, confirmationService, null, null, requestDigestGenerator,
-                objectMapper, validator);
+        this(capabilityRegistry, governanceService, confirmationService, null, null,
+                new DefaultCapabilityExceptionClassifier(), requestDigestGenerator, objectMapper, validator);
     }
 
     public CapabilityExecutor(CapabilityRegistry capabilityRegistry, CapabilityGovernanceService governanceService,
@@ -80,7 +88,7 @@ public class CapabilityExecutor {
                               CapabilityRequestDigestGenerator requestDigestGenerator,
                               ObjectMapper objectMapper, Validator validator) {
         this(capabilityRegistry, governanceService, confirmationService, idempotencyService, null,
-                requestDigestGenerator, objectMapper, validator);
+                new DefaultCapabilityExceptionClassifier(), requestDigestGenerator, objectMapper, validator);
     }
 
     public CapabilityExecutor(CapabilityRegistry capabilityRegistry, CapabilityGovernanceService governanceService,
@@ -89,11 +97,23 @@ public class CapabilityExecutor {
                               CapabilityAuditService auditService,
                               CapabilityRequestDigestGenerator requestDigestGenerator,
                               ObjectMapper objectMapper, Validator validator) {
+        this(capabilityRegistry, governanceService, confirmationService, idempotencyService, auditService,
+                new DefaultCapabilityExceptionClassifier(), requestDigestGenerator, objectMapper, validator);
+    }
+
+    public CapabilityExecutor(CapabilityRegistry capabilityRegistry, CapabilityGovernanceService governanceService,
+                              CapabilityConfirmationService confirmationService,
+                              CapabilityIdempotencyService idempotencyService,
+                              CapabilityAuditService auditService,
+                              CapabilityExceptionClassifier exceptionClassifier,
+                              CapabilityRequestDigestGenerator requestDigestGenerator,
+                              ObjectMapper objectMapper, Validator validator) {
         this.capabilityRegistry = capabilityRegistry;
         this.governanceService = governanceService;
         this.confirmationService = confirmationService;
         this.idempotencyService = idempotencyService;
         this.auditService = auditService;
+        this.exceptionClassifier = Objects.requireNonNull(exceptionClassifier, "exceptionClassifier");
         this.requestDigestGenerator = requestDigestGenerator;
         this.objectMapper = objectMapper;
         this.validator = validator;
@@ -114,7 +134,7 @@ public class CapabilityExecutor {
         try {
             result = doInvoke(command, name, context, audit);
         } catch (RuntimeException exception) {
-            result = CapabilityResult.failure(name, ERROR_INVOKE, readableMessage(exception));
+            result = classifyException(name, exception);
             audit.failure(CapabilityAuditStage.INVOCATION, result, startedAt);
         }
         result = result.withTraceId(traceId);
@@ -291,8 +311,7 @@ public class CapabilityExecutor {
             }
             return completedResult;
         } catch (InvocationTargetException exception) {
-            CapabilityResult result = CapabilityResult.failure(
-                    name, ERROR_INVOKE, readableMessage(exception.getTargetException()));
+            CapabilityResult result = classifyException(name, exception);
             audit.failure(CapabilityAuditStage.INVOCATION, result, stepStartedAt);
             failIdempotency(effectiveDefinition, context, idempotencyKey, requestDigest, result, idempotencyAcquired);
             if (idempotencyAcquired) {
@@ -300,7 +319,7 @@ public class CapabilityExecutor {
             }
             return result;
         } catch (ReflectiveOperationException exception) {
-            CapabilityResult result = CapabilityResult.failure(name, ERROR_INVOKE, readableMessage(exception));
+            CapabilityResult result = classifyException(name, exception);
             audit.failure(CapabilityAuditStage.INVOCATION, result, stepStartedAt);
             failIdempotency(effectiveDefinition, context, idempotencyKey, requestDigest, result, idempotencyAcquired);
             if (idempotencyAcquired) {
@@ -319,6 +338,20 @@ public class CapabilityExecutor {
             return capabilityResult.withName(name);
         }
         return CapabilityResult.success(name, rawResult);
+    }
+
+    private CapabilityResult classifyException(String name, Throwable throwable) {
+        try {
+            CapabilityExceptionClassification classification = Objects.requireNonNull(
+                    exceptionClassifier.classify(throwable), "Capability exception classification must not be null");
+            return CapabilityResult.failure(name, classification.getErrorCode(), classification.getMessage(),
+                    classification.isRetryable());
+        } catch (RuntimeException classificationException) {
+            // 自定义分类器不能掩盖原始执行异常，分类失败时回退到最保守的不可重试结果。
+            CapabilityExceptionClassification fallback = FALLBACK_EXCEPTION_CLASSIFIER.classify(throwable);
+            return CapabilityResult.failure(name, fallback.getErrorCode(), fallback.getMessage(),
+                    fallback.isRetryable());
+        }
     }
 
     private Object convertArgument(CapabilityDefinition definition, Object arguments) {
