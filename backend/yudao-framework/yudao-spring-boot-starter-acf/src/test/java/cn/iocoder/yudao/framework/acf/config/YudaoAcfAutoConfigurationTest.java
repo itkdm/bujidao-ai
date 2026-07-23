@@ -1,16 +1,20 @@
 package cn.iocoder.yudao.framework.acf.config;
 
 import cn.iocoder.yudao.framework.acf.core.annotation.AgentCapability;
+import cn.iocoder.yudao.framework.acf.core.model.CapabilityContext;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityInvokeCommand;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicy;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyChain;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyContext;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyDecision;
+import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPermissionPolicy;
 import cn.iocoder.yudao.framework.acf.core.schema.CapabilitySchemaGenerator;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityExecutor;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityGovernanceService;
+import cn.iocoder.yudao.framework.acf.core.service.CapabilityPermissionEvaluator;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityRegistry;
 import cn.iocoder.yudao.framework.acf.core.service.DefaultCapabilityGovernanceService;
+import cn.iocoder.yudao.framework.common.biz.system.permission.PermissionCommonApi;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Validator;
 import org.junit.jupiter.api.Test;
@@ -27,18 +31,26 @@ import org.springframework.context.annotation.Configuration;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class YudaoAcfAutoConfigurationTest {
 
-    private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
+    private final ApplicationContextRunner baseContextRunner = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(JacksonAutoConfiguration.class,
                     ValidationAutoConfiguration.class, YudaoAcfAutoConfiguration.class));
+    private final ApplicationContextRunner contextRunner = baseContextRunner
+            .withBean(PermissionCommonApi.class, YudaoAcfAutoConfigurationTest::allowPermissionCommonApi);
 
     @Test
     void shouldRegisterCoreBeansByDefault() {
         contextRunner.run(context -> {
             assertThat(context).hasSingleBean(CapabilitySchemaGenerator.class);
             assertThat(context).hasSingleBean(CapabilityRegistry.class);
+            assertThat(context).hasSingleBean(CapabilityPermissionEvaluator.class);
+            assertThat(context).hasSingleBean(CapabilityPermissionPolicy.class);
             assertThat(context).hasSingleBean(CapabilityPolicyChain.class);
             assertThat(context).hasSingleBean(CapabilityGovernanceService.class);
             assertThat(context).hasSingleBean(CapabilityExecutor.class);
@@ -56,7 +68,31 @@ class YudaoAcfAutoConfigurationTest {
                     assertThat(executor.invoke(CapabilityInvokeCommand.builder()
                             .name("test.auto.echo")
                             .arguments("hello")
+                            .context(CapabilityContext.builder().userId(1L).build())
                             .build()).getData()).isEqualTo("hello");
+                });
+    }
+
+    @Test
+    void shouldFailClosedWhenPermissionApiIsMissing() {
+        baseContextRunner.run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(context.getStartupFailure()).hasMessageContaining(PermissionCommonApi.class.getName());
+        });
+    }
+
+    @Test
+    void shouldDenyCapabilityExecutionWithoutRequiredPermission() {
+        baseContextRunner.withBean(PermissionCommonApi.class, YudaoAcfAutoConfigurationTest::denyPermissionCommonApi)
+                .withUserConfiguration(CapabilityProviderConfig.class)
+                .run(context -> {
+                    CapabilityExecutor executor = context.getBean(CapabilityExecutor.class);
+
+                    assertThat(executor.invoke(CapabilityInvokeCommand.builder()
+                            .name("test.auto.echo")
+                            .arguments("hello")
+                            .context(CapabilityContext.builder().userId(1L).build())
+                            .build()).getErrorCode()).isEqualTo(CapabilityPermissionPolicy.ERROR_PERMISSION_DENIED);
                 });
     }
 
@@ -91,6 +127,7 @@ class YudaoAcfAutoConfigurationTest {
                     assertThat(executor.invoke(CapabilityInvokeCommand.builder()
                             .name("test.auto.echo")
                             .arguments("hello")
+                            .context(CapabilityContext.builder().userId(1L).build())
                             .build()).getErrorCode()).isEqualTo("AUTO_DENIED");
                 });
     }
@@ -205,6 +242,16 @@ class YudaoAcfAutoConfigurationTest {
                 permissions = "test:auto:duplicate")
         public void invoke() {
         }
+    }
+
+    private static PermissionCommonApi allowPermissionCommonApi() {
+        PermissionCommonApi permissionCommonApi = mock(PermissionCommonApi.class);
+        when(permissionCommonApi.hasAnyPermissions(anyLong(), any(String[].class))).thenReturn(true);
+        return permissionCommonApi;
+    }
+
+    private static PermissionCommonApi denyPermissionCommonApi() {
+        return mock(PermissionCommonApi.class);
     }
 
 }

@@ -3,10 +3,13 @@ package cn.iocoder.yudao.framework.acf.config;
 import cn.iocoder.yudao.framework.acf.core.schema.CapabilitySchemaGenerator;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicy;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyChain;
+import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPermissionPolicy;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityExecutor;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityGovernanceService;
+import cn.iocoder.yudao.framework.acf.core.service.CapabilityPermissionEvaluator;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityRegistry;
 import cn.iocoder.yudao.framework.acf.core.service.DefaultCapabilityGovernanceService;
+import cn.iocoder.yudao.framework.common.biz.system.permission.PermissionCommonApi;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Validator;
 import org.springframework.beans.factory.ObjectProvider;
@@ -36,6 +39,18 @@ public class YudaoAcfAutoConfiguration {
     public CapabilityRegistry capabilityRegistry(ApplicationContext applicationContext,
                                                    CapabilitySchemaGenerator schemaGenerator) {
         return new CapabilityRegistry(applicationContext, schemaGenerator);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(CapabilityPermissionEvaluator.class)
+    public CapabilityPermissionEvaluator capabilityPermissionEvaluator(PermissionCommonApi permissionCommonApi) {
+        return new CapabilityPermissionEvaluator(permissionCommonApi);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(CapabilityPermissionPolicy.class)
+    public CapabilityPermissionPolicy capabilityPermissionPolicy(CapabilityPermissionEvaluator permissionEvaluator) {
+        return new CapabilityPermissionPolicy(permissionEvaluator);
     }
 
     @Bean

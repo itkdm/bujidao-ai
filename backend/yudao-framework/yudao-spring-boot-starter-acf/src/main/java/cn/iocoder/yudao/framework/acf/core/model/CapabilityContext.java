@@ -10,7 +10,8 @@ import java.util.Map;
  * 一次能力调用的治理上下文
  *
  * 上下文只承载调用方信息，不直接读取 Security、Tenant 等框架静态上下文，
- * 由 REST、Agent、MCP 等调用入口根据自身认证环境负责构建。
+ * 由 REST、Agent、MCP 等可信调用入口根据自身认证环境负责构建，
+ * 不得直接信任外部请求传入的 userId、tenantId 等身份字段。
  *
  * @author bujidao
  */
