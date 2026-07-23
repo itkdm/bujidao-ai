@@ -1,9 +1,11 @@
 package cn.iocoder.yudao.framework.acf.core.service;
 
+import cn.iocoder.yudao.framework.acf.core.enums.CapabilityIdempotencyStatus;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityContext;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityConfirmationChallenge;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityConfirmationCheck;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityDefinition;
+import cn.iocoder.yudao.framework.acf.core.model.CapabilityIdempotencyCheck;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityInvokeCommand;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityPolicyResult;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
@@ -38,18 +40,23 @@ public class CapabilityExecutor {
     public static final String ERROR_CONFIRMATION = AcfCapabilityErrorCodes.CONFIRMATION_ERROR;
     public static final String ERROR_CONFIRMATION_UNAVAILABLE = AcfCapabilityErrorCodes.CONFIRMATION_UNAVAILABLE;
     public static final String ERROR_CONFIRMATION_TOKEN_INVALID = AcfCapabilityErrorCodes.CONFIRM_TOKEN_INVALID;
+    public static final String ERROR_IDEMPOTENCY_KEY_REQUIRED = AcfCapabilityErrorCodes.IDEMPOTENCY_KEY_REQUIRED;
+    public static final String ERROR_IDEMPOTENCY_UNAVAILABLE = AcfCapabilityErrorCodes.IDEMPOTENCY_UNAVAILABLE;
+    public static final String ERROR_IDEMPOTENCY = AcfCapabilityErrorCodes.IDEMPOTENCY_ERROR;
+    public static final String ERROR_IDEMPOTENCY_CONFLICT = AcfCapabilityErrorCodes.IDEMPOTENCY_CONFLICT;
     public static final String ERROR_INVOKE = AcfCapabilityErrorCodes.INVOKE_ERROR;
 
     private final CapabilityRegistry capabilityRegistry;
     private final CapabilityGovernanceService governanceService;
     private final CapabilityConfirmationService confirmationService;
+    private final CapabilityIdempotencyService idempotencyService;
     private final CapabilityRequestDigestGenerator requestDigestGenerator;
     private final ObjectMapper objectMapper;
     private final Validator validator;
 
     public CapabilityExecutor(CapabilityRegistry capabilityRegistry, CapabilityGovernanceService governanceService,
                               ObjectMapper objectMapper, Validator validator) {
-        this(capabilityRegistry, governanceService, null, new CapabilityRequestDigestGenerator(objectMapper),
+        this(capabilityRegistry, governanceService, null, null, new CapabilityRequestDigestGenerator(objectMapper),
                 objectMapper, validator);
     }
 
@@ -57,9 +64,19 @@ public class CapabilityExecutor {
                               CapabilityConfirmationService confirmationService,
                               CapabilityRequestDigestGenerator requestDigestGenerator,
                               ObjectMapper objectMapper, Validator validator) {
+        this(capabilityRegistry, governanceService, confirmationService, null, requestDigestGenerator,
+                objectMapper, validator);
+    }
+
+    public CapabilityExecutor(CapabilityRegistry capabilityRegistry, CapabilityGovernanceService governanceService,
+                              CapabilityConfirmationService confirmationService,
+                              CapabilityIdempotencyService idempotencyService,
+                              CapabilityRequestDigestGenerator requestDigestGenerator,
+                              ObjectMapper objectMapper, Validator validator) {
         this.capabilityRegistry = capabilityRegistry;
         this.governanceService = governanceService;
         this.confirmationService = confirmationService;
+        this.idempotencyService = idempotencyService;
         this.requestDigestGenerator = requestDigestGenerator;
         this.objectMapper = objectMapper;
         this.validator = validator;
@@ -94,22 +111,64 @@ public class CapabilityExecutor {
 
         CapabilityDefinition effectiveDefinition = policyResult.getDefinition() == null
                 ? registration.definition() : policyResult.getDefinition();
+        Object argument;
         try {
-            Object argument = convertArgument(effectiveDefinition, command.getArguments());
+            argument = convertArgument(effectiveDefinition, command.getArguments());
             validateArgument(argument);
-            CapabilityResult confirmationResult = evaluateConfirmation(effectiveDefinition, context,
-                    command.getConfirmationToken(), argument);
-            if (confirmationResult != null) {
-                return confirmationResult;
-            }
-            Object rawResult = invokeTarget(registration, argument);
-            return normalizeResult(name, rawResult);
         } catch (IllegalArgumentException exception) {
             return CapabilityResult.failure(name, ERROR_BAD_REQUEST, readableMessage(exception));
+        }
+
+        String idempotencyKey = command.getIdempotencyKey();
+        String requestDigest;
+        try {
+            requestDigest = requiresRequestDigest(effectiveDefinition, idempotencyKey)
+                    ? requestDigestGenerator.generate(effectiveDefinition.getName(), argument) : null;
+        } catch (RuntimeException exception) {
+            String errorCode = StringUtils.hasText(idempotencyKey) ? ERROR_IDEMPOTENCY : ERROR_CONFIRMATION;
+            return CapabilityResult.failure(name, errorCode, readableMessage(exception));
+        }
+
+        CapabilityResult confirmationChallengeResult = createConfirmationChallengeIfNecessary(effectiveDefinition,
+                context, command.getConfirmationToken(), idempotencyKey, requestDigest);
+        if (confirmationChallengeResult != null) {
+            return confirmationChallengeResult;
+        }
+
+        CapabilityIdempotencyCheck idempotencyCheck = acquireIdempotency(effectiveDefinition, context,
+                idempotencyKey, requestDigest);
+        if (idempotencyCheck != null && idempotencyCheck.getStatus() != CapabilityIdempotencyStatus.ACQUIRED) {
+            return toIdempotencyResult(name, idempotencyCheck);
+        }
+        boolean idempotencyAcquired = idempotencyCheck != null;
+
+        CapabilityResult confirmationResult = verifyConfirmation(effectiveDefinition, context,
+                command.getConfirmationToken(), idempotencyKey, requestDigest);
+        if (confirmationResult != null) {
+            if (idempotencyAcquired) {
+                CapabilityResult releaseFailure = releaseIdempotency(effectiveDefinition, context,
+                        idempotencyKey, requestDigest);
+                if (releaseFailure != null) {
+                    return releaseFailure;
+                }
+            }
+            return confirmationResult;
+        }
+
+        try {
+            Object rawResult = invokeTarget(registration, argument);
+            CapabilityResult result = normalizeResult(name, rawResult);
+            return idempotencyAcquired
+                    ? completeIdempotency(effectiveDefinition, context, idempotencyKey, requestDigest, result) : result;
         } catch (InvocationTargetException exception) {
-            return CapabilityResult.failure(name, ERROR_INVOKE, readableMessage(exception.getTargetException()));
+            CapabilityResult result = CapabilityResult.failure(
+                    name, ERROR_INVOKE, readableMessage(exception.getTargetException()));
+            failIdempotency(effectiveDefinition, context, idempotencyKey, requestDigest, result, idempotencyAcquired);
+            return result;
         } catch (ReflectiveOperationException exception) {
-            return CapabilityResult.failure(name, ERROR_INVOKE, readableMessage(exception));
+            CapabilityResult result = CapabilityResult.failure(name, ERROR_INVOKE, readableMessage(exception));
+            failIdempotency(effectiveDefinition, context, idempotencyKey, requestDigest, result, idempotencyAcquired);
+            return result;
         }
     }
 
@@ -137,25 +196,49 @@ public class CapabilityExecutor {
         return objectMapper.convertValue(source, javaType);
     }
 
-    private CapabilityResult evaluateConfirmation(CapabilityDefinition definition, CapabilityContext context,
-                                                  String confirmationToken, Object argument) {
+    private boolean requiresRequestDigest(CapabilityDefinition definition, String idempotencyKey) {
+        return definition.isConfirmationRequired() || StringUtils.hasText(idempotencyKey);
+    }
+
+    private CapabilityResult createConfirmationChallengeIfNecessary(CapabilityDefinition definition,
+                                                                    CapabilityContext context,
+                                                                    String confirmationToken,
+                                                                    String idempotencyKey,
+                                                                    String requestDigest) {
         if (!definition.isConfirmationRequired()) {
             return null;
+        }
+        if (!StringUtils.hasText(idempotencyKey)) {
+            return CapabilityResult.failure(definition.getName(), ERROR_IDEMPOTENCY_KEY_REQUIRED,
+                    "Confirmed capability requires an idempotency key");
         }
         if (confirmationService == null) {
             return CapabilityResult.failure(definition.getName(), ERROR_CONFIRMATION_UNAVAILABLE,
                     "Capability confirmation service is not configured");
         }
+        if (StringUtils.hasText(confirmationToken)) {
+            return null;
+        }
         try {
-            String requestDigest = requestDigestGenerator.generate(definition.getName(), argument);
-            if (!StringUtils.hasText(confirmationToken)) {
-                CapabilityConfirmationChallenge challenge = Objects.requireNonNull(
-                        confirmationService.createChallenge(definition, context, requestDigest),
-                        "Capability confirmation challenge must not be null");
-                return CapabilityResult.confirmationRequired(definition.getName(), challenge);
-            }
+            CapabilityConfirmationChallenge challenge = Objects.requireNonNull(
+                    confirmationService.createChallenge(definition, context, idempotencyKey, requestDigest),
+                    "Capability confirmation challenge must not be null");
+            return CapabilityResult.confirmationRequired(definition.getName(), challenge);
+        } catch (RuntimeException exception) {
+            return CapabilityResult.failure(definition.getName(), ERROR_CONFIRMATION, readableMessage(exception));
+        }
+    }
+
+    private CapabilityResult verifyConfirmation(CapabilityDefinition definition, CapabilityContext context,
+                                                String confirmationToken, String idempotencyKey,
+                                                String requestDigest) {
+        if (!definition.isConfirmationRequired()) {
+            return null;
+        }
+        try {
             CapabilityConfirmationCheck check = Objects.requireNonNull(
-                    confirmationService.verifyAndConsumeToken(definition, context, confirmationToken, requestDigest),
+                    confirmationService.verifyAndConsumeToken(
+                            definition, context, confirmationToken, idempotencyKey, requestDigest),
                     "Capability confirmation check must not be null");
             if (check.isValid()) {
                 return null;
@@ -165,6 +248,77 @@ public class CapabilityExecutor {
             return CapabilityResult.failure(definition.getName(), errorCode, check.getReason());
         } catch (RuntimeException exception) {
             return CapabilityResult.failure(definition.getName(), ERROR_CONFIRMATION, readableMessage(exception));
+        }
+    }
+
+    private CapabilityIdempotencyCheck acquireIdempotency(CapabilityDefinition definition, CapabilityContext context,
+                                                          String idempotencyKey, String requestDigest) {
+        if (!StringUtils.hasText(idempotencyKey)) {
+            return null;
+        }
+        if (idempotencyService == null) {
+            return CapabilityIdempotencyCheck.conflict(ERROR_IDEMPOTENCY_UNAVAILABLE,
+                    "Capability idempotency service is not configured");
+        }
+        try {
+            CapabilityIdempotencyCheck check = Objects.requireNonNull(
+                    idempotencyService.acquire(definition, context, idempotencyKey, requestDigest),
+                    "Capability idempotency check must not be null");
+            if (check.getStatus() == null) {
+                throw new IllegalStateException("Capability idempotency status must not be null");
+            }
+            return check;
+        } catch (RuntimeException exception) {
+            return CapabilityIdempotencyCheck.conflict(ERROR_IDEMPOTENCY, readableMessage(exception));
+        }
+    }
+
+    private CapabilityResult toIdempotencyResult(String name, CapabilityIdempotencyCheck check) {
+        if (check.getStatus() == CapabilityIdempotencyStatus.REPLAYED) {
+            if (check.getReplayResult() == null) {
+                return CapabilityResult.failure(name, ERROR_IDEMPOTENCY,
+                        "Replayed idempotency result must not be null");
+            }
+            return check.getReplayResult().withName(name);
+        }
+        String errorCode = StringUtils.hasText(check.getErrorCode())
+                ? check.getErrorCode() : ERROR_IDEMPOTENCY_CONFLICT;
+        return CapabilityResult.failure(name, errorCode, check.getReason());
+    }
+
+    private CapabilityResult completeIdempotency(CapabilityDefinition definition, CapabilityContext context,
+                                                 String idempotencyKey, String requestDigest,
+                                                 CapabilityResult result) {
+        try {
+            idempotencyService.complete(definition, context, idempotencyKey, requestDigest, result);
+            return result;
+        } catch (RuntimeException exception) {
+            return CapabilityResult.failure(definition.getName(), ERROR_IDEMPOTENCY,
+                    "Capability executed but idempotency result could not be stored: " + readableMessage(exception));
+        }
+    }
+
+    private CapabilityResult releaseIdempotency(CapabilityDefinition definition, CapabilityContext context,
+                                                String idempotencyKey, String requestDigest) {
+        try {
+            idempotencyService.release(definition, context, idempotencyKey, requestDigest);
+            return null;
+        } catch (RuntimeException exception) {
+            return CapabilityResult.failure(definition.getName(), ERROR_IDEMPOTENCY,
+                    "Failed to release idempotency execution right: " + readableMessage(exception));
+        }
+    }
+
+    private void failIdempotency(CapabilityDefinition definition, CapabilityContext context,
+                                 String idempotencyKey, String requestDigest,
+                                 CapabilityResult result, boolean idempotencyAcquired) {
+        if (!idempotencyAcquired) {
+            return;
+        }
+        try {
+            idempotencyService.fail(definition, context, idempotencyKey, requestDigest, result);
+        } catch (RuntimeException ignored) {
+            // 目标执行错误优先返回；幂等收口异常后续由审计与运行指标记录。
         }
     }
 

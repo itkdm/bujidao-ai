@@ -17,10 +17,11 @@ import cn.iocoder.yudao.framework.acf.core.model.CapabilityDefinition;
 public interface CapabilityConfirmationService {
 
     CapabilityConfirmationChallenge createChallenge(CapabilityDefinition definition, CapabilityContext context,
-                                                     String requestDigest);
+                                                     String idempotencyKey, String requestDigest);
 
     CapabilityConfirmationCheck verifyAndConsumeToken(CapabilityDefinition definition, CapabilityContext context,
-                                                       String confirmationToken, String requestDigest);
+                                                       String confirmationToken, String idempotencyKey,
+                                                       String requestDigest);
 
     default CapabilityConfirmationToken confirm(String challengeId, CapabilityContext context, String confirmRemark) {
         throw new UnsupportedOperationException("Capability confirmation is not configured");

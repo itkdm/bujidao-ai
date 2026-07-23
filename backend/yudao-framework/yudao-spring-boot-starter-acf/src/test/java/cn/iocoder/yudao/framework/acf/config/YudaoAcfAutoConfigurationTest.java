@@ -18,6 +18,7 @@ import cn.iocoder.yudao.framework.acf.core.schema.CapabilitySchemaGenerator;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityConfirmationService;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityExecutor;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityGovernanceService;
+import cn.iocoder.yudao.framework.acf.core.service.CapabilityIdempotencyService;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityPermissionEvaluator;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityRegistry;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityRequestDigestGenerator;
@@ -66,6 +67,7 @@ class YudaoAcfAutoConfigurationTest {
             assertThat(context).hasSingleBean(CapabilityRequestDigestGenerator.class);
             assertThat(context).hasSingleBean(CapabilityExecutor.class);
             assertThat(context).doesNotHaveBean(CapabilityConfirmationService.class);
+            assertThat(context).doesNotHaveBean(CapabilityIdempotencyService.class);
         });
     }
 
@@ -78,6 +80,7 @@ class YudaoAcfAutoConfigurationTest {
                                     .name("test.auto.order.update")
                                     .arguments("confirmed")
                                     .context(CapabilityContext.builder().userId(1L).build())
+                                    .idempotencyKey("idem-auto-001")
                                     .build());
 
                     assertThat(result.getStatus()).isEqualTo(CapabilityStatus.CONFIRM_REQUIRED);
@@ -234,6 +237,7 @@ class YudaoAcfAutoConfigurationTest {
                 @Override
                 public CapabilityConfirmationChallenge createChallenge(CapabilityDefinition definition,
                                                                        CapabilityContext context,
+                                                                       String idempotencyKey,
                                                                        String requestDigest) {
                     return CapabilityConfirmationChallenge.builder()
                             .challengeId("acf-confirm-auto")
@@ -248,6 +252,7 @@ class YudaoAcfAutoConfigurationTest {
                 public CapabilityConfirmationCheck verifyAndConsumeToken(CapabilityDefinition definition,
                                                                          CapabilityContext context,
                                                                          String confirmationToken,
+                                                                         String idempotencyKey,
                                                                          String requestDigest) {
                     return CapabilityConfirmationCheck.valid("acf-confirm-auto");
                 }

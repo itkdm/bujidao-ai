@@ -28,4 +28,7 @@ public class CapabilityInvokeCommand {
     /** 执行需要确认的能力时，由确认流程签发的令牌 */
     private String confirmationToken;
 
+    /** 调用方为重复请求提供的稳定幂等键 */
+    private String idempotencyKey;
+
 }

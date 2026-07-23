@@ -6,6 +6,7 @@ import cn.iocoder.yudao.framework.acf.core.model.CapabilityConfirmationChallenge
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityConfirmationCheck;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityContext;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityDefinition;
+import cn.iocoder.yudao.framework.acf.core.model.CapabilityIdempotencyCheck;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityInvokeCommand;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyChain;
@@ -133,7 +134,8 @@ class CapabilityConfirmationExecutorTest {
     private CapabilityExecutor executor(CapabilityConfirmationService confirmationService) {
         return new CapabilityExecutor(registry,
                 new DefaultCapabilityGovernanceService(new CapabilityPolicyChain(List.of())),
-                confirmationService, new CapabilityRequestDigestGenerator(objectMapper), objectMapper, validator);
+                confirmationService, new PassThroughIdempotencyService(),
+                new CapabilityRequestDigestGenerator(objectMapper), objectMapper, validator);
     }
 
     private CapabilityInvokeCommand command(String name, String value, String confirmationToken) {
@@ -141,6 +143,7 @@ class CapabilityConfirmationExecutorTest {
                 .name(name)
                 .arguments(Map.of("value", value))
                 .confirmationToken(confirmationToken)
+                .idempotencyKey(name.contains("confirmed") ? "idem-confirm-001" : null)
                 .build();
     }
 
@@ -178,7 +181,8 @@ class CapabilityConfirmationExecutorTest {
 
         @Override
         public CapabilityConfirmationChallenge createChallenge(CapabilityDefinition definition,
-                                                               CapabilityContext context, String requestDigest) {
+                                                               CapabilityContext context, String idempotencyKey,
+                                                               String requestDigest) {
             this.context = context;
             this.requestDigest = requestDigest;
             createChallengeCount++;
@@ -195,11 +199,36 @@ class CapabilityConfirmationExecutorTest {
         @Override
         public CapabilityConfirmationCheck verifyAndConsumeToken(CapabilityDefinition definition,
                                                                  CapabilityContext context,
-                                                                 String confirmationToken, String requestDigest) {
+                                                                 String confirmationToken, String idempotencyKey,
+                                                                 String requestDigest) {
             this.context = context;
             this.confirmationToken = confirmationToken;
             this.requestDigest = requestDigest;
             return check;
+        }
+    }
+
+    static class PassThroughIdempotencyService implements CapabilityIdempotencyService {
+
+        @Override
+        public CapabilityIdempotencyCheck acquire(CapabilityDefinition definition, CapabilityContext context,
+                                                  String idempotencyKey, String requestDigest) {
+            return CapabilityIdempotencyCheck.acquired();
+        }
+
+        @Override
+        public void complete(CapabilityDefinition definition, CapabilityContext context, String idempotencyKey,
+                             String requestDigest, CapabilityResult result) {
+        }
+
+        @Override
+        public void fail(CapabilityDefinition definition, CapabilityContext context, String idempotencyKey,
+                         String requestDigest, CapabilityResult result) {
+        }
+
+        @Override
+        public void release(CapabilityDefinition definition, CapabilityContext context, String idempotencyKey,
+                            String requestDigest) {
         }
     }
 
