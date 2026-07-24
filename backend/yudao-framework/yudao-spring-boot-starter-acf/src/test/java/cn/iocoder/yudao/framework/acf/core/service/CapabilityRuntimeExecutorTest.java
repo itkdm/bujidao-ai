@@ -2,6 +2,7 @@ package cn.iocoder.yudao.framework.acf.core.service;
 
 import cn.iocoder.yudao.framework.acf.core.annotation.AgentCapability;
 import cn.iocoder.yudao.framework.acf.core.enums.CapabilityAuditStage;
+import cn.iocoder.yudao.framework.acf.core.enums.CapabilityIdempotencyAuditStatus;
 import cn.iocoder.yudao.framework.acf.core.enums.CapabilityStatus;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityAuditRecord;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityContext;
@@ -11,6 +12,7 @@ import cn.iocoder.yudao.framework.acf.core.model.CapabilityInvokeCommand;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyChain;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityCircuitBreakerGuard;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityConcurrencyGuard;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuard;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuardChain;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuardContext;
@@ -21,6 +23,9 @@ import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRateLimitGuard;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityExceptionClassification;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityExceptionClassifier;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityInvocationExecutor;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityInvocationCompletion;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityInvocationHandle;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityInvocationInterruptResult;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimePolicy;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimePolicyService;
 import cn.iocoder.yudao.framework.acf.core.runtime.DefaultCapabilityExceptionClassifier;
@@ -39,6 +44,9 @@ import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -139,7 +147,7 @@ class CapabilityRuntimeExecutorTest {
                 .invoke(command("test.runtime.success", "runtime-002"));
 
         assertThat(result.getErrorCode()).isEqualTo(CapabilityExecutor.ERROR_RUNTIME_POLICY);
-        assertThat(result.getMessage()).isEqualTo("runtime policy unavailable");
+        assertThat(result.getMessage()).isEqualTo("Capability runtime policy resolution failed");
         assertThat(capability.invocationCount).isZero();
         assertThat(guard.acquireCount).isZero();
         assertThat(idempotencyService.releaseCount).isOne();
@@ -159,7 +167,12 @@ class CapabilityRuntimeExecutorTest {
             assertThat(result.getErrorCode()).isEqualTo("RUNTIME_TIMEOUT");
             assertThat(result.isRetryable()).isTrue();
             assertThat(capability.invocationCount).isOne();
+            assertThat(idempotencyService.uncertainCount).isOne();
+            assertThat(auditService.record.getIdempotencyStatus())
+                    .isEqualTo(CapabilityIdempotencyAuditStatus.UNCERTAIN);
             assertThat(capability.slowInterrupted.await(1, TimeUnit.SECONDS)).isTrue();
+            assertThat(idempotencyService.terminalSettled.await(1, TimeUnit.SECONDS)).isTrue();
+            assertThat(guard.failureSettled.await(1, TimeUnit.SECONDS)).isTrue();
             assertThat(guard.failureCount).isOne();
             assertThat(guard.failureCause).isInstanceOf(TimeoutException.class);
             assertThat(idempotencyService.failCount).isOne();
@@ -171,6 +184,133 @@ class CapabilityRuntimeExecutorTest {
     }
 
     @Test
+    void shouldKeepConcurrencyLeaseUntilUninterruptibleTargetTerminates() throws Exception {
+        CapturingIdempotencyService idempotencyService = new CapturingIdempotencyService();
+        CapturingAuditService auditService = new CapturingAuditService();
+        TrackingConcurrencyGuard concurrencyGuard = new TrackingConcurrencyGuard();
+
+        try (DefaultCapabilityInvocationExecutor invocationExecutor = new DefaultCapabilityInvocationExecutor()) {
+            CapabilityExecutor executor = executor(runtimePolicy(30), concurrencyGuard,
+                    idempotencyService, auditService, invocationExecutor);
+
+            CapabilityResult timedOut = executor.invoke(command("test.runtime.stubborn", "stubborn-001"));
+            assertThat(timedOut.getErrorCode()).isEqualTo(AcfCapabilityErrorCodes.RUNTIME_TIMEOUT);
+            assertThat(capability.stubbornStarted.await(1, TimeUnit.SECONDS)).isTrue();
+            assertThat(idempotencyService.uncertainCount).isOne();
+            assertThat(idempotencyService.completeCount).isZero();
+
+            CapabilityResult rejected = executor.invoke(command("test.runtime.stubborn", "stubborn-002"));
+            assertThat(rejected.getErrorCode()).isEqualTo(AcfCapabilityErrorCodes.RUNTIME_CONCURRENCY_REJECTED);
+            assertThat(capability.invocationCount).isOne();
+
+            capability.stubbornRelease.countDown();
+            assertThat(capability.stubbornFinished.await(1, TimeUnit.SECONDS)).isTrue();
+            assertThat(idempotencyService.terminalSettled.await(1, TimeUnit.SECONDS)).isTrue();
+            assertThat(concurrencyGuard.settled.await(1, TimeUnit.SECONDS)).isTrue();
+            assertThat(idempotencyService.completeCount).isOne();
+
+            CapabilityResult afterTermination = executor.invoke(
+                    command("test.runtime.stubborn", "stubborn-003"));
+            assertThat(afterTermination.isSuccess()).isTrue();
+            assertThat(capability.invocationCount).isEqualTo(2);
+        }
+    }
+
+    @Test
+    void shouldBlockSameIdempotencyKeyUntilLateSuccessCanBeReplayed() throws Exception {
+        StatefulIdempotencyService idempotencyService = new StatefulIdempotencyService();
+
+        try (DefaultCapabilityInvocationExecutor invocationExecutor = new DefaultCapabilityInvocationExecutor()) {
+            CapabilityExecutor executor = executor(runtimePolicy(30), CapturingRuntimeGuard.allowed(),
+                    idempotencyService, null, invocationExecutor);
+
+            CapabilityResult timedOut = executor.invoke(command("test.runtime.stubborn", "same-key"));
+            assertThat(timedOut.getErrorCode()).isEqualTo(AcfCapabilityErrorCodes.RUNTIME_TIMEOUT);
+            assertThat(idempotencyService.state).isEqualTo("UNCERTAIN");
+
+            CapabilityResult conflict = executor.invoke(command("test.runtime.stubborn", "same-key"));
+            assertThat(conflict.getErrorCode()).isEqualTo(AcfCapabilityErrorCodes.IDEMPOTENCY_CONFLICT);
+            assertThat(capability.invocationCount).isOne();
+
+            capability.stubbornRelease.countDown();
+            assertThat(idempotencyService.terminalSettled.await(1, TimeUnit.SECONDS)).isTrue();
+
+            CapabilityResult replayed = executor.invoke(command("test.runtime.stubborn", "same-key"));
+            assertThat(replayed.isSuccess()).isTrue();
+            assertThat(replayed.getData()).isEqualTo("late");
+            assertThat(capability.invocationCount).isOne();
+        }
+    }
+
+    @Test
+    void shouldReleaseGuardAndIdempotencyWhenExecutorRejectsBeforeStart() {
+        CapturingRuntimeGuard guard = CapturingRuntimeGuard.allowed();
+        CapturingIdempotencyService idempotencyService = new CapturingIdempotencyService();
+        CapabilityInvocationExecutor rejectingExecutor = invocation -> {
+            throw new RejectedExecutionException("secret queue details");
+        };
+
+        CapabilityResult result = executor(runtimePolicy(), guard, idempotencyService, null, rejectingExecutor)
+                .invoke(command("test.runtime.success", "rejected-001"));
+
+        assertThat(result.getErrorCode()).isEqualTo(AcfCapabilityErrorCodes.RUNTIME_EXECUTOR_REJECTED);
+        assertThat(result.getMessage()).isEqualTo("Capability invocation executor is saturated");
+        assertThat(capability.invocationCount).isZero();
+        assertThat(guard.releaseCount).isOne();
+        assertThat(guard.failureCount).isZero();
+        assertThat(idempotencyService.releaseCount).isOne();
+        assertThat(idempotencyService.failCount).isZero();
+        assertThat(idempotencyService.uncertainCount).isZero();
+    }
+
+    @Test
+    void shouldReleaseLifecycleWhenCallerIsInterruptedBeforeTargetStarts() {
+        CapturingRuntimeGuard guard = CapturingRuntimeGuard.allowed();
+        CapturingIdempotencyService idempotencyService = new CapturingIdempotencyService();
+        InterruptedInvocationHandle handle = InterruptedInvocationHandle.beforeStart();
+
+        CapabilityResult result;
+        try {
+            result = executor(runtimePolicy(), guard, idempotencyService, null, invocation -> handle)
+                    .invoke(command("test.runtime.success", "interrupt-before-start"));
+        } finally {
+            Thread.interrupted();
+        }
+
+        assertThat(result.getErrorCode()).isEqualTo(AcfCapabilityErrorCodes.RUNTIME_INTERRUPTED);
+        assertThat(guard.releaseCount).isOne();
+        assertThat(guard.failureCount).isZero();
+        assertThat(idempotencyService.releaseCount).isOne();
+        assertThat(idempotencyService.uncertainCount).isZero();
+        assertThat(capability.invocationCount).isZero();
+    }
+
+    @Test
+    void shouldDeferLifecycleWhenCallerIsInterruptedAfterTargetStarts() throws Exception {
+        CapturingRuntimeGuard guard = CapturingRuntimeGuard.allowed();
+        CapturingIdempotencyService idempotencyService = new CapturingIdempotencyService();
+        InterruptedInvocationHandle handle = InterruptedInvocationHandle.afterStart();
+
+        CapabilityResult result;
+        try {
+            result = executor(runtimePolicy(), guard, idempotencyService, null, invocation -> handle)
+                    .invoke(command("test.runtime.success", "interrupt-after-start"));
+        } finally {
+            Thread.interrupted();
+        }
+
+        assertThat(result.getErrorCode()).isEqualTo(AcfCapabilityErrorCodes.RUNTIME_INTERRUPTED);
+        assertThat(idempotencyService.uncertainCount).isOne();
+        assertThat(guard.failureCount).isZero();
+
+        handle.complete(CapabilityInvocationCompletion.completed(
+                CapabilityResult.success("test.runtime.success", "late", null)));
+        assertThat(idempotencyService.terminalSettled.await(1, TimeUnit.SECONDS)).isTrue();
+        assertThat(idempotencyService.completeCount).isOne();
+        assertThat(guard.failureCount).isOne();
+    }
+
+    @Test
     void shouldRetryRetryableReadOnlyFailureAndCompleteIdempotencyOnce() {
         CapturingRuntimeGuard guard = CapturingRuntimeGuard.allowed();
         CapturingIdempotencyService idempotencyService = new CapturingIdempotencyService();
@@ -178,7 +318,7 @@ class CapabilityRuntimeExecutorTest {
         CapturingMetricsRecorder metricsRecorder = new CapturingMetricsRecorder();
 
         CapabilityResult result = executor(retryPolicy(1_000), guard, idempotencyService, auditService,
-                DefaultCapabilityInvocationExecutor.shared(), retryableClassifier(), metricsRecorder)
+                CapabilityExecutorTestFixture.immediateInvocationExecutor(), retryableClassifier(), metricsRecorder)
                 .invoke(command("test.runtime.flaky", "runtime-004"));
 
         assertThat(result.isSuccess()).isTrue();
@@ -196,8 +336,9 @@ class CapabilityRuntimeExecutorTest {
         CapturingAuditService auditService = new CapturingAuditService();
 
         CapabilityResult result = executor(retryPolicy(1_000), CapturingRuntimeGuard.allowed(),
-                null, auditService, DefaultCapabilityInvocationExecutor.shared(), retryableClassifier())
-                .invoke(command("test.runtime.mutate", null));
+                new CapturingIdempotencyService(), auditService,
+                CapabilityExecutorTestFixture.immediateInvocationExecutor(), retryableClassifier())
+                .invoke(command("test.runtime.mutate", "runtime-mutate"));
 
         assertThat(result.getErrorCode()).isEqualTo("TRANSIENT_FAILURE");
         assertThat(capability.invocationCount).isOne();
@@ -208,16 +349,17 @@ class CapabilityRuntimeExecutorTest {
     void shouldRetrySideEffectWhenExecutorRejectsBeforeTargetStarts() {
         CapturingAuditService auditService = new CapturingAuditService();
         int[] submitCount = {0};
-        CapabilityInvocationExecutor rejectingOnceExecutor = (invocation, timeoutMs) -> {
+        CapabilityInvocationExecutor delegate = CapabilityExecutorTestFixture.immediateInvocationExecutor();
+        CapabilityInvocationExecutor rejectingOnceExecutor = invocation -> {
             if (submitCount[0]++ == 0) {
                 throw new RejectedExecutionException("executor saturated");
             }
-            return invocation.call();
+            return delegate.submit(invocation);
         };
 
         CapabilityResult result = executor(retryPolicy(1_000), CapturingRuntimeGuard.allowed(),
-                null, auditService, rejectingOnceExecutor, new DefaultCapabilityExceptionClassifier())
-                .invoke(command("test.runtime.update", null));
+                new CapturingIdempotencyService(), auditService, rejectingOnceExecutor,
+                new DefaultCapabilityExceptionClassifier()).invoke(command("test.runtime.update", "runtime-update"));
 
         assertThat(result.isSuccess()).isTrue();
         assertThat(submitCount[0]).isEqualTo(2);
@@ -231,7 +373,7 @@ class CapabilityRuntimeExecutorTest {
         CapturingAuditService auditService = new CapturingAuditService();
 
         CapabilityResult result = executor(retryPolicy(1_000), CapturingRuntimeGuard.allowed(),
-                null, auditService, DefaultCapabilityInvocationExecutor.shared(), retryableClassifier())
+                null, auditService, CapabilityExecutorTestFixture.immediateInvocationExecutor(), retryableClassifier())
                 .invoke(command("test.runtime.unstable", null));
 
         assertThat(result.getErrorCode()).isEqualTo("TRANSIENT_FAILURE");
@@ -275,7 +417,7 @@ class CapabilityRuntimeExecutorTest {
                 .build();
         CapabilityExecutor circuitProtectedExecutor = executor((definition, context) -> policy,
                 new CapabilityCircuitBreakerGuard(), null, auditService,
-                DefaultCapabilityInvocationExecutor.shared(), new DefaultCapabilityExceptionClassifier(),
+                CapabilityExecutorTestFixture.immediateInvocationExecutor(), new DefaultCapabilityExceptionClassifier(),
                 metricsRecorder);
 
         CapabilityResult first = circuitProtectedExecutor.invoke(command("test.runtime.throwing", null));
@@ -299,7 +441,7 @@ class CapabilityRuntimeExecutorTest {
         CapturingMetricsRecorder metricsRecorder = new CapturingMetricsRecorder();
 
         CapabilityResult result = executor(runtimePolicy(), CapturingRuntimeGuard.allowed(), null, null,
-                DefaultCapabilityInvocationExecutor.shared(), new DefaultCapabilityExceptionClassifier(),
+                CapabilityExecutorTestFixture.immediateInvocationExecutor(), new DefaultCapabilityExceptionClassifier(),
                 metricsRecorder).invoke(command("test.runtime.success", null));
 
         assertThat(result.isSuccess()).isTrue();
@@ -319,7 +461,7 @@ class CapabilityRuntimeExecutorTest {
         };
 
         CapabilityResult result = executor(runtimePolicy(), CapturingRuntimeGuard.allowed(), null, null,
-                DefaultCapabilityInvocationExecutor.shared(), new DefaultCapabilityExceptionClassifier(),
+                CapabilityExecutorTestFixture.immediateInvocationExecutor(), new DefaultCapabilityExceptionClassifier(),
                 failingRecorder).invoke(command("test.runtime.success", null));
 
         assertThat(result.isSuccess()).isTrue();
@@ -331,7 +473,7 @@ class CapabilityRuntimeExecutorTest {
                                         CapabilityIdempotencyService idempotencyService,
                                         CapabilityAuditService auditService) {
         return executor(runtimePolicyService, guard, idempotencyService, auditService,
-                DefaultCapabilityInvocationExecutor.shared());
+                CapabilityExecutorTestFixture.immediateInvocationExecutor());
     }
 
     private CapabilityExecutor executor(CapabilityRuntimePolicyService runtimePolicyService,
@@ -408,6 +550,9 @@ class CapabilityRuntimeExecutorTest {
 
         private int invocationCount;
         private final CountDownLatch slowInterrupted = new CountDownLatch(1);
+        private final CountDownLatch stubbornStarted = new CountDownLatch(1);
+        private final CountDownLatch stubbornRelease = new CountDownLatch(1);
+        private final CountDownLatch stubbornFinished = new CountDownLatch(1);
 
         @AgentCapability(name = "test.runtime.success", title = "运行时成功能力",
                 description = "验证运行时保护器成功收口", permissions = "test:runtime:invoke")
@@ -441,6 +586,22 @@ class CapabilityRuntimeExecutorTest {
                 slowInterrupted.countDown();
                 throw exception;
             }
+        }
+
+        @AgentCapability(name = "test.runtime.stubborn", title = "Stubborn runtime capability",
+                description = "Ignores interruption until explicitly released", permissions = "test:runtime:invoke")
+        public String stubborn() {
+            invocationCount++;
+            stubbornStarted.countDown();
+            while (stubbornRelease.getCount() > 0) {
+                try {
+                    stubbornRelease.await();
+                } catch (InterruptedException ignored) {
+                    // The test target intentionally remains active after interruption is requested.
+                }
+            }
+            stubbornFinished.countDown();
+            return "late";
         }
 
         @AgentCapability(name = "test.runtime.flaky", title = "运行时瞬时失败能力",
@@ -485,6 +646,7 @@ class CapabilityRuntimeExecutorTest {
         private int successCount;
         private int failureCount;
         private Throwable failureCause;
+        private final CountDownLatch failureSettled = new CountDownLatch(1);
 
         private CapturingRuntimeGuard(boolean allowed) {
             this.allowed = allowed;
@@ -525,6 +687,18 @@ class CapabilityRuntimeExecutorTest {
         public void onFailure(CapabilityRuntimeGuardContext context, CapabilityResult result, Throwable cause) {
             failureCount++;
             failureCause = cause;
+            failureSettled.countDown();
+        }
+    }
+
+    static class TrackingConcurrencyGuard extends CapabilityConcurrencyGuard {
+
+        private final CountDownLatch settled = new CountDownLatch(1);
+
+        @Override
+        public void onFailure(CapabilityRuntimeGuardContext context, CapabilityResult result, Throwable cause) {
+            super.onFailure(context, result, cause);
+            settled.countDown();
         }
     }
 
@@ -533,6 +707,8 @@ class CapabilityRuntimeExecutorTest {
         private int failCount;
         private int releaseCount;
         private int completeCount;
+        private int uncertainCount;
+        private final CountDownLatch terminalSettled = new CountDownLatch(1);
 
         @Override
         public CapabilityIdempotencyCheck acquire(CapabilityDefinition definition, CapabilityContext context,
@@ -544,18 +720,121 @@ class CapabilityRuntimeExecutorTest {
         public void complete(CapabilityDefinition definition, CapabilityContext context, String idempotencyKey,
                              String requestDigest, CapabilityResult result) {
             completeCount++;
+            terminalSettled.countDown();
+        }
+
+        @Override
+        public void markUncertain(CapabilityDefinition definition, CapabilityContext context, String idempotencyKey,
+                                  String requestDigest, CapabilityResult result) {
+            uncertainCount++;
         }
 
         @Override
         public void fail(CapabilityDefinition definition, CapabilityContext context, String idempotencyKey,
                          String requestDigest, CapabilityResult result) {
             failCount++;
+            terminalSettled.countDown();
         }
 
         @Override
         public void release(CapabilityDefinition definition, CapabilityContext context, String idempotencyKey,
                             String requestDigest) {
             releaseCount++;
+        }
+    }
+
+    static class StatefulIdempotencyService implements CapabilityIdempotencyService {
+
+        private String state;
+        private CapabilityResult replayResult;
+        private final CountDownLatch terminalSettled = new CountDownLatch(1);
+
+        @Override
+        public synchronized CapabilityIdempotencyCheck acquire(CapabilityDefinition definition,
+                                                                CapabilityContext context,
+                                                                String idempotencyKey, String requestDigest) {
+            if (state == null) {
+                state = "ACQUIRED";
+                return CapabilityIdempotencyCheck.acquired();
+            }
+            if ("COMPLETED".equals(state)) {
+                return CapabilityIdempotencyCheck.replayed(replayResult);
+            }
+            return CapabilityIdempotencyCheck.conflict(
+                    AcfCapabilityErrorCodes.IDEMPOTENCY_CONFLICT, "Execution is still unresolved");
+        }
+
+        @Override
+        public synchronized void complete(CapabilityDefinition definition, CapabilityContext context,
+                                          String idempotencyKey, String requestDigest, CapabilityResult result) {
+            state = "COMPLETED";
+            replayResult = result;
+            terminalSettled.countDown();
+        }
+
+        @Override
+        public synchronized void fail(CapabilityDefinition definition, CapabilityContext context,
+                                      String idempotencyKey, String requestDigest, CapabilityResult result) {
+            state = "FAILED";
+            terminalSettled.countDown();
+        }
+
+        @Override
+        public synchronized void markUncertain(CapabilityDefinition definition, CapabilityContext context,
+                                               String idempotencyKey, String requestDigest,
+                                               CapabilityResult result) {
+            state = "UNCERTAIN";
+        }
+
+        @Override
+        public synchronized void release(CapabilityDefinition definition, CapabilityContext context,
+                                         String idempotencyKey, String requestDigest) {
+            state = null;
+        }
+    }
+
+    static class InterruptedInvocationHandle implements CapabilityInvocationHandle {
+
+        private final CapabilityInvocationInterruptResult interruptResult;
+        private final CompletableFuture<CapabilityInvocationCompletion> completion;
+
+        private InterruptedInvocationHandle(CapabilityInvocationInterruptResult interruptResult,
+                                            CapabilityInvocationCompletion terminal) {
+            this.interruptResult = interruptResult;
+            this.completion = new CompletableFuture<>();
+            if (terminal != null) {
+                completion.complete(terminal);
+            }
+        }
+
+        static InterruptedInvocationHandle beforeStart() {
+            return new InterruptedInvocationHandle(
+                    CapabilityInvocationInterruptResult.CANCELLED_BEFORE_START,
+                    CapabilityInvocationCompletion.cancelledBeforeStart());
+        }
+
+        static InterruptedInvocationHandle afterStart() {
+            return new InterruptedInvocationHandle(
+                    CapabilityInvocationInterruptResult.INTERRUPT_REQUESTED, null);
+        }
+
+        @Override
+        public CapabilityResult await(int timeoutMs) throws InterruptedException, ExecutionException {
+            throw new InterruptedException("caller interrupted");
+        }
+
+        @Override
+        public CapabilityInvocationInterruptResult interrupt() {
+            return interruptResult;
+        }
+
+        @Override
+        public CompletionStage<CapabilityInvocationCompletion> completion() {
+            return completion;
+        }
+
+        void complete(CapabilityInvocationCompletion terminal) {
+            completion.complete(terminal);
         }
     }
 

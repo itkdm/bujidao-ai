@@ -105,8 +105,8 @@ final class CapabilityExecutionAudit {
             try {
                 auditService.record(record);
             } catch (RuntimeException exception) {
-                LOGGER.warn("记录 ACF 能力执行审计失败，traceId={}，capability={}",
-                        traceId, capabilityName, exception);
+                LOGGER.warn("ACF audit recording failed, traceId={}, capability={}, errorType={}",
+                        traceId, capabilityName, exception.getClass().getName());
             }
         }
         return record;
@@ -157,8 +157,8 @@ final class CapabilityExecutionAudit {
                     .latencyMs(elapsed(stepStartedAt))
                     .build());
         } catch (RuntimeException exception) {
-            LOGGER.warn("记录 ACF 能力执行步骤失败，traceId={}，capability={}，stage={}",
-                    traceId, capabilityName, stage, exception);
+            LOGGER.warn("ACF audit step recording failed, traceId={}, capability={}, stage={}, errorType={}",
+                    traceId, capabilityName, stage, exception.getClass().getName());
         }
     }
 

@@ -1,7 +1,5 @@
 package cn.iocoder.yudao.framework.acf.core.runtime;
 
-import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
-
 import java.util.concurrent.Callable;
 
 /**
@@ -15,6 +13,7 @@ import java.util.concurrent.Callable;
 @FunctionalInterface
 public interface CapabilityInvocationExecutor {
 
-    CapabilityResult invoke(Callable<CapabilityResult> invocation, int timeoutMs) throws Exception;
+    CapabilityInvocationHandle submit(
+            Callable<cn.iocoder.yudao.framework.acf.core.model.CapabilityResult> invocation);
 
 }

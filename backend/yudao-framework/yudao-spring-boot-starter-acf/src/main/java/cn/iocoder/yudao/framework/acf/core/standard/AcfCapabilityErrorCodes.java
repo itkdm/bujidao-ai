@@ -22,6 +22,7 @@ public final class AcfCapabilityErrorCodes {
     public static final String IDEMPOTENCY_CONFLICT = "IDEMPOTENCY_CONFLICT";
     public static final String RUNTIME_POLICY_ERROR = "RUNTIME_POLICY_ERROR";
     public static final String RUNTIME_TIMEOUT = "RUNTIME_TIMEOUT";
+    public static final String RUNTIME_INTERRUPTED = "RUNTIME_INTERRUPTED";
     public static final String RUNTIME_EXECUTOR_REJECTED = "RUNTIME_EXECUTOR_REJECTED";
     public static final String RUNTIME_GUARD_ERROR = "RUNTIME_GUARD_ERROR";
     public static final String RUNTIME_CONCURRENCY_REJECTED = "RUNTIME_CONCURRENCY_REJECTED";

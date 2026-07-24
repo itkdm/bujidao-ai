@@ -7,7 +7,6 @@ import org.junit.jupiter.api.Test;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -22,52 +21,94 @@ class DefaultCapabilityInvocationExecutorTest {
         context.set("tenant-context");
 
         try (DefaultCapabilityInvocationExecutor executor = executor()) {
-            CapabilityResult result = executor.invoke(
-                    () -> CapabilityResult.success("test.context.read", context.get(), null), 1_000);
-            assertThat(result.getData()).isEqualTo("tenant-context");
+            CapabilityInvocationHandle handle = executor.submit(
+                    () -> CapabilityResult.success("test.context.read", context.get(), null));
+            assertThat(handle.await(1_000).getData()).isEqualTo("tenant-context");
+            assertThat(handle.completion().toCompletableFuture().get().isTargetInvoked()).isTrue();
         } finally {
             context.remove();
         }
     }
 
     @Test
-    void shouldCancelInvocationWhenWaitingTimesOut() throws Exception {
+    void shouldRequestInterruptWithoutCompletingBeforeTargetTerminates() throws Exception {
         CountDownLatch started = new CountDownLatch(1);
-        CountDownLatch interrupted = new CountDownLatch(1);
+        CountDownLatch interruptObserved = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
 
         try (DefaultCapabilityInvocationExecutor executor = executor()) {
-            assertThatThrownBy(() -> executor.invoke(() -> {
+            CapabilityInvocationHandle handle = executor.submit(() -> {
                 started.countDown();
-                try {
-                    Thread.sleep(10_000);
-                    return CapabilityResult.success("test.timeout.wait", "late", null);
-                } catch (InterruptedException exception) {
-                    interrupted.countDown();
-                    throw exception;
+                while (release.getCount() > 0) {
+                    try {
+                        release.await();
+                    } catch (InterruptedException exception) {
+                        interruptObserved.countDown();
+                    }
                 }
-            }, 30)).isInstanceOf(TimeoutException.class)
-                    .hasMessage("Capability invocation timed out after 30 ms");
+                return CapabilityResult.success("test.timeout.wait", "late", null);
+            });
 
             assertThat(started.await(1, TimeUnit.SECONDS)).isTrue();
-            assertThat(interrupted.await(1, TimeUnit.SECONDS)).isTrue();
+            assertThatThrownBy(() -> handle.await(30)).isInstanceOf(TimeoutException.class);
+            assertThat(handle.interrupt()).isEqualTo(CapabilityInvocationInterruptResult.INTERRUPT_REQUESTED);
+            assertThat(interruptObserved.await(1, TimeUnit.SECONDS)).isTrue();
+            assertThat(handle.completion().toCompletableFuture()).isNotDone();
+
+            release.countDown();
+            CapabilityInvocationCompletion completion = handle.completion().toCompletableFuture().get(1,
+                    TimeUnit.SECONDS);
+            assertThat(completion.getResult().getData()).isEqualTo("late");
+            assertThat(completion.isTargetInvoked()).isTrue();
         }
     }
 
     @Test
-    void shouldExposeOriginalInvocationFailure() throws Exception {
+    void shouldCancelQueuedInvocationBeforeStart() throws Exception {
+        ExecutorService executorService = Executors.newSingleThreadExecutor();
+        CountDownLatch blockerStarted = new CountDownLatch(1);
+        CountDownLatch releaseBlocker = new CountDownLatch(1);
+        CountDownLatch targetInvoked = new CountDownLatch(1);
+
+        try (DefaultCapabilityInvocationExecutor executor =
+                     new DefaultCapabilityInvocationExecutor(executorService, true)) {
+            CapabilityInvocationHandle blocker = executor.submit(() -> {
+                blockerStarted.countDown();
+                releaseBlocker.await();
+                return CapabilityResult.success("test.blocker", null, null);
+            });
+            assertThat(blockerStarted.await(1, TimeUnit.SECONDS)).isTrue();
+
+            CapabilityInvocationHandle queued = executor.submit(() -> {
+                targetInvoked.countDown();
+                return CapabilityResult.success("test.queued", null, null);
+            });
+            assertThat(queued.interrupt())
+                    .isEqualTo(CapabilityInvocationInterruptResult.CANCELLED_BEFORE_START);
+
+            CapabilityInvocationCompletion completion = queued.completion().toCompletableFuture().get(1,
+                    TimeUnit.SECONDS);
+            assertThat(completion.isTargetInvoked()).isFalse();
+            assertThat(targetInvoked.getCount()).isOne();
+            releaseBlocker.countDown();
+            blocker.await(1_000);
+        }
+    }
+
+    @Test
+    void shouldExposeOriginalInvocationFailure() {
         IllegalStateException failure = new IllegalStateException("target failed");
 
         try (DefaultCapabilityInvocationExecutor executor = executor()) {
-            assertThatThrownBy(() -> executor.invoke(() -> {
+            CapabilityInvocationHandle handle = executor.submit(() -> {
                 throw failure;
-            }, 1_000)).isInstanceOf(ExecutionException.class)
-                    .hasCause(failure);
+            });
+            assertThatThrownBy(() -> handle.await(1_000)).hasCause(failure);
         }
     }
 
     private DefaultCapabilityInvocationExecutor executor() {
-        ExecutorService executorService = Executors.newSingleThreadExecutor();
-        return new DefaultCapabilityInvocationExecutor(executorService, true);
+        return new DefaultCapabilityInvocationExecutor(Executors.newSingleThreadExecutor(), true);
     }
 
 }

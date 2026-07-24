@@ -12,6 +12,12 @@ import cn.iocoder.yudao.framework.acf.core.model.CapabilityAuditStepRecord;
  */
 public interface CapabilityAuditService {
 
+    /**
+     * Implementations must remain low latency and avoid unbounded blocking on the invocation thread.
+     * Buffering, batching, and asynchronous persistence belong to the consuming module. Fields must
+     * be redacted and length-limited, and only public-safe error information may be recorded.
+     */
+
     void record(CapabilityAuditRecord record);
 
     default void recordStep(CapabilityAuditStepRecord record) {

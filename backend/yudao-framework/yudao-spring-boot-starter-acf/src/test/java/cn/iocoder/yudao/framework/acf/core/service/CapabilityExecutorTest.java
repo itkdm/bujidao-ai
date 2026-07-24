@@ -91,7 +91,7 @@ class CapabilityExecutorTest {
 
         assertThat(result.isSuccess()).isFalse();
         assertThat(result.getErrorCode()).isEqualTo(CapabilityExecutor.ERROR_BAD_REQUEST);
-        assertThat(result.getMessage()).startsWith("keyword ");
+        assertThat(result.getMessage()).isEqualTo("Capability request is invalid");
         assertThat(productCapability.invocationCount).isZero();
     }
 
@@ -109,7 +109,7 @@ class CapabilityExecutorTest {
 
         assertThat(result.isSuccess()).isFalse();
         assertThat(result.getErrorCode()).isEqualTo(CapabilityExecutor.ERROR_BAD_REQUEST);
-        assertThat(result.getMessage()).contains("does not accept arguments");
+        assertThat(result.getMessage()).isEqualTo("Capability request is invalid");
     }
 
     @Test
@@ -126,7 +126,7 @@ class CapabilityExecutorTest {
 
         assertThat(result.isSuccess()).isFalse();
         assertThat(result.getErrorCode()).isEqualTo(CapabilityExecutor.ERROR_INVOKE);
-        assertThat(result.getMessage()).isEqualTo("inventory unavailable");
+        assertThat(result.getMessage()).isEqualTo("Capability invocation failed");
         assertThat(result.isRetryable()).isFalse();
     }
 
@@ -152,7 +152,7 @@ class CapabilityExecutorTest {
         CapabilityResult result = invoke("test.product.fail", Map.of());
 
         assertThat(result.getErrorCode()).isEqualTo(CapabilityExecutor.ERROR_INVOKE);
-        assertThat(result.getMessage()).isEqualTo("inventory unavailable");
+        assertThat(result.getMessage()).isEqualTo("Capability invocation failed");
         assertThat(result.isRetryable()).isFalse();
     }
 
@@ -239,8 +239,8 @@ class CapabilityExecutorTest {
                                               CapabilityExceptionClassifier exceptionClassifier) {
         CapabilityGovernanceService governanceService = new DefaultCapabilityGovernanceService(
                 new CapabilityPolicyChain(policies));
-        return new CapabilityExecutor(registry, governanceService, null, null, null, exceptionClassifier,
-                new CapabilityRequestDigestGenerator(objectMapper), objectMapper, validator);
+        return CapabilityExecutorTestFixture.create(registry, governanceService, null, null, null,
+                exceptionClassifier, objectMapper, validator);
     }
 
     private ProxyCapabilityApi createProxyCapability() {

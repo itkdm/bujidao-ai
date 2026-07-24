@@ -10,6 +10,7 @@ import cn.iocoder.yudao.framework.acf.core.model.CapabilityIdempotencyCheck;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityInvokeCommand;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyChain;
+import cn.iocoder.yudao.framework.acf.core.runtime.DefaultCapabilityExceptionClassifier;
 import cn.iocoder.yudao.framework.acf.core.schema.CapabilitySchemaGenerator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Validation;
@@ -57,6 +58,21 @@ class CapabilityConfirmationExecutorTest {
 
         assertThat(result.getStatus()).isEqualTo(CapabilityStatus.FAILURE);
         assertThat(result.getErrorCode()).isEqualTo(CapabilityExecutor.ERROR_CONFIRMATION_UNAVAILABLE);
+        assertThat(capability.confirmedInvocationCount).isZero();
+    }
+
+    @Test
+    void shouldRequireIdempotencyKeyBeforeCreatingConfirmationChallenge() {
+        CapturingConfirmationService confirmationService = new CapturingConfirmationService();
+        CapabilityInvokeCommand command = CapabilityInvokeCommand.builder()
+                .name("test.order.confirmed.update")
+                .arguments(Map.of("value", "approved"))
+                .build();
+
+        CapabilityResult result = executor(confirmationService).invoke(command);
+
+        assertThat(result.getErrorCode()).isEqualTo(CapabilityExecutor.ERROR_IDEMPOTENCY_KEY_REQUIRED);
+        assertThat(confirmationService.createChallengeCount).isZero();
         assertThat(capability.confirmedInvocationCount).isZero();
     }
 
@@ -134,10 +150,10 @@ class CapabilityConfirmationExecutorTest {
     }
 
     private CapabilityExecutor executor(CapabilityConfirmationService confirmationService) {
-        return new CapabilityExecutor(registry,
+        return CapabilityExecutorTestFixture.create(registry,
                 new DefaultCapabilityGovernanceService(new CapabilityPolicyChain(List.of())),
-                confirmationService, new PassThroughIdempotencyService(),
-                new CapabilityRequestDigestGenerator(objectMapper), objectMapper, validator);
+                confirmationService, new PassThroughIdempotencyService(), null,
+                new DefaultCapabilityExceptionClassifier(), objectMapper, validator);
     }
 
     private CapabilityInvokeCommand command(String name, String value, String confirmationToken) {
@@ -145,7 +161,7 @@ class CapabilityConfirmationExecutorTest {
                 .name(name)
                 .arguments(Map.of("value", value))
                 .confirmationToken(confirmationToken)
-                .idempotencyKey(name.contains("confirmed") ? "idem-confirm-001" : null)
+                .idempotencyKey("idem-confirm-001")
                 .build();
     }
 
@@ -221,6 +237,11 @@ class CapabilityConfirmationExecutorTest {
         @Override
         public void complete(CapabilityDefinition definition, CapabilityContext context, String idempotencyKey,
                              String requestDigest, CapabilityResult result) {
+        }
+
+        @Override
+        public void markUncertain(CapabilityDefinition definition, CapabilityContext context, String idempotencyKey,
+                                  String requestDigest, CapabilityResult result) {
         }
 
         @Override

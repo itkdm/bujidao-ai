@@ -2,7 +2,6 @@ package cn.iocoder.yudao.framework.acf.core.runtime;
 
 import cn.iocoder.yudao.framework.acf.core.standard.AcfCapabilityErrorCodes;
 import jakarta.validation.ConstraintViolationException;
-import org.springframework.util.StringUtils;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.UndeclaredThrowableException;
@@ -12,10 +11,10 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeoutException;
 
 /**
- * 默认能力执行异常分类器
+ * Default exception classifier with stable public messages.
  *
- * 默认实现只对能够确定语义的异常开放重试标志。未知异常可能来自已经产生副作用的业务方法，
- * 因此默认不可重试，调用方不能仅凭一次未知失败重复执行。
+ * Unknown exception messages are never exposed because they may contain SQL,
+ * paths, service addresses, credentials, or private business data.
  *
  * @author bujidao
  */
@@ -25,7 +24,8 @@ public class DefaultCapabilityExceptionClassifier implements CapabilityException
     public CapabilityExceptionClassification classify(Throwable throwable) {
         Throwable cause = unwrap(throwable);
         if (cause instanceof IllegalArgumentException || cause instanceof ConstraintViolationException) {
-            return classification(AcfCapabilityErrorCodes.BAD_REQUEST, cause, false);
+            return CapabilityExceptionClassification.of(AcfCapabilityErrorCodes.BAD_REQUEST,
+                    "Capability request is invalid", false, cause);
         }
         if (cause instanceof TimeoutException) {
             return CapabilityExceptionClassification.of(AcfCapabilityErrorCodes.RUNTIME_TIMEOUT,
@@ -35,20 +35,10 @@ public class DefaultCapabilityExceptionClassifier implements CapabilityException
             return CapabilityExceptionClassification.of(AcfCapabilityErrorCodes.RUNTIME_EXECUTOR_REJECTED,
                     "Capability invocation executor is saturated", true, cause);
         }
-        return classification(AcfCapabilityErrorCodes.INVOKE_ERROR, cause, false);
+        return CapabilityExceptionClassification.of(AcfCapabilityErrorCodes.INVOKE_ERROR,
+                "Capability invocation failed", false, cause);
     }
 
-    private CapabilityExceptionClassification classification(String errorCode, Throwable cause, boolean retryable) {
-        String message = cause == null || !StringUtils.hasText(cause.getMessage())
-                ? cause == null ? "Unknown capability execution error" : cause.getClass().getSimpleName()
-                : cause.getMessage();
-        return CapabilityExceptionClassification.of(errorCode, message, retryable, cause);
-    }
-
-    /**
-     * 反射调用和异步执行通常会为真实业务异常增加包装，这里只剥离已知透明包装层，
-     * 不沿任意 cause 链下钻，避免错误隐藏具备业务语义的外层异常。
-     */
     private Throwable unwrap(Throwable throwable) {
         Throwable current = throwable;
         while (true) {

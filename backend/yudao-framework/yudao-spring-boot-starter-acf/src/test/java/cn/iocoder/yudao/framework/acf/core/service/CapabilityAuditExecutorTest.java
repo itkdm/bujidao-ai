@@ -13,7 +13,10 @@ import cn.iocoder.yudao.framework.acf.core.model.CapabilityContext;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityInvokeCommand;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyChain;
+import cn.iocoder.yudao.framework.acf.core.runtime.DefaultCapabilityExceptionClassifier;
 import cn.iocoder.yudao.framework.acf.core.schema.CapabilitySchemaGenerator;
+import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCall;
+import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -158,10 +161,34 @@ class CapabilityAuditExecutorTest {
         assertThat(auditService.recordCount).isOne();
     }
 
+    @Test
+    void shouldNotExposeInternalExceptionDetailsThroughResultToolOrAudit() {
+        CapturingAuditService auditService = new CapturingAuditService();
+        CapabilityExecutor executor = executor(auditService);
+
+        CapabilityResult result = new CapabilityToolInvoker(executor).invoke(CapabilityToolCall.builder()
+                .capabilityName("test.audit.secret.failure")
+                .build());
+
+        assertThat(result.getMessage()).isEqualTo("Capability invocation failed");
+        assertThat(result.getMessage()).doesNotContain("SELECT", "internal.example", "Bearer", "C:\\private");
+        assertThat(auditService.record.getMessage()).isEqualTo("Capability invocation failed");
+        assertThat(auditService.steps).allSatisfy(step -> {
+            if (step.getSummary() != null) {
+                assertThat(step.getSummary())
+                        .doesNotContain("SELECT", "internal.example", "Bearer", "C:\\private");
+            }
+            if (step.getErrorMessage() != null) {
+                assertThat(step.getErrorMessage())
+                        .doesNotContain("SELECT", "internal.example", "Bearer", "C:\\private");
+            }
+        });
+    }
+
     private CapabilityExecutor executor(CapabilityAuditService auditService) {
-        return new CapabilityExecutor(registry,
+        return CapabilityExecutorTestFixture.create(registry,
                 new DefaultCapabilityGovernanceService(new CapabilityPolicyChain(List.of())),
-                null, null, auditService, new CapabilityRequestDigestGenerator(objectMapper), objectMapper, validator);
+                null, null, auditService, new DefaultCapabilityExceptionClassifier(), objectMapper, validator);
     }
 
     static class AuditCapability {
@@ -170,6 +197,13 @@ class CapabilityAuditExecutorTest {
                 permissions = "test:audit:invoke", version = "1.0.0")
         public String echo(String value) {
             return value;
+        }
+
+        @AgentCapability(name = "test.audit.secret.failure", title = "Secret failure",
+                description = "Verifies public error redaction", permissions = "test:audit:invoke")
+        public String secretFailure() {
+            throw new IllegalStateException(
+                    "SELECT * FROM account; https://internal.example C:\\private\\data Bearer token-secret");
         }
     }
 

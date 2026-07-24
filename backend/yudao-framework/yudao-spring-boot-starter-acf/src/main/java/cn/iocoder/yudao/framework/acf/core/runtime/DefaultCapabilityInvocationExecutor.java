@@ -1,10 +1,12 @@
 package cn.iocoder.yudao.framework.acf.core.runtime;
 
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
-import com.alibaba.ttl.TtlCallable;
+import com.alibaba.ttl.TtlRunnable;
 
 import java.util.Objects;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
@@ -14,13 +16,13 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * 默认能力目标方法执行器
+ * Default isolated executor for capability targets.
  *
- * 使用 ACF 专用有界线程池，避免能力调用占用通用异步线程池；提交任务时通过 TTL
- * 传递芋道现有的租户、安全等线程上下文。超时会取消 Future 并发送中断信号，
- * 业务能力仍应正确响应线程中断，不能把超时理解为 JVM 能够强制终止任意代码。
+ * Cancellation only requests interruption. Terminal completion is controlled by
+ * the worker wrapper and is never completed by Future.cancel for a running task.
  *
  * @author bujidao
  */
@@ -28,17 +30,11 @@ public final class DefaultCapabilityInvocationExecutor implements CapabilityInvo
 
     private static final int KEEP_ALIVE_SECONDS = 60;
 
-    private static final CapabilityInvocationExecutor SHARED_INSTANCE =
-            new DefaultCapabilityInvocationExecutor(createExecutor(true), false);
-
     private final ExecutorService executorService;
     private final boolean shutdownOnClose;
 
-    /**
-     * 创建由 Spring Bean 生命周期管理的默认执行器。
-     */
     public DefaultCapabilityInvocationExecutor() {
-        this(createExecutor(false), true);
+        this(createExecutor(), true);
     }
 
     DefaultCapabilityInvocationExecutor(ExecutorService executorService, boolean shutdownOnClose) {
@@ -46,36 +42,13 @@ public final class DefaultCapabilityInvocationExecutor implements CapabilityInvo
         this.shutdownOnClose = shutdownOnClose;
     }
 
-    /**
-     * 兼容直接构造 CapabilityExecutor 的场景，共享实例使用守护线程且不会由单个调用方关闭。
-     */
-    public static CapabilityInvocationExecutor shared() {
-        return SHARED_INSTANCE;
-    }
-
     @Override
-    public CapabilityResult invoke(Callable<CapabilityResult> invocation, int timeoutMs) throws Exception {
+    public CapabilityInvocationHandle submit(Callable<CapabilityResult> invocation) {
         Objects.requireNonNull(invocation, "invocation");
-        if (timeoutMs <= 0) {
-            throw new IllegalArgumentException("timeoutMs must be greater than zero");
-        }
-        Future<CapabilityResult> future = executorService.submit(TtlCallable.get(invocation));
-        try {
-            return future.get(timeoutMs, TimeUnit.MILLISECONDS);
-        } catch (TimeoutException exception) {
-            cancel(future);
-            TimeoutException timeoutException = new TimeoutException(
-                    "Capability invocation timed out after " + timeoutMs + " ms");
-            timeoutException.initCause(exception);
-            throw timeoutException;
-        } catch (ExecutionException exception) {
-            // 保留标准异步包装，由统一异常分类器剥离，避免 SPI 被迫声明并捕获任意 Error。
-            throw exception;
-        } catch (InterruptedException exception) {
-            cancel(future);
-            Thread.currentThread().interrupt();
-            throw exception;
-        }
+        DefaultCapabilityInvocationHandle handle = new DefaultCapabilityInvocationHandle(executorService);
+        Future<?> future = executorService.submit(TtlRunnable.get(() -> handle.run(invocation)));
+        handle.attach(future);
+        return handle;
     }
 
     @Override
@@ -94,41 +67,122 @@ public final class DefaultCapabilityInvocationExecutor implements CapabilityInvo
         }
     }
 
-    private void cancel(Future<?> future) {
-        future.cancel(true);
-        // 已在队列中但尚未启动的超时任务应立即移除，避免无效任务继续占用有界队列。
-        if (executorService instanceof ThreadPoolExecutor threadPoolExecutor && future instanceof Runnable task) {
-            threadPoolExecutor.remove(task);
-        }
-    }
-
-    private static ExecutorService createExecutor(boolean daemon) {
+    private static ExecutorService createExecutor() {
         int processors = Runtime.getRuntime().availableProcessors();
         int corePoolSize = Math.max(2, Math.min(processors, 8));
         int maximumPoolSize = Math.max(16, Math.min(processors * 4, 64));
         ThreadPoolExecutor executor = new ThreadPoolExecutor(
                 corePoolSize, maximumPoolSize, KEEP_ALIVE_SECONDS, TimeUnit.SECONDS,
-                new SynchronousQueue<>(),
-                new CapabilityThreadFactory(daemon), new ThreadPoolExecutor.AbortPolicy());
+                new SynchronousQueue<>(), new CapabilityThreadFactory(), new ThreadPoolExecutor.AbortPolicy());
         executor.allowCoreThreadTimeOut(true);
         return executor;
+    }
+
+    private static final class DefaultCapabilityInvocationHandle implements CapabilityInvocationHandle {
+
+        private final ExecutorService executorService;
+        private final AtomicReference<InvocationState> state = new AtomicReference<>(InvocationState.SUBMITTED);
+        private final AtomicReference<Future<?>> future = new AtomicReference<>();
+        private final CompletableFuture<CapabilityInvocationCompletion> completion = new CompletableFuture<>();
+
+        private DefaultCapabilityInvocationHandle(ExecutorService executorService) {
+            this.executorService = executorService;
+        }
+
+        private void attach(Future<?> submittedFuture) {
+            future.set(submittedFuture);
+            if (state.get() == InvocationState.CANCELLED_BEFORE_START) {
+                cancelFuture(submittedFuture, false);
+            }
+        }
+
+        private void run(Callable<CapabilityResult> invocation) {
+            if (!state.compareAndSet(InvocationState.SUBMITTED, InvocationState.RUNNING)) {
+                return;
+            }
+            CapabilityInvocationCompletion terminal;
+            try {
+                terminal = CapabilityInvocationCompletion.completed(invocation.call());
+            } catch (Throwable throwable) {
+                terminal = CapabilityInvocationCompletion.failed(throwable);
+            }
+            state.set(InvocationState.TERMINATED);
+            completion.complete(terminal);
+        }
+
+        @Override
+        public CapabilityResult await(int timeoutMs)
+                throws InterruptedException, ExecutionException, TimeoutException {
+            if (timeoutMs <= 0) {
+                throw new IllegalArgumentException("timeoutMs must be greater than zero");
+            }
+            CapabilityInvocationCompletion terminal = completion.get(timeoutMs, TimeUnit.MILLISECONDS);
+            if (!terminal.isTargetInvoked()) {
+                throw new ExecutionException(new IllegalStateException("Capability invocation was cancelled"));
+            }
+            if (terminal.getFailure() != null) {
+                throw new ExecutionException(terminal.getFailure());
+            }
+            return terminal.getResult();
+        }
+
+        @Override
+        public CapabilityInvocationInterruptResult interrupt() {
+            while (true) {
+                InvocationState current = state.get();
+                if (current == InvocationState.SUBMITTED) {
+                    if (!state.compareAndSet(InvocationState.SUBMITTED, InvocationState.CANCELLED_BEFORE_START)) {
+                        continue;
+                    }
+                    Future<?> submittedFuture = future.get();
+                    if (submittedFuture != null) {
+                        cancelFuture(submittedFuture, false);
+                    }
+                    completion.complete(CapabilityInvocationCompletion.cancelledBeforeStart());
+                    return CapabilityInvocationInterruptResult.CANCELLED_BEFORE_START;
+                }
+                if (current == InvocationState.RUNNING) {
+                    Future<?> submittedFuture = future.get();
+                    if (submittedFuture != null) {
+                        submittedFuture.cancel(true);
+                    }
+                    return CapabilityInvocationInterruptResult.INTERRUPT_REQUESTED;
+                }
+                return CapabilityInvocationInterruptResult.ALREADY_TERMINATED;
+            }
+        }
+
+        @Override
+        public CompletionStage<CapabilityInvocationCompletion> completion() {
+            return completion;
+        }
+
+        private void cancelFuture(Future<?> submittedFuture, boolean mayInterruptIfRunning) {
+            submittedFuture.cancel(mayInterruptIfRunning);
+            if (executorService instanceof ThreadPoolExecutor threadPoolExecutor
+                    && submittedFuture instanceof Runnable task) {
+                threadPoolExecutor.remove(task);
+            }
+        }
+
+    }
+
+    private enum InvocationState {
+        SUBMITTED,
+        RUNNING,
+        CANCELLED_BEFORE_START,
+        TERMINATED
     }
 
     private static final class CapabilityThreadFactory implements ThreadFactory {
 
         private final AtomicInteger sequence = new AtomicInteger();
-        private final boolean daemon;
-
-        private CapabilityThreadFactory(boolean daemon) {
-            this.daemon = daemon;
-        }
 
         @Override
         public Thread newThread(Runnable runnable) {
-            Thread thread = new Thread(runnable, "acf-invocation-" + sequence.incrementAndGet());
-            thread.setDaemon(daemon);
-            return thread;
+            return new Thread(runnable, "acf-invocation-" + sequence.incrementAndGet());
         }
+
     }
 
 }

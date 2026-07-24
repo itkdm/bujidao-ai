@@ -24,6 +24,13 @@ public interface CapabilityIdempotencyService {
     void fail(CapabilityDefinition definition, CapabilityContext context, String idempotencyKey,
               String requestDigest, CapabilityResult result);
 
+    /**
+     * Marks a started execution as unresolved. The same key must remain blocked until a later
+     * complete or fail call records the target's real terminal outcome.
+     */
+    void markUncertain(CapabilityDefinition definition, CapabilityContext context, String idempotencyKey,
+                       String requestDigest, CapabilityResult result);
+
     void release(CapabilityDefinition definition, CapabilityContext context, String idempotencyKey,
                  String requestDigest);
 

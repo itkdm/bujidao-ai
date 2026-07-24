@@ -16,7 +16,10 @@ import cn.iocoder.yudao.framework.acf.core.model.CapabilityPolicyResult;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityExceptionClassification;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityExceptionClassifier;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityInvocationCompletion;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityInvocationExecutor;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityInvocationHandle;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityInvocationInterruptResult;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuardChain;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuardContext;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuardResult;
@@ -25,8 +28,6 @@ import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeMetricsRecor
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimePolicy;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimePolicyService;
 import cn.iocoder.yudao.framework.acf.core.runtime.DefaultCapabilityExceptionClassifier;
-import cn.iocoder.yudao.framework.acf.core.runtime.DefaultCapabilityInvocationExecutor;
-import cn.iocoder.yudao.framework.acf.core.runtime.DefaultCapabilityRuntimePolicyService;
 import cn.iocoder.yudao.framework.acf.core.standard.AcfCapabilityErrorCodes;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -44,7 +45,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 
 /**
  * ACF 基础能力执行器
@@ -60,15 +62,6 @@ public class CapabilityExecutor {
 
     private static final CapabilityExceptionClassifier FALLBACK_EXCEPTION_CLASSIFIER =
             new DefaultCapabilityExceptionClassifier();
-    private static final CapabilityRuntimePolicyService DEFAULT_RUNTIME_POLICY_SERVICE =
-            new DefaultCapabilityRuntimePolicyService();
-    private static final CapabilityRuntimeGuardChain EMPTY_RUNTIME_GUARD_CHAIN =
-            new CapabilityRuntimeGuardChain(List.of());
-    private static final CapabilityInvocationExecutor DEFAULT_INVOCATION_EXECUTOR =
-            DefaultCapabilityInvocationExecutor.shared();
-    private static final CapabilityRuntimeMetricsRecorder NOOP_METRICS_RECORDER =
-            CapabilityRuntimeMetricsRecorder.noop();
-
     public static final String ERROR_BAD_REQUEST = AcfCapabilityErrorCodes.BAD_REQUEST;
     public static final String ERROR_CAPABILITY_NOT_FOUND = AcfCapabilityErrorCodes.CAPABILITY_NOT_FOUND;
     public static final String ERROR_POLICY = AcfCapabilityErrorCodes.POLICY_ERROR;
@@ -81,6 +74,7 @@ public class CapabilityExecutor {
     public static final String ERROR_IDEMPOTENCY = AcfCapabilityErrorCodes.IDEMPOTENCY_ERROR;
     public static final String ERROR_IDEMPOTENCY_CONFLICT = AcfCapabilityErrorCodes.IDEMPOTENCY_CONFLICT;
     public static final String ERROR_RUNTIME_POLICY = AcfCapabilityErrorCodes.RUNTIME_POLICY_ERROR;
+    public static final String ERROR_RUNTIME_INTERRUPTED = AcfCapabilityErrorCodes.RUNTIME_INTERRUPTED;
     public static final String ERROR_INVOKE = AcfCapabilityErrorCodes.INVOKE_ERROR;
 
     private final CapabilityRegistry capabilityRegistry;
@@ -96,85 +90,6 @@ public class CapabilityExecutor {
     private final CapabilityRequestDigestGenerator requestDigestGenerator;
     private final ObjectMapper objectMapper;
     private final Validator validator;
-
-    public CapabilityExecutor(CapabilityRegistry capabilityRegistry, CapabilityGovernanceService governanceService,
-                              ObjectMapper objectMapper, Validator validator) {
-        this(capabilityRegistry, governanceService, null, null, null,
-                new DefaultCapabilityExceptionClassifier(), DEFAULT_RUNTIME_POLICY_SERVICE, EMPTY_RUNTIME_GUARD_CHAIN,
-                DEFAULT_INVOCATION_EXECUTOR, new CapabilityRequestDigestGenerator(objectMapper),
-                objectMapper, validator);
-    }
-
-    public CapabilityExecutor(CapabilityRegistry capabilityRegistry, CapabilityGovernanceService governanceService,
-                              CapabilityConfirmationService confirmationService,
-                              CapabilityRequestDigestGenerator requestDigestGenerator,
-                              ObjectMapper objectMapper, Validator validator) {
-        this(capabilityRegistry, governanceService, confirmationService, null, null,
-                new DefaultCapabilityExceptionClassifier(), DEFAULT_RUNTIME_POLICY_SERVICE, EMPTY_RUNTIME_GUARD_CHAIN,
-                DEFAULT_INVOCATION_EXECUTOR, requestDigestGenerator, objectMapper, validator);
-    }
-
-    public CapabilityExecutor(CapabilityRegistry capabilityRegistry, CapabilityGovernanceService governanceService,
-                              CapabilityConfirmationService confirmationService,
-                              CapabilityIdempotencyService idempotencyService,
-                              CapabilityRequestDigestGenerator requestDigestGenerator,
-                              ObjectMapper objectMapper, Validator validator) {
-        this(capabilityRegistry, governanceService, confirmationService, idempotencyService, null,
-                new DefaultCapabilityExceptionClassifier(), DEFAULT_RUNTIME_POLICY_SERVICE, EMPTY_RUNTIME_GUARD_CHAIN,
-                DEFAULT_INVOCATION_EXECUTOR, requestDigestGenerator, objectMapper, validator);
-    }
-
-    public CapabilityExecutor(CapabilityRegistry capabilityRegistry, CapabilityGovernanceService governanceService,
-                              CapabilityConfirmationService confirmationService,
-                              CapabilityIdempotencyService idempotencyService,
-                              CapabilityAuditService auditService,
-                              CapabilityRequestDigestGenerator requestDigestGenerator,
-                              ObjectMapper objectMapper, Validator validator) {
-        this(capabilityRegistry, governanceService, confirmationService, idempotencyService, auditService,
-                new DefaultCapabilityExceptionClassifier(), DEFAULT_RUNTIME_POLICY_SERVICE, EMPTY_RUNTIME_GUARD_CHAIN,
-                DEFAULT_INVOCATION_EXECUTOR, requestDigestGenerator, objectMapper, validator);
-    }
-
-    public CapabilityExecutor(CapabilityRegistry capabilityRegistry, CapabilityGovernanceService governanceService,
-                              CapabilityConfirmationService confirmationService,
-                              CapabilityIdempotencyService idempotencyService,
-                              CapabilityAuditService auditService,
-                              CapabilityExceptionClassifier exceptionClassifier,
-                              CapabilityRequestDigestGenerator requestDigestGenerator,
-                              ObjectMapper objectMapper, Validator validator) {
-        this(capabilityRegistry, governanceService, confirmationService, idempotencyService, auditService,
-                exceptionClassifier, DEFAULT_RUNTIME_POLICY_SERVICE, EMPTY_RUNTIME_GUARD_CHAIN,
-                DEFAULT_INVOCATION_EXECUTOR, requestDigestGenerator, objectMapper, validator);
-    }
-
-    public CapabilityExecutor(CapabilityRegistry capabilityRegistry, CapabilityGovernanceService governanceService,
-                              CapabilityConfirmationService confirmationService,
-                              CapabilityIdempotencyService idempotencyService,
-                              CapabilityAuditService auditService,
-                              CapabilityExceptionClassifier exceptionClassifier,
-                              CapabilityRuntimePolicyService runtimePolicyService,
-                              CapabilityRuntimeGuardChain runtimeGuardChain,
-                              CapabilityRequestDigestGenerator requestDigestGenerator,
-                              ObjectMapper objectMapper, Validator validator) {
-        this(capabilityRegistry, governanceService, confirmationService, idempotencyService, auditService,
-                exceptionClassifier, runtimePolicyService, runtimeGuardChain, DEFAULT_INVOCATION_EXECUTOR,
-                requestDigestGenerator, objectMapper, validator);
-    }
-
-    public CapabilityExecutor(CapabilityRegistry capabilityRegistry, CapabilityGovernanceService governanceService,
-                              CapabilityConfirmationService confirmationService,
-                              CapabilityIdempotencyService idempotencyService,
-                              CapabilityAuditService auditService,
-                              CapabilityExceptionClassifier exceptionClassifier,
-                              CapabilityRuntimePolicyService runtimePolicyService,
-                              CapabilityRuntimeGuardChain runtimeGuardChain,
-                              CapabilityInvocationExecutor invocationExecutor,
-                              CapabilityRequestDigestGenerator requestDigestGenerator,
-                              ObjectMapper objectMapper, Validator validator) {
-        this(capabilityRegistry, governanceService, confirmationService, idempotencyService, auditService,
-                exceptionClassifier, runtimePolicyService, runtimeGuardChain, invocationExecutor,
-                NOOP_METRICS_RECORDER, requestDigestGenerator, objectMapper, validator);
-    }
 
     public CapabilityExecutor(CapabilityRegistry capabilityRegistry, CapabilityGovernanceService governanceService,
                               CapabilityConfirmationService confirmationService,
@@ -242,7 +157,8 @@ public class CapabilityExecutor {
             metricsRecorder.record(metricRecord);
         } catch (RuntimeException exception) {
             // 指标属于旁路观测能力，记录失败不能覆盖已经确定的业务调用结果。
-            LOGGER.warn("记录 ACF 运行指标失败，capability={}", auditRecord.getCapabilityName(), exception);
+            LOGGER.warn("ACF metrics recording failed, capability={}, errorType={}",
+                    auditRecord.getCapabilityName(), exception.getClass().getName());
         }
     }
 
@@ -262,7 +178,7 @@ public class CapabilityExecutor {
             registration = capabilityRegistry.getRegistration(name);
         } catch (IllegalArgumentException exception) {
             CapabilityResult result = CapabilityResult.failure(
-                    name, ERROR_CAPABILITY_NOT_FOUND, exception.getMessage());
+                    name, ERROR_CAPABILITY_NOT_FOUND, "Capability not found");
             audit.failure(CapabilityAuditStage.CAPABILITY_LOOKUP, result, stepStartedAt);
             return result;
         }
@@ -276,7 +192,8 @@ public class CapabilityExecutor {
                     governanceService.evaluateExecution(registration.definition(), context),
                     "Capability governance result must not be null");
         } catch (RuntimeException exception) {
-            CapabilityResult result = CapabilityResult.failure(name, ERROR_POLICY, readableMessage(exception));
+            CapabilityResult result = CapabilityResult.failure(name, ERROR_POLICY,
+                    "Capability policy evaluation failed");
             audit.failure(CapabilityAuditStage.GOVERNANCE, result, stepStartedAt);
             return result;
         }
@@ -298,13 +215,20 @@ public class CapabilityExecutor {
             argument = convertArgument(effectiveDefinition, command.getArguments());
             validateArgument(argument);
         } catch (IllegalArgumentException exception) {
-            CapabilityResult result = CapabilityResult.failure(name, ERROR_BAD_REQUEST, readableMessage(exception));
+            CapabilityResult result = CapabilityResult.failure(name, ERROR_BAD_REQUEST,
+                    "Capability request is invalid");
             audit.failure(CapabilityAuditStage.ARGUMENT_VALIDATION, result, stepStartedAt);
             return result;
         }
         audit.success(CapabilityAuditStage.ARGUMENT_VALIDATION, "arguments converted and validated", stepStartedAt);
 
         String idempotencyKey = command.getIdempotencyKey();
+        if (requiresIdempotency(effectiveDefinition) && !StringUtils.hasText(idempotencyKey)) {
+            CapabilityResult result = CapabilityResult.failure(name, ERROR_IDEMPOTENCY_KEY_REQUIRED,
+                    "Side-effecting or confirmed capability requires an idempotency key");
+            audit.failure(CapabilityAuditStage.IDEMPOTENCY, result, System.currentTimeMillis());
+            return result;
+        }
         String requestDigest;
         stepStartedAt = System.currentTimeMillis();
         try {
@@ -312,7 +236,8 @@ public class CapabilityExecutor {
                     ? requestDigestGenerator.generate(effectiveDefinition.getName(), argument) : null;
         } catch (RuntimeException exception) {
             String errorCode = StringUtils.hasText(idempotencyKey) ? ERROR_IDEMPOTENCY : ERROR_CONFIRMATION;
-            CapabilityResult result = CapabilityResult.failure(name, errorCode, readableMessage(exception));
+            CapabilityResult result = CapabilityResult.failure(name, errorCode,
+                    "Capability request digest generation failed");
             CapabilityAuditStage stage = StringUtils.hasText(idempotencyKey)
                     ? CapabilityAuditStage.IDEMPOTENCY : CapabilityAuditStage.CONFIRMATION;
             audit.failure(stage, result, stepStartedAt);
@@ -388,7 +313,7 @@ public class CapabilityExecutor {
             audit.success(CapabilityAuditStage.RUNTIME_POLICY, runtimePolicy.summary(), stepStartedAt);
         } catch (RuntimeException exception) {
             CapabilityResult result = CapabilityResult.failure(name, ERROR_RUNTIME_POLICY,
-                    readableMessage(exception));
+                    "Capability runtime policy resolution failed");
             audit.failure(CapabilityAuditStage.RUNTIME_POLICY, result, stepStartedAt);
             return finishBeforeTarget(effectiveDefinition, context, idempotencyKey, requestDigest,
                     result, idempotencyAcquired, audit);
@@ -402,7 +327,7 @@ public class CapabilityExecutor {
             guardLease = runtimeGuardChain.acquire(guardContext);
         } catch (RuntimeException exception) {
             CapabilityResult result = CapabilityResult.failure(name,
-                    AcfCapabilityErrorCodes.RUNTIME_GUARD_ERROR, readableMessage(exception));
+                    AcfCapabilityErrorCodes.RUNTIME_GUARD_ERROR, "Capability runtime guard failed");
             audit.failure(CapabilityAuditStage.RUNTIME_GUARD, result, stepStartedAt);
             return finishBeforeTarget(effectiveDefinition, context, idempotencyKey, requestDigest,
                     result, idempotencyAcquired, audit);
@@ -422,6 +347,20 @@ public class CapabilityExecutor {
         CapabilityInvocationOutcome invocationOutcome = invokeWithRetry(
                 name, registration, argument, effectiveDefinition, runtimePolicy, audit);
         CapabilityResult result = invocationOutcome.result();
+        if (invocationOutcome.deferredHandle() != null) {
+            audit.failure(CapabilityAuditStage.INVOCATION, result, stepStartedAt);
+            markIdempotencyUncertain(effectiveDefinition, context, idempotencyKey, requestDigest,
+                    result, idempotencyAcquired, audit);
+            settleDeferredInvocation(effectiveDefinition, context, idempotencyKey, requestDigest,
+                    result, invocationOutcome, idempotencyAcquired, guardLease);
+            return result;
+        }
+        if (!invocationOutcome.targetInvoked()) {
+            guardLease.release();
+            audit.failure(CapabilityAuditStage.INVOCATION, result, stepStartedAt);
+            return finishBeforeTarget(effectiveDefinition, context, idempotencyKey, requestDigest,
+                    result, idempotencyAcquired, audit);
+        }
         if (result.isSuccess()) {
             guardLease.onSuccess(result);
             audit.success(CapabilityAuditStage.INVOCATION, "target invocation completed", stepStartedAt);
@@ -472,7 +411,9 @@ public class CapabilityExecutor {
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
                 return new CapabilityInvocationOutcome(
-                        classifyException(name, exception), exception, outcome.targetInvoked());
+                        CapabilityResult.failure(name, ERROR_RUNTIME_INTERRUPTED,
+                                "Capability invocation was interrupted"),
+                        exception, outcome.targetInvoked(), null);
             }
             audit.retry(attempt + 1, outcome.result().getErrorCode(), retryStartedAt);
         }
@@ -481,17 +422,42 @@ public class CapabilityExecutor {
 
     private CapabilityInvocationOutcome invokeOnce(String name, CapabilityRegistration registration,
                                                    Object argument, int timeoutMs) {
-        AtomicBoolean targetInvoked = new AtomicBoolean();
+        CapabilityInvocationHandle handle;
         try {
-            CapabilityResult result = invocationExecutor.invoke(() -> {
-                targetInvoked.set(true);
-                return normalizeResult(name, invokeTarget(registration, argument));
-            }, timeoutMs);
-            return new CapabilityInvocationOutcome(result, null, targetInvoked.get());
-        } catch (Exception exception) {
+            handle = invocationExecutor.submit(
+                    () -> normalizeResult(name, invokeTarget(registration, argument)));
+        } catch (RuntimeException exception) {
             return new CapabilityInvocationOutcome(
-                    classifyException(name, exception), exception, targetInvoked.get());
+                    classifyException(name, exception), exception, false, null);
         }
+        try {
+            return new CapabilityInvocationOutcome(handle.await(timeoutMs), null, true, null);
+        } catch (TimeoutException exception) {
+            TimeoutException timeoutException = new TimeoutException(
+                    "Capability invocation timed out after " + timeoutMs + " ms");
+            timeoutException.initCause(exception);
+            return interruptedInvocationOutcome(name, handle, timeoutException,
+                    AcfCapabilityErrorCodes.RUNTIME_TIMEOUT, "Capability invocation timed out", true);
+        } catch (InterruptedException exception) {
+            CapabilityInvocationOutcome outcome = interruptedInvocationOutcome(name, handle, exception,
+                    AcfCapabilityErrorCodes.RUNTIME_INTERRUPTED, "Capability invocation was interrupted", false);
+            Thread.currentThread().interrupt();
+            return outcome;
+        } catch (ExecutionException exception) {
+            return new CapabilityInvocationOutcome(
+                    classifyException(name, exception), exception, true, null);
+        }
+    }
+
+    private CapabilityInvocationOutcome interruptedInvocationOutcome(
+            String name, CapabilityInvocationHandle handle, Throwable failure,
+            String errorCode, String message, boolean retryable) {
+        CapabilityInvocationInterruptResult interruptResult = handle.interrupt();
+        CapabilityResult result = CapabilityResult.failure(name, errorCode, message, retryable);
+        if (interruptResult == CapabilityInvocationInterruptResult.CANCELLED_BEFORE_START) {
+            return new CapabilityInvocationOutcome(result, failure, false, null);
+        }
+        return new CapabilityInvocationOutcome(result, failure, true, handle);
     }
 
     private boolean shouldRetry(CapabilityDefinition definition, CapabilityRuntimePolicy runtimePolicy,
@@ -501,6 +467,9 @@ public class CapabilityExecutor {
         }
         // 超时只说明调用方停止等待，不能证明工作线程已经结束，继续重试可能形成重叠执行。
         if (AcfCapabilityErrorCodes.RUNTIME_TIMEOUT.equals(outcome.result().getErrorCode())) {
+            return false;
+        }
+        if (AcfCapabilityErrorCodes.RUNTIME_INTERRUPTED.equals(outcome.result().getErrorCode())) {
             return false;
         }
         if (!definition.isSideEffect()) {
@@ -532,12 +501,12 @@ public class CapabilityExecutor {
         try {
             CapabilityExceptionClassification classification = Objects.requireNonNull(
                     exceptionClassifier.classify(throwable), "Capability exception classification must not be null");
-            return CapabilityResult.failure(name, classification.getErrorCode(), classification.getMessage(),
+            return CapabilityResult.failure(name, classification.getErrorCode(), classification.getPublicMessage(),
                     classification.isRetryable());
         } catch (RuntimeException classificationException) {
             // 自定义分类器不能掩盖原始执行异常，分类失败时回退到最保守的不可重试结果。
             CapabilityExceptionClassification fallback = FALLBACK_EXCEPTION_CLASSIFIER.classify(throwable);
-            return CapabilityResult.failure(name, fallback.getErrorCode(), fallback.getMessage(),
+            return CapabilityResult.failure(name, fallback.getErrorCode(), fallback.getPublicMessage(),
                     fallback.isRetryable());
         }
     }
@@ -556,7 +525,11 @@ public class CapabilityExecutor {
     }
 
     private boolean requiresRequestDigest(CapabilityDefinition definition, String idempotencyKey) {
-        return definition.isConfirmationRequired() || StringUtils.hasText(idempotencyKey);
+        return requiresIdempotency(definition) || StringUtils.hasText(idempotencyKey);
+    }
+
+    private boolean requiresIdempotency(CapabilityDefinition definition) {
+        return definition.isSideEffect() || definition.isConfirmationRequired();
     }
 
     private CapabilityResult createConfirmationChallengeIfNecessary(CapabilityDefinition definition,
@@ -584,7 +557,8 @@ public class CapabilityExecutor {
                     "Capability confirmation challenge must not be null");
             return CapabilityResult.confirmationRequired(definition.getName(), challenge);
         } catch (RuntimeException exception) {
-            return CapabilityResult.failure(definition.getName(), ERROR_CONFIRMATION, readableMessage(exception));
+            return CapabilityResult.failure(definition.getName(), ERROR_CONFIRMATION,
+                    "Capability confirmation challenge creation failed");
         }
     }
 
@@ -606,7 +580,8 @@ public class CapabilityExecutor {
                     ? check.getErrorCode() : ERROR_CONFIRMATION_TOKEN_INVALID;
             return CapabilityResult.failure(definition.getName(), errorCode, check.getReason());
         } catch (RuntimeException exception) {
-            return CapabilityResult.failure(definition.getName(), ERROR_CONFIRMATION, readableMessage(exception));
+            return CapabilityResult.failure(definition.getName(), ERROR_CONFIRMATION,
+                    "Capability confirmation verification failed");
         }
     }
 
@@ -628,7 +603,8 @@ public class CapabilityExecutor {
             }
             return check;
         } catch (RuntimeException exception) {
-            return CapabilityIdempotencyCheck.error(ERROR_IDEMPOTENCY, readableMessage(exception));
+            return CapabilityIdempotencyCheck.error(ERROR_IDEMPOTENCY,
+                    "Capability idempotency acquisition failed");
         }
     }
 
@@ -653,7 +629,7 @@ public class CapabilityExecutor {
             return result;
         } catch (RuntimeException exception) {
             return CapabilityResult.failure(definition.getName(), ERROR_IDEMPOTENCY,
-                    "Capability executed but idempotency result could not be stored: " + readableMessage(exception));
+                    "Capability executed but idempotency result could not be stored");
         }
     }
 
@@ -687,7 +663,7 @@ public class CapabilityExecutor {
             return null;
         } catch (RuntimeException exception) {
             return CapabilityResult.failure(definition.getName(), ERROR_IDEMPOTENCY,
-                    "Failed to release idempotency execution right: " + readableMessage(exception));
+                    "Failed to release idempotency execution right");
         }
     }
 
@@ -701,6 +677,75 @@ public class CapabilityExecutor {
             idempotencyService.fail(definition, context, idempotencyKey, requestDigest, result);
         } catch (RuntimeException ignored) {
             // 目标执行错误优先返回；幂等收口异常后续由审计与运行指标记录。
+        }
+    }
+
+    private void markIdempotencyUncertain(CapabilityDefinition definition, CapabilityContext context,
+                                          String idempotencyKey, String requestDigest,
+                                          CapabilityResult result, boolean idempotencyAcquired,
+                                          CapabilityExecutionAudit audit) {
+        if (!idempotencyAcquired) {
+            return;
+        }
+        try {
+            idempotencyService.markUncertain(definition, context, idempotencyKey, requestDigest, result);
+            audit.idempotencyStatus(CapabilityIdempotencyAuditStatus.UNCERTAIN);
+        } catch (RuntimeException exception) {
+            audit.idempotencyStatus(CapabilityIdempotencyAuditStatus.ERROR);
+            LOGGER.warn("Failed to mark ACF idempotency state uncertain, traceId={}, capability={}, errorType={}",
+                    context.getTraceId(), definition.getName(), exception.getClass().getName());
+        }
+    }
+
+    private void settleDeferredInvocation(CapabilityDefinition definition, CapabilityContext context,
+                                          String idempotencyKey, String requestDigest,
+                                          CapabilityResult callerResult, CapabilityInvocationOutcome outcome,
+                                          boolean idempotencyAcquired,
+                                          CapabilityRuntimeGuardChain.Lease guardLease) {
+        outcome.deferredHandle().completion().whenComplete((completion, completionFailure) -> {
+            try {
+                settleDeferredIdempotency(definition, context, idempotencyKey, requestDigest,
+                        idempotencyAcquired, completion, completionFailure);
+            } finally {
+                if (completion != null && !completion.isTargetInvoked()) {
+                    guardLease.release();
+                } else {
+                    guardLease.onFailure(callerResult, outcome.failureCause());
+                }
+            }
+        });
+    }
+
+    private void settleDeferredIdempotency(CapabilityDefinition definition, CapabilityContext context,
+                                           String idempotencyKey, String requestDigest,
+                                           boolean idempotencyAcquired,
+                                           CapabilityInvocationCompletion completion,
+                                           Throwable completionFailure) {
+        if (!idempotencyAcquired) {
+            return;
+        }
+        try {
+            if (completionFailure != null) {
+                CapabilityResult failure = CapabilityResult.failure(definition.getName(), ERROR_INVOKE,
+                        "Capability invocation completion failed");
+                idempotencyService.fail(definition, context, idempotencyKey, requestDigest, failure);
+                return;
+            }
+            if (completion == null || !completion.isTargetInvoked()) {
+                idempotencyService.release(definition, context, idempotencyKey, requestDigest);
+                return;
+            }
+            if (completion.getFailure() != null) {
+                CapabilityResult failure = classifyException(definition.getName(), completion.getFailure());
+                idempotencyService.fail(definition, context, idempotencyKey, requestDigest, failure);
+                return;
+            }
+            CapabilityResult terminalResult = Objects.requireNonNull(completion.getResult(),
+                    "Capability invocation completion result must not be null");
+            idempotencyService.complete(definition, context, idempotencyKey, requestDigest, terminalResult);
+        } catch (RuntimeException exception) {
+            LOGGER.warn("Failed to settle deferred ACF invocation, traceId={}, capability={}, errorType={}",
+                    context.getTraceId(), definition.getName(), exception.getClass().getName());
         }
     }
 
@@ -726,13 +771,9 @@ public class CapabilityExecutor {
         return registration.method().invoke(registration.bean(), argument);
     }
 
-    private String readableMessage(Throwable throwable) {
-        return StringUtils.hasText(throwable.getMessage())
-                ? throwable.getMessage() : throwable.getClass().getSimpleName();
-    }
-
     private record CapabilityInvocationOutcome(CapabilityResult result, Throwable failureCause,
-                                               boolean targetInvoked) {
+                                               boolean targetInvoked,
+                                               CapabilityInvocationHandle deferredHandle) {
     }
 
 }

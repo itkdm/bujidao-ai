@@ -1,6 +1,7 @@
 package cn.iocoder.yudao.framework.acf.core.policy;
 
 import cn.iocoder.yudao.framework.acf.core.enums.CapabilityConsumerType;
+import cn.iocoder.yudao.framework.acf.core.enums.CapabilityRiskLevel;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityContext;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityDefinition;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityPolicyResult;
@@ -116,7 +117,51 @@ class CapabilityPolicyChainTest {
         assertThatThrownBy(() -> new CapabilityPolicyChain(List.of(invalidPolicy))
                 .evaluate(CapabilityPolicyPhase.EXECUTION, definition(), CapabilityContext.empty()))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("must not change invocation contract");
+                .hasMessageContaining("argumentType must not be changed");
+    }
+
+    @Test
+    void shouldAllowPolicyToStrengthenSafetyControls() {
+        CapabilityPolicy strengtheningPolicy = policy("STRENGTHEN", 100, phase -> true, context ->
+                CapabilityPolicyDecision.allow("STRENGTHEN", "safety strengthened",
+                        context.definition().toBuilder()
+                                .timeoutMs(5_000)
+                                .riskLevel(CapabilityRiskLevel.HIGH)
+                                .sideEffect(true)
+                                .confirmationRequired(true)
+                                .build()));
+
+        CapabilityPolicyResult result = new CapabilityPolicyChain(List.of(strengtheningPolicy))
+                .evaluate(CapabilityPolicyPhase.EXECUTION, definition(), CapabilityContext.empty());
+
+        assertThat(result.isAllowed()).isTrue();
+        assertThat(result.getDefinition().getTimeoutMs()).isEqualTo(5_000);
+        assertThat(result.getDefinition().getRiskLevel()).isEqualTo(CapabilityRiskLevel.HIGH);
+        assertThat(result.getDefinition().isSideEffect()).isTrue();
+        assertThat(result.getDefinition().isConfirmationRequired()).isTrue();
+    }
+
+    @Test
+    void shouldRejectPolicyThatWeakensSafetyOrChangesPermissions() {
+        CapabilityDefinition protectedDefinition = definition().toBuilder()
+                .permissions(List.of("order:write"))
+                .riskLevel(CapabilityRiskLevel.HIGH)
+                .sideEffect(true)
+                .confirmationRequired(true)
+                .build();
+        CapabilityPolicy weakeningPolicy = policy("WEAKEN", 100, phase -> true, context ->
+                CapabilityPolicyDecision.allow("WEAKEN", "unsafe",
+                        context.definition().toBuilder()
+                                .permissions(List.of())
+                                .riskLevel(CapabilityRiskLevel.LOW)
+                                .sideEffect(false)
+                                .confirmationRequired(false)
+                                .build()));
+
+        assertThatThrownBy(() -> new CapabilityPolicyChain(List.of(weakeningPolicy))
+                .evaluate(CapabilityPolicyPhase.EXECUTION, protectedDefinition, CapabilityContext.empty()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("permissions must not be changed");
     }
 
     private CapabilityDefinition definition() {
@@ -125,6 +170,7 @@ class CapabilityPolicyChainTest {
                 .title("搜索商品")
                 .description("按关键词搜索商品")
                 .timeoutMs(30_000)
+                .riskLevel(CapabilityRiskLevel.LOW)
                 .argumentType(String.class)
                 .returnType(String.class)
                 .build();

@@ -10,6 +10,7 @@ import cn.iocoder.yudao.framework.acf.core.model.CapabilityIdempotencyCheck;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityInvokeCommand;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import cn.iocoder.yudao.framework.acf.core.policy.CapabilityPolicyChain;
+import cn.iocoder.yudao.framework.acf.core.runtime.DefaultCapabilityExceptionClassifier;
 import cn.iocoder.yudao.framework.acf.core.schema.CapabilitySchemaGenerator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Validation;
@@ -51,11 +52,11 @@ class CapabilityIdempotencyExecutorTest {
     }
 
     @Test
-    void shouldExecuteNormallyWhenIdempotencyKeyIsAbsent() {
+    void shouldRejectSideEffectWhenIdempotencyKeyIsAbsent() {
         CapabilityResult result = executor(null, null).invoke(command("test.order.create", null));
 
-        assertThat(result.isSuccess()).isTrue();
-        assertThat(capability.createCount).isOne();
+        assertThat(result.getErrorCode()).isEqualTo(CapabilityExecutor.ERROR_IDEMPOTENCY_KEY_REQUIRED);
+        assertThat(capability.createCount).isZero();
     }
 
     @Test
@@ -186,9 +187,9 @@ class CapabilityIdempotencyExecutorTest {
 
     private CapabilityExecutor executor(CapabilityConfirmationService confirmationService,
                                         CapabilityIdempotencyService idempotencyService) {
-        return new CapabilityExecutor(registry,
+        return CapabilityExecutorTestFixture.create(registry,
                 new DefaultCapabilityGovernanceService(new CapabilityPolicyChain(List.of())),
-                confirmationService, idempotencyService, new CapabilityRequestDigestGenerator(objectMapper),
+                confirmationService, idempotencyService, null, new DefaultCapabilityExceptionClassifier(),
                 objectMapper, validator);
     }
 
@@ -260,6 +261,11 @@ class CapabilityIdempotencyExecutorTest {
             if (throwOnComplete) {
                 throw new IllegalStateException("storage unavailable");
             }
+        }
+
+        @Override
+        public void markUncertain(CapabilityDefinition definition, CapabilityContext context, String idempotencyKey,
+                                  String requestDigest, CapabilityResult result) {
         }
 
         @Override

@@ -47,6 +47,10 @@ import org.springframework.context.annotation.Bean;
 @AutoConfiguration(after = {JacksonAutoConfiguration.class, ValidationAutoConfiguration.class})
 public class YudaoAcfAutoConfiguration {
 
+    public static final String CONCURRENCY_GUARD_BEAN_NAME = "capabilityConcurrencyGuard";
+    public static final String CIRCUIT_BREAKER_GUARD_BEAN_NAME = "capabilityCircuitBreakerGuard";
+    public static final String RATE_LIMIT_GUARD_BEAN_NAME = "capabilityRateLimitGuard";
+
     @Bean
     @ConditionalOnMissingBean(CapabilitySchemaGenerator.class)
     public CapabilitySchemaGenerator capabilitySchemaGenerator() {
@@ -127,20 +131,20 @@ public class YudaoAcfAutoConfiguration {
         return new DefaultCapabilityInvocationExecutor();
     }
 
-    @Bean
-    @ConditionalOnMissingBean(CapabilityConcurrencyGuard.class)
+    @Bean(name = CONCURRENCY_GUARD_BEAN_NAME)
+    @ConditionalOnMissingBean(name = CONCURRENCY_GUARD_BEAN_NAME)
     public CapabilityConcurrencyGuard capabilityConcurrencyGuard() {
         return new CapabilityConcurrencyGuard();
     }
 
-    @Bean
-    @ConditionalOnMissingBean(CapabilityCircuitBreakerGuard.class)
+    @Bean(name = CIRCUIT_BREAKER_GUARD_BEAN_NAME)
+    @ConditionalOnMissingBean(name = CIRCUIT_BREAKER_GUARD_BEAN_NAME)
     public CapabilityCircuitBreakerGuard capabilityCircuitBreakerGuard() {
         return new CapabilityCircuitBreakerGuard();
     }
 
-    @Bean
-    @ConditionalOnMissingBean(CapabilityRateLimitGuard.class)
+    @Bean(name = RATE_LIMIT_GUARD_BEAN_NAME)
+    @ConditionalOnMissingBean(name = RATE_LIMIT_GUARD_BEAN_NAME)
     public CapabilityRateLimitGuard capabilityRateLimitGuard() {
         return new CapabilityRateLimitGuard();
     }

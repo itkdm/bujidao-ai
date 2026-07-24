@@ -25,6 +25,9 @@ public enum CapabilityIdempotencyAuditStatus {
     /** 目标执行失败并已通知幂等服务 */
     FAILED,
 
+    /** Target started but its terminal result is not known yet. */
+    UNCERTAIN,
+
     /** 目标执行前失败，已释放执行权 */
     RELEASED,
 

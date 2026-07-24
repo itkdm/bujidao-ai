@@ -22,7 +22,7 @@ class DefaultCapabilityExceptionClassifierTest {
                 new InvocationTargetException(new CompletionException(cause)));
 
         assertThat(result.getErrorCode()).isEqualTo(AcfCapabilityErrorCodes.BAD_REQUEST);
-        assertThat(result.getMessage()).isEqualTo("invalid amount");
+        assertThat(result.getPublicMessage()).isEqualTo("Capability request is invalid");
         assertThat(result.isRetryable()).isFalse();
         assertThat(result.getCause()).isSameAs(cause);
     }
@@ -34,7 +34,7 @@ class DefaultCapabilityExceptionClassifierTest {
         CapabilityExceptionClassification result = classifier.classify(cause);
 
         assertThat(result.getErrorCode()).isEqualTo(AcfCapabilityErrorCodes.RUNTIME_TIMEOUT);
-        assertThat(result.getMessage()).isEqualTo("Capability invocation timed out");
+        assertThat(result.getPublicMessage()).isEqualTo("Capability invocation timed out");
         assertThat(result.isRetryable()).isTrue();
         assertThat(result.getCause()).isSameAs(cause);
     }
@@ -46,7 +46,7 @@ class DefaultCapabilityExceptionClassifierTest {
         CapabilityExceptionClassification result = classifier.classify(cause);
 
         assertThat(result.getErrorCode()).isEqualTo(AcfCapabilityErrorCodes.INVOKE_ERROR);
-        assertThat(result.getMessage()).isEqualTo("inventory unavailable");
+        assertThat(result.getPublicMessage()).isEqualTo("Capability invocation failed");
         assertThat(result.isRetryable()).isFalse();
         assertThat(result.getCause()).isSameAs(cause);
     }
@@ -58,7 +58,7 @@ class DefaultCapabilityExceptionClassifierTest {
         CapabilityExceptionClassification result = classifier.classify(cause);
 
         assertThat(result.getErrorCode()).isEqualTo(AcfCapabilityErrorCodes.RUNTIME_EXECUTOR_REJECTED);
-        assertThat(result.getMessage()).isEqualTo("Capability invocation executor is saturated");
+        assertThat(result.getPublicMessage()).isEqualTo("Capability invocation executor is saturated");
         assertThat(result.isRetryable()).isTrue();
         assertThat(result.getCause()).isSameAs(cause);
     }
@@ -68,7 +68,7 @@ class DefaultCapabilityExceptionClassifierTest {
         CapabilityExceptionClassification result = classifier.classify(null);
 
         assertThat(result.getErrorCode()).isEqualTo(AcfCapabilityErrorCodes.INVOKE_ERROR);
-        assertThat(result.getMessage()).isEqualTo("Unknown capability execution error");
+        assertThat(result.getPublicMessage()).isEqualTo("Capability invocation failed");
         assertThat(result.isRetryable()).isFalse();
         assertThat(result.getCause()).isNull();
     }

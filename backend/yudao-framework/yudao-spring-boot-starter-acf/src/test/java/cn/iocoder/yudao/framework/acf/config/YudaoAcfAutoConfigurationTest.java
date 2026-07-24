@@ -21,7 +21,10 @@ import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityCircuitBreakerGuard
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityConcurrencyGuard;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityExceptionClassifier;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityInvocationExecutor;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuard;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuardChain;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuardContext;
+import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeGuardResult;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeMetricRecord;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimeMetricsRecorder;
 import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRateLimitGuard;
@@ -29,6 +32,7 @@ import cn.iocoder.yudao.framework.acf.core.runtime.CapabilityRuntimePolicyServic
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityAuditService;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityConfirmationService;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityExecutor;
+import cn.iocoder.yudao.framework.acf.core.service.CapabilityExecutorTestFixture;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityGovernanceService;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityIdempotencyService;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityPermissionEvaluator;
@@ -94,6 +98,7 @@ class YudaoAcfAutoConfigurationTest {
             assertThat(context).doesNotHaveBean(CapabilityConfirmationService.class);
             assertThat(context).doesNotHaveBean(CapabilityIdempotencyService.class);
             assertThat(context).doesNotHaveBean(CapabilityAuditService.class);
+            assertThat(CapabilityExecutor.class.getConstructors()).hasSize(1);
         });
     }
 
@@ -133,6 +138,27 @@ class YudaoAcfAutoConfigurationTest {
                     assertThat(metricsRecorder.record.getCapabilityName()).isEqualTo("test.auto.echo");
                     assertThat(metricsRecorder.record.getStatus()).isEqualTo(CapabilityStatus.SUCCESS);
                     assertThat(metricsRecorder.record.isTargetInvoked()).isTrue();
+                });
+    }
+
+    @Test
+    void shouldReplaceDefaultConcurrencyGuardByStableBeanName() {
+        contextRunner.withUserConfiguration(SameNameRuntimeGuardConfig.class)
+                .run(context -> {
+                    assertThat(context).doesNotHaveBean(CapabilityConcurrencyGuard.class);
+                    assertThat(context.getBean(YudaoAcfAutoConfiguration.CONCURRENCY_GUARD_BEAN_NAME))
+                            .isInstanceOf(CustomRuntimeGuard.class);
+                    assertThat(context.getBeansOfType(CapabilityRuntimeGuard.class)).hasSize(3);
+                });
+    }
+
+    @Test
+    void shouldKeepAdditionalRuntimeGuardAlongsideDefaults() {
+        contextRunner.withUserConfiguration(AdditionalRuntimeGuardConfig.class)
+                .run(context -> {
+                    assertThat(context).hasSingleBean(CapabilityConcurrencyGuard.class);
+                    assertThat(context.getBeansOfType(CapabilityRuntimeGuard.class)).hasSize(4);
+                    assertThat(context.getBean("additionalRuntimeGuard")).isInstanceOf(CustomRuntimeGuard.class);
                 });
     }
 
@@ -372,6 +398,43 @@ class YudaoAcfAutoConfigurationTest {
         }
     }
 
+    @Configuration(proxyBeanMethods = false)
+    static class SameNameRuntimeGuardConfig {
+
+        @Bean(YudaoAcfAutoConfiguration.CONCURRENCY_GUARD_BEAN_NAME)
+        CapabilityRuntimeGuard replacementConcurrencyGuard() {
+            return new CustomRuntimeGuard("CUSTOM_CONCURRENCY");
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class AdditionalRuntimeGuardConfig {
+
+        @Bean
+        CapabilityRuntimeGuard additionalRuntimeGuard() {
+            return new CustomRuntimeGuard("CUSTOM_ADDITIONAL");
+        }
+    }
+
+    static class CustomRuntimeGuard implements CapabilityRuntimeGuard {
+
+        private final String code;
+
+        CustomRuntimeGuard(String code) {
+            this.code = code;
+        }
+
+        @Override
+        public String code() {
+            return code;
+        }
+
+        @Override
+        public CapabilityRuntimeGuardResult acquire(CapabilityRuntimeGuardContext context) {
+            return CapabilityRuntimeGuardResult.allowed(code);
+        }
+    }
+
     static class CapturingMetricsRecorder implements CapabilityRuntimeMetricsRecorder {
 
         private CapabilityRuntimeMetricRecord record;
@@ -421,7 +484,8 @@ class YudaoAcfAutoConfigurationTest {
         CapabilityExecutor customCapabilityExecutor(CapabilityRegistry capabilityRegistry,
                                                     CapabilityGovernanceService governanceService,
                                                     ObjectMapper objectMapper, Validator validator) {
-            return new CapabilityExecutor(capabilityRegistry, governanceService, objectMapper, validator);
+            return CapabilityExecutorTestFixture.create(
+                    capabilityRegistry, governanceService, objectMapper, validator);
         }
     }
 

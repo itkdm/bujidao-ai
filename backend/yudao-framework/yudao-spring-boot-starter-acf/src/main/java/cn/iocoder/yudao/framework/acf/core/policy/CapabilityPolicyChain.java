@@ -13,7 +13,10 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * 按顺序执行能力治理策略，并在首个拒绝决策处终止
+ * Ordered capability governance policy chain.
+ *
+ * Policy overlays may tune timeout or strengthen security declarations. They
+ * cannot weaken the registered capability baseline or change its public contract.
  *
  * @author bujidao
  */
@@ -52,7 +55,7 @@ public class CapabilityPolicyChain {
                         decision.getReason(), decisions);
             }
             if (decision.getEffectiveDefinition() != null) {
-                validateInvocationContract(policy, effectiveDefinition, decision.getEffectiveDefinition());
+                validateOverlay(policy, effectiveDefinition, decision.getEffectiveDefinition());
                 effectiveDefinition = decision.getEffectiveDefinition();
             }
         }
@@ -83,13 +86,42 @@ public class CapabilityPolicyChain {
         }
     }
 
-    private void validateInvocationContract(CapabilityPolicy policy, CapabilityDefinition currentDefinition,
-                                            CapabilityDefinition effectiveDefinition) {
-        if (!Objects.equals(currentDefinition.getName(), effectiveDefinition.getName())
-                || !Objects.equals(currentDefinition.getArgumentType(), effectiveDefinition.getArgumentType())
-                || !Objects.equals(currentDefinition.getReturnType(), effectiveDefinition.getReturnType())) {
-            throw new IllegalStateException("Capability policy must not change invocation contract: " + policy.code());
+    private void validateOverlay(CapabilityPolicy policy, CapabilityDefinition current,
+                                 CapabilityDefinition effective) {
+        requireUnchanged(policy, "name", current.getName(), effective.getName());
+        requireUnchanged(policy, "version", current.getVersion(), effective.getVersion());
+        requireUnchanged(policy, "title", current.getTitle(), effective.getTitle());
+        requireUnchanged(policy, "description", current.getDescription(), effective.getDescription());
+        requireUnchanged(policy, "category", current.getCategory(), effective.getCategory());
+        requireUnchanged(policy, "argumentType", current.getArgumentType(), effective.getArgumentType());
+        requireUnchanged(policy, "returnType", current.getReturnType(), effective.getReturnType());
+        requireUnchanged(policy, "permissions", current.getPermissions(), effective.getPermissions());
+        requireUnchanged(policy, "permissionMode", current.getPermissionMode(), effective.getPermissionMode());
+        requireUnchanged(policy, "inputSchema", current.getInputSchema(), effective.getInputSchema());
+        requireUnchanged(policy, "outputSchema", current.getOutputSchema(), effective.getOutputSchema());
+        if (effective.getTimeoutMs() <= 0) {
+            throw invalidOverlay(policy, "timeoutMs must be greater than zero");
         }
+        if (current.getRiskLevel() != null && (effective.getRiskLevel() == null
+                || effective.getRiskLevel().ordinal() < current.getRiskLevel().ordinal())) {
+            throw invalidOverlay(policy, "riskLevel must not be lowered");
+        }
+        if (current.isSideEffect() && !effective.isSideEffect()) {
+            throw invalidOverlay(policy, "sideEffect must not be disabled");
+        }
+        if (current.isConfirmationRequired() && !effective.isConfirmationRequired()) {
+            throw invalidOverlay(policy, "confirmationRequired must not be disabled");
+        }
+    }
+
+    private void requireUnchanged(CapabilityPolicy policy, String field, Object current, Object effective) {
+        if (!Objects.equals(current, effective)) {
+            throw invalidOverlay(policy, field + " must not be changed");
+        }
+    }
+
+    private IllegalStateException invalidOverlay(CapabilityPolicy policy, String reason) {
+        return new IllegalStateException("Capability policy overlay is invalid: " + policy.code() + ", " + reason);
     }
 
 }

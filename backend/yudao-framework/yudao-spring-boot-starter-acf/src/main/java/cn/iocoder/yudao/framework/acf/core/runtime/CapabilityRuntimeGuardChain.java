@@ -14,7 +14,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * 运行时保护器执行链
+ * Ordered runtime guard chain with exactly-once lease settlement.
  *
  * @author bujidao
  */
@@ -34,20 +34,19 @@ public final class CapabilityRuntimeGuardChain {
     }
 
     public Lease acquire(CapabilityRuntimeGuardContext context) {
-        Objects.requireNonNull(context, "context");
+        Objects.requireNonNull(context, "Capability runtime guard context must not be null");
         List<AcquiredGuard> acquired = new ArrayList<>();
         for (CapabilityRuntimeGuard guard : guards) {
+            if (!guard.supports(context)) {
+                continue;
+            }
             try {
-                if (!guard.supports(context)) {
-                    continue;
-                }
-                CapabilityRuntimeGuardResult result = Objects.requireNonNull(
-                        guard.acquire(context), "Runtime guard result must not be null: " + guard.code());
+                CapabilityRuntimeGuardResult result = Objects.requireNonNull(guard.acquire(context),
+                        "Capability runtime guard result must not be null: " + guard.code());
                 if (!guard.code().equals(result.getGuardCode())) {
                     throw new IllegalStateException("Runtime guard result code does not match guard: " + guard.code());
                 }
                 if (!result.isAllowed()) {
-                    // 后置 Guard 拒绝时，前面已获取的资源必须立即逆序回滚。
                     releaseAcquired(acquired, context);
                     return Lease.rejected(context, result);
                 }
@@ -56,16 +55,16 @@ public final class CapabilityRuntimeGuardChain {
                 releaseAcquired(acquired, context);
                 CapabilityRuntimeGuardResult result = CapabilityRuntimeGuardResult.rejected(
                         guard.code(), AcfCapabilityErrorCodes.RUNTIME_GUARD_ERROR,
-                        readableMessage(exception), false);
+                        "Capability runtime guard failed", false);
                 return Lease.rejected(context, result);
             }
         }
         return Lease.acquired(context, acquired);
     }
 
-    private void validateCodes(List<CapabilityRuntimeGuard> guards) {
+    private void validateCodes(List<CapabilityRuntimeGuard> candidates) {
         Set<String> codes = new HashSet<>();
-        for (CapabilityRuntimeGuard guard : guards) {
+        for (CapabilityRuntimeGuard guard : candidates) {
             Objects.requireNonNull(guard, "Runtime guard must not be null");
             if (guard.code() == null || guard.code().isBlank()) {
                 throw new IllegalArgumentException("Runtime guard code must not be blank");
@@ -83,20 +82,13 @@ public final class CapabilityRuntimeGuardChain {
             try {
                 acquiredGuard.guard().release(context, acquiredGuard.leaseState());
             } catch (RuntimeException exception) {
-                LOGGER.warn("释放 ACF 运行时保护器失败，guard={}，capability={}",
-                        acquiredGuard.guard().code(), context.getDefinition().getName(), exception);
+                LOGGER.warn("Failed to release ACF runtime guard, guard={}, capability={}, errorType={}",
+                        acquiredGuard.guard().code(), context.getDefinition().getName(),
+                        exception.getClass().getName());
             }
         }
     }
 
-    private String readableMessage(Throwable throwable) {
-        return throwable.getMessage() == null || throwable.getMessage().isBlank()
-                ? throwable.getClass().getSimpleName() : throwable.getMessage();
-    }
-
-    /**
-     * 一次保护器获取租约，负责保证收口回调最多执行一次。
-     */
     public static final class Lease {
 
         private final CapabilityRuntimeGuardContext context;
@@ -147,17 +139,18 @@ public final class CapabilityRuntimeGuardChain {
             if (!isAllowed() || !closed.compareAndSet(false, true)) {
                 return;
             }
-            // 与获取顺序相反收口，保证存在依赖关系的 Guard 按栈语义释放资源。
             for (int index = acquired.size() - 1; index >= 0; index--) {
                 AcquiredGuard guard = acquired.get(index);
                 try {
                     callback.invoke(guard, context);
                 } catch (RuntimeException exception) {
-                    LOGGER.warn("收口 ACF 运行时保护器失败，guard={}，capability={}",
-                            guard.guard().code(), context.getDefinition().getName(), exception);
+                    LOGGER.warn("Failed to settle ACF runtime guard, guard={}, capability={}, errorType={}",
+                            guard.guard().code(), context.getDefinition().getName(),
+                            exception.getClass().getName());
                 }
             }
         }
+
     }
 
     @FunctionalInterface

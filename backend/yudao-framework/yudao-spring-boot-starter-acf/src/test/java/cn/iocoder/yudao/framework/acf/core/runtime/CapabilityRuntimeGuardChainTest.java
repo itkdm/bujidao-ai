@@ -92,7 +92,7 @@ class CapabilityRuntimeGuardChainTest {
 
         assertThat(lease.isAllowed()).isFalse();
         assertThat(lease.getRejection().getErrorCode()).isEqualTo(AcfCapabilityErrorCodes.RUNTIME_GUARD_ERROR);
-        assertThat(lease.getRejection().getReason()).isEqualTo("guard storage unavailable");
+        assertThat(lease.getRejection().getReason()).isEqualTo("Capability runtime guard failed");
     }
 
     @Test

@@ -6,16 +6,18 @@ import lombok.Builder;
 import lombok.Getter;
 
 import java.lang.reflect.Type;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * 已注册能力的声明与 Schema 定义
+ * Immutable capability declaration and schema snapshot.
  *
  * @author bujidao
  */
 @Getter
-@Builder(toBuilder = true)
 public final class CapabilityDefinition {
 
     private final String name;
@@ -33,5 +35,52 @@ public final class CapabilityDefinition {
     private final Type returnType;
     private final Map<String, Object> inputSchema;
     private final Map<String, Object> outputSchema;
+
+    @Builder(toBuilder = true)
+    private CapabilityDefinition(String name, String title, String description, String category,
+                                 List<String> permissions, CapabilityPermissionMode permissionMode,
+                                 CapabilityRiskLevel riskLevel, boolean sideEffect,
+                                 boolean confirmationRequired, String version, int timeoutMs,
+                                 Type argumentType, Type returnType, Map<String, Object> inputSchema,
+                                 Map<String, Object> outputSchema) {
+        this.name = name;
+        this.title = title;
+        this.description = description;
+        this.category = category;
+        this.permissions = permissions == null ? List.of() : List.copyOf(permissions);
+        this.permissionMode = permissionMode;
+        this.riskLevel = riskLevel;
+        this.sideEffect = sideEffect;
+        this.confirmationRequired = confirmationRequired;
+        this.version = version;
+        this.timeoutMs = timeoutMs;
+        this.argumentType = argumentType;
+        this.returnType = returnType;
+        this.inputSchema = immutableMap(inputSchema);
+        this.outputSchema = immutableMap(outputSchema);
+    }
+
+    private static Map<String, Object> immutableMap(Map<String, Object> source) {
+        if (source == null || source.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Object> copy = new LinkedHashMap<>();
+        source.forEach((key, value) -> copy.put(key, immutableValue(value)));
+        return Collections.unmodifiableMap(copy);
+    }
+
+    private static Object immutableValue(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            Map<Object, Object> copy = new LinkedHashMap<>();
+            map.forEach((key, item) -> copy.put(key, immutableValue(item)));
+            return Collections.unmodifiableMap(copy);
+        }
+        if (value instanceof List<?> list) {
+            List<Object> copy = new ArrayList<>(list.size());
+            list.forEach(item -> copy.add(immutableValue(item)));
+            return Collections.unmodifiableList(copy);
+        }
+        return value;
+    }
 
 }

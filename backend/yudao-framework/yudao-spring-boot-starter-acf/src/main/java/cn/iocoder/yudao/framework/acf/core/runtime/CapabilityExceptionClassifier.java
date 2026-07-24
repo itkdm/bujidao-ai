@@ -10,6 +10,11 @@ package cn.iocoder.yudao.framework.acf.core.runtime;
 @FunctionalInterface
 public interface CapabilityExceptionClassifier {
 
+    /**
+     * The returned public message may be exposed through results, tools, and audit records. Custom
+     * classifiers must return a reviewed and redacted message instead of the raw exception message.
+     */
+
     CapabilityExceptionClassification classify(Throwable throwable);
 
 }
