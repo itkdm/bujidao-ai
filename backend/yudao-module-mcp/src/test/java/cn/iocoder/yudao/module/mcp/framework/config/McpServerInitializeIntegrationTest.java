@@ -1,5 +1,7 @@
 package cn.iocoder.yudao.module.mcp.framework.config;
 
+import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog;
+import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolDescriptor;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -17,12 +19,18 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.context.annotation.Bean;
+
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest(classes = McpServerInitializeIntegrationTest.TestApplication.class,
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = "yudao.mcp.server.enabled=true")
+        properties = {"yudao.mcp.server.enabled=true",
+                "yudao.mcp.tools.exposed-capabilities=demo.echo"})
 class McpServerInitializeIntegrationTest {
 
     @LocalServerPort
@@ -62,6 +70,30 @@ class McpServerInitializeIntegrationTest {
         assertThat(payload.path("result").path("serverInfo").path("name").asText())
                 .isEqualTo("bujidao-mcp-server");
         assertThat(payload.path("result").path("capabilities").isObject()).isTrue();
+        assertThat(payload.path("result").path("capabilities").path("tools").isObject()).isTrue();
+    }
+
+    @Test
+    void shouldListAllowlistedAcfTools() throws Exception {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setAccept(java.util.List.of(MediaType.APPLICATION_JSON, MediaType.TEXT_EVENT_STREAM));
+        headers.set("MCP-Protocol-Version", "2025-11-25");
+        String request = """
+                {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
+                """;
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                "http://127.0.0.1:" + port + "/mcp",
+                new HttpEntity<>(request, headers), String.class);
+
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+        JsonNode tool = objectMapper.readTree(response.getBody()).path("result").path("tools").get(0);
+        assertThat(tool.path("name").asText()).isEqualTo("demo.echo");
+        assertThat(tool.path("title").asText()).isEqualTo("Echo");
+        assertThat(tool.path("inputSchema").path("type").asText()).isEqualTo("object");
+        assertThat(tool.path("outputSchema").path("properties").has("result")).isTrue();
+        assertThat(tool.path("annotations").path("readOnlyHint").asBoolean()).isTrue();
     }
 
     @SpringBootConfiguration
@@ -69,6 +101,20 @@ class McpServerInitializeIntegrationTest {
             DispatcherServletAutoConfiguration.class, WebMvcAutoConfiguration.class,
             JacksonAutoConfiguration.class, YudaoMcpServerAutoConfiguration.class})
     static class TestApplication {
+
+        @Bean
+        CapabilityToolCatalog capabilityToolCatalog() {
+            CapabilityToolCatalog catalog = mock(CapabilityToolCatalog.class);
+            CapabilityToolDescriptor descriptor = mock(CapabilityToolDescriptor.class);
+            when(descriptor.getCapabilityName()).thenReturn("demo.echo");
+            when(descriptor.getTitle()).thenReturn("Echo");
+            when(descriptor.getDescription()).thenReturn("Echo input");
+            when(descriptor.getInputSchema()).thenReturn(Map.of("type", "object", "properties",
+                    Map.of("message", Map.of("type", "string"))));
+            when(descriptor.getOutputSchema()).thenReturn(Map.of("type", "string"));
+            when(catalog.getDeclared("demo.echo")).thenReturn(descriptor);
+            return catalog;
+        }
     }
 
 }

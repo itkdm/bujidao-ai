@@ -1,10 +1,13 @@
 package cn.iocoder.yudao.module.mcp.framework.config;
 
+import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog;
+import cn.iocoder.yudao.module.mcp.framework.tool.AcfMcpToolSpecificationFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.McpStatelessSyncServer;
+import io.modelcontextprotocol.server.McpStatelessServerFeatures;
 import io.modelcontextprotocol.server.transport.HttpServletStatelessServerTransport;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -17,6 +20,8 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.web.servlet.ServletRegistrationBean;
 import org.springframework.context.annotation.Bean;
 
+import java.util.List;
+
 /**
  * MCP Stateless Server 自动配置
  *
@@ -26,7 +31,7 @@ import org.springframework.context.annotation.Bean;
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 @ConditionalOnClass({McpServer.class, HttpServletStatelessServerTransport.class})
 @ConditionalOnProperty(prefix = YudaoMcpServerProperties.PREFIX, name = "enabled", havingValue = "true")
-@EnableConfigurationProperties(YudaoMcpServerProperties.class)
+@EnableConfigurationProperties({YudaoMcpServerProperties.class, YudaoMcpToolProperties.class})
 public class YudaoMcpServerAutoConfiguration {
 
     public static final String MCP_SERVLET_NAME = "bujidaoMcpServlet";
@@ -63,15 +68,32 @@ public class YudaoMcpServerAutoConfiguration {
     @ConditionalOnMissingBean(McpStatelessSyncServer.class)
     public McpStatelessSyncServer mcpStatelessSyncServer(HttpServletStatelessServerTransport transport,
                                                          McpJsonMapper jsonMapper,
-                                                         YudaoMcpServerProperties properties) {
-        McpSchema.ServerCapabilities capabilities = McpSchema.ServerCapabilities.builder().build();
+                                                         YudaoMcpServerProperties properties,
+                                                         List<McpStatelessServerFeatures.SyncToolSpecification> tools) {
+        McpSchema.ServerCapabilities capabilities = McpSchema.ServerCapabilities.builder()
+                .tools(false)
+                .build();
         return McpServer.sync(transport)
                 .jsonMapper(jsonMapper)
                 .serverInfo(properties.getName(), properties.getVersion())
                 .instructions(properties.getInstructions())
                 .requestTimeout(properties.getRequestTimeout())
                 .capabilities(capabilities)
+                .tools(tools)
                 .build();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public AcfMcpToolSpecificationFactory acfMcpToolSpecificationFactory(
+            CapabilityToolCatalog capabilityToolCatalog, YudaoMcpToolProperties properties) {
+        return new AcfMcpToolSpecificationFactory(capabilityToolCatalog, properties);
+    }
+
+    @Bean
+    public List<McpStatelessServerFeatures.SyncToolSpecification> mcpToolSpecifications(
+            AcfMcpToolSpecificationFactory factory) {
+        return factory.createToolSpecifications();
     }
 
 }

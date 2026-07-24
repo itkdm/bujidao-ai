@@ -1,5 +1,6 @@
 package cn.iocoder.yudao.module.mcp.framework.config;
 
+import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog;
 import io.modelcontextprotocol.server.McpStatelessSyncServer;
 import io.modelcontextprotocol.server.transport.HttpServletStatelessServerTransport;
 import org.junit.jupiter.api.Test;
@@ -8,12 +9,14 @@ import org.springframework.boot.autoconfigure.jackson.JacksonAutoConfiguration;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 class YudaoMcpServerAutoConfigurationTest {
 
     private final WebApplicationContextRunner contextRunner = new WebApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(JacksonAutoConfiguration.class,
-                    YudaoMcpServerAutoConfiguration.class));
+                    YudaoMcpServerAutoConfiguration.class))
+            .withBean(CapabilityToolCatalog.class, () -> mock(CapabilityToolCatalog.class));
 
     @Test
     void shouldRemainDisabledByDefault() {
@@ -30,6 +33,7 @@ class YudaoMcpServerAutoConfigurationTest {
                     assertThat(context).hasSingleBean(McpStatelessSyncServer.class);
                     assertThat(context).hasSingleBean(HttpServletStatelessServerTransport.class);
                     assertThat(context).hasSingleBean(YudaoMcpServerProperties.class);
+                    assertThat(context).hasSingleBean(YudaoMcpToolProperties.class);
                 });
     }
 
