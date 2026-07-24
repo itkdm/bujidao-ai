@@ -19,11 +19,14 @@ public class AcfMcpToolSpecificationFactory {
 
     private final CapabilityToolCatalog capabilityToolCatalog;
     private final YudaoMcpToolProperties properties;
+    private final AcfMcpToolCallHandler toolCallHandler;
 
     public AcfMcpToolSpecificationFactory(CapabilityToolCatalog capabilityToolCatalog,
-                                          YudaoMcpToolProperties properties) {
+                                          YudaoMcpToolProperties properties,
+                                          AcfMcpToolCallHandler toolCallHandler) {
         this.capabilityToolCatalog = capabilityToolCatalog;
         this.properties = properties;
+        this.toolCallHandler = toolCallHandler;
     }
 
     public List<McpStatelessServerFeatures.SyncToolSpecification> createToolSpecifications() {
@@ -80,10 +83,7 @@ public class AcfMcpToolSpecificationFactory {
                 .build();
         return McpStatelessServerFeatures.SyncToolSpecification.builder()
                 .tool(tool)
-                .callHandler((transportContext, request) -> McpSchema.CallToolResult.builder()
-                        .addTextContent("Tool invocation is not available")
-                        .isError(true)
-                        .build())
+                .callHandler((transportContext, request) -> toolCallHandler.handle(descriptor, request))
                 .build();
     }
 

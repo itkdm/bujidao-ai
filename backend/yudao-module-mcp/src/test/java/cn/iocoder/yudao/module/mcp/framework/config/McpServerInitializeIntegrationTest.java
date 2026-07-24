@@ -2,6 +2,8 @@ package cn.iocoder.yudao.module.mcp.framework.config;
 
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolDescriptor;
+import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
+import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -96,6 +98,28 @@ class McpServerInitializeIntegrationTest {
         assertThat(tool.path("annotations").path("readOnlyHint").asBoolean()).isTrue();
     }
 
+    @Test
+    void shouldCallAllowlistedToolThroughAcfInvoker() throws Exception {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setAccept(java.util.List.of(MediaType.APPLICATION_JSON, MediaType.TEXT_EVENT_STREAM));
+        headers.set("MCP-Protocol-Version", "2025-11-25");
+        String request = """
+                {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{
+                  "name":"demo.echo","arguments":{"message":"hello"}
+                }}
+                """;
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                "http://127.0.0.1:" + port + "/mcp",
+                new HttpEntity<>(request, headers), String.class);
+
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+        JsonNode result = objectMapper.readTree(response.getBody()).path("result");
+        assertThat(result.path("isError").asBoolean()).isFalse();
+        assertThat(result.path("structuredContent").path("result").asText()).isEqualTo("hello");
+    }
+
     @SpringBootConfiguration
     @ImportAutoConfiguration({ServletWebServerFactoryAutoConfiguration.class,
             DispatcherServletAutoConfiguration.class, WebMvcAutoConfiguration.class,
@@ -114,6 +138,14 @@ class McpServerInitializeIntegrationTest {
             when(descriptor.getOutputSchema()).thenReturn(Map.of("type", "string"));
             when(catalog.getDeclared("demo.echo")).thenReturn(descriptor);
             return catalog;
+        }
+
+        @Bean
+        CapabilityToolInvoker capabilityToolInvoker() {
+            CapabilityToolInvoker invoker = mock(CapabilityToolInvoker.class);
+            when(invoker.invoke(org.mockito.ArgumentMatchers.any()))
+                    .thenReturn(CapabilityResult.success("demo.echo", (Object) "hello"));
+            return invoker;
         }
     }
 

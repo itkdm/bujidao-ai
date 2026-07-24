@@ -19,6 +19,7 @@ class AcfMcpToolSpecificationFactoryTest {
 
     private final CapabilityToolCatalog catalog = mock(CapabilityToolCatalog.class);
     private final YudaoMcpToolProperties properties = new YudaoMcpToolProperties();
+    private final AcfMcpToolCallHandler toolCallHandler = mock(AcfMcpToolCallHandler.class);
 
     @Test
     void shouldExposeNothingWithoutExplicitWhitelist() {
@@ -94,7 +95,7 @@ class AcfMcpToolSpecificationFactoryTest {
     }
 
     private AcfMcpToolSpecificationFactory createFactory() {
-        return new AcfMcpToolSpecificationFactory(catalog, properties);
+        return new AcfMcpToolSpecificationFactory(catalog, properties, toolCallHandler);
     }
 
     private static CapabilityToolDescriptor descriptor(String name, boolean sideEffect,

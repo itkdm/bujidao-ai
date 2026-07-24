@@ -1,6 +1,7 @@
 package cn.iocoder.yudao.module.mcp.framework.config;
 
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog;
+import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import io.modelcontextprotocol.server.McpStatelessSyncServer;
 import io.modelcontextprotocol.server.transport.HttpServletStatelessServerTransport;
 import org.junit.jupiter.api.Test;
@@ -16,7 +17,8 @@ class YudaoMcpServerAutoConfigurationTest {
     private final WebApplicationContextRunner contextRunner = new WebApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(JacksonAutoConfiguration.class,
                     YudaoMcpServerAutoConfiguration.class))
-            .withBean(CapabilityToolCatalog.class, () -> mock(CapabilityToolCatalog.class));
+            .withBean(CapabilityToolCatalog.class, () -> mock(CapabilityToolCatalog.class))
+            .withBean(CapabilityToolInvoker.class, () -> mock(CapabilityToolInvoker.class));
 
     @Test
     void shouldRemainDisabledByDefault() {

@@ -1,6 +1,8 @@
 package cn.iocoder.yudao.module.mcp.framework.config;
 
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog;
+import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
+import cn.iocoder.yudao.module.mcp.framework.tool.AcfMcpToolCallHandler;
 import cn.iocoder.yudao.module.mcp.framework.tool.AcfMcpToolSpecificationFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.json.McpJsonMapper;
@@ -85,9 +87,16 @@ public class YudaoMcpServerAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public AcfMcpToolCallHandler acfMcpToolCallHandler(CapabilityToolInvoker capabilityToolInvoker) {
+        return new AcfMcpToolCallHandler(capabilityToolInvoker);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public AcfMcpToolSpecificationFactory acfMcpToolSpecificationFactory(
-            CapabilityToolCatalog capabilityToolCatalog, YudaoMcpToolProperties properties) {
-        return new AcfMcpToolSpecificationFactory(capabilityToolCatalog, properties);
+            CapabilityToolCatalog capabilityToolCatalog, YudaoMcpToolProperties properties,
+            AcfMcpToolCallHandler toolCallHandler) {
+        return new AcfMcpToolSpecificationFactory(capabilityToolCatalog, properties, toolCallHandler);
     }
 
     @Bean
