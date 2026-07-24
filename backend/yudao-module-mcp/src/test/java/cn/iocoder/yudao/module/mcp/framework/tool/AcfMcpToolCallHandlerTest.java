@@ -7,6 +7,7 @@ import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCall;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolDescriptor;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
+import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
 import cn.iocoder.yudao.module.mcp.framework.security.McpTransportContextKeys;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.common.McpTransportContext;
@@ -31,8 +32,10 @@ class AcfMcpToolCallHandlerTest {
         CapabilityToolInvoker invoker = mock(CapabilityToolInvoker.class);
         CapabilityToolDescriptor descriptor = descriptor(Map.of("type", "object"), Map.of("type", "object"));
         ArgumentCaptor<CapabilityToolCall> callCaptor = ArgumentCaptor.forClass(CapabilityToolCall.class);
-        when(invoker.invoke(callCaptor.capture()))
-                .thenReturn(CapabilityResult.success("demo.echo", Map.of("message", "hello")));
+        when(invoker.invoke(callCaptor.capture())).thenAnswer(invocation -> {
+            assertThat(TenantContextHolder.getTenantId()).isEqualTo(2L);
+            return CapabilityResult.success("demo.echo", Map.of("message", "hello"));
+        });
         McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("demo.echo",
                 Map.of("message", "hello"), Map.of(
                 McpToolProtocolMetadata.IDEMPOTENCY_KEY, "idem-001",
@@ -43,8 +46,14 @@ class AcfMcpToolCallHandlerTest {
                 McpTransportContextKeys.USER_ID, 1L,
                 McpTransportContextKeys.TENANT_ID, 2L,
                 McpTransportContextKeys.CONSUMER_ID, "user:1"));
-        McpSchema.CallToolResult result = createHandler(invoker)
-                .handle(transportContext, descriptor, request);
+        TenantContextHolder.setTenantId(9L);
+        McpSchema.CallToolResult result;
+        try {
+            result = createHandler(invoker).handle(transportContext, descriptor, request);
+            assertThat(TenantContextHolder.getTenantId()).isEqualTo(9L);
+        } finally {
+            TenantContextHolder.clear();
+        }
 
         assertThat(result.isError()).isFalse();
         assertThat(result.content().get(0).toString()).contains("{\"message\":\"hello\"}");

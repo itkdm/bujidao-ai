@@ -4,6 +4,7 @@ import cn.iocoder.yudao.framework.acf.config.YudaoAcfAutoConfiguration;
 import cn.iocoder.yudao.framework.acf.core.annotation.AgentCapability;
 import cn.iocoder.yudao.framework.common.biz.system.permission.PermissionCommonApi;
 import cn.iocoder.yudao.framework.security.config.SecurityProperties;
+import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
 import cn.iocoder.yudao.framework.web.config.WebProperties;
 import cn.iocoder.yudao.module.mcp.framework.security.McpTransportContextKeys;
 import cn.iocoder.yudao.module.mcp.framework.tool.McpSchemaAdapter;
@@ -76,8 +77,9 @@ class McpAcfExecutionIntegrationTest {
 
             assertThat(result.isError()).isFalse();
             assertThat(result.structuredContent())
-                    .isEqualTo(Map.of(McpSchemaAdapter.OUTPUT_RESULT_PROPERTY, "acf:hello"));
-            assertThat(result.content().get(0).toString()).contains("{\"result\":\"acf:hello\"}");
+                    .isEqualTo(Map.of(McpSchemaAdapter.OUTPUT_RESULT_PROPERTY, "tenant:2001:acf:hello"));
+            assertThat(result.content().get(0).toString())
+                    .contains("{\"result\":\"tenant:2001:acf:hello\"}");
             verify(permissionCommonApi).hasAnyPermissions(USER_ID, REQUIRED_PERMISSION);
         }
     }
@@ -132,7 +134,7 @@ class McpAcfExecutionIntegrationTest {
         @AgentCapability(name = "test.mcp.echo", title = "MCP ACF 回显",
                 description = "验证 MCP 通过 ACF 治理与执行链调用能力", permissions = REQUIRED_PERMISSION)
         public String echo(String value) {
-            return "acf:" + value;
+            return "tenant:" + TenantContextHolder.getRequiredTenantId() + ":acf:" + value;
         }
     }
 

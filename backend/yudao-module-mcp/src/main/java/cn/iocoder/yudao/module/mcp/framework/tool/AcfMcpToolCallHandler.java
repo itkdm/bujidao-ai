@@ -8,6 +8,7 @@ import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCall;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolDescriptor;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
+import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
 import cn.iocoder.yudao.module.mcp.framework.security.McpTransportContextKeys;
 import io.modelcontextprotocol.common.McpTransportContext;
 import io.modelcontextprotocol.json.McpJsonMapper;
@@ -50,20 +51,40 @@ public class AcfMcpToolCallHandler {
                     false, null, null);
         }
         try {
+            CapabilityContext context = createContext(transportContext, control.clientRequestId());
             CapabilityToolCall call = CapabilityToolCall.builder()
                     .capabilityName(descriptor.getCapabilityName())
                     .arguments(adaptArguments(descriptor, request.arguments()))
-                    .context(createContext(transportContext, control.clientRequestId()))
+                    .context(context)
                     .idempotencyKey(control.idempotencyKey())
                     .confirmationToken(control.confirmationToken())
                     .build();
-            CapabilityResult result = capabilityToolInvoker.invoke(call);
-            return adaptResult(descriptor, result);
+            return invokeWithTenantContext(descriptor, call, context.getTenantId());
         } catch (RuntimeException exception) {
             LOGGER.warn("Unexpected MCP tool invocation failure: capability={}, exceptionType={}",
                     descriptor.getCapabilityName(), exception.getClass().getName());
             return errorResult(CapabilityStatus.FAILURE, INTERNAL_ERROR_CODE, INTERNAL_ERROR_MESSAGE,
                     false, null, null);
+        }
+    }
+
+    private McpSchema.CallToolResult invokeWithTenantContext(CapabilityToolDescriptor descriptor,
+                                                             CapabilityToolCall call, Long tenantId) {
+        Long previousTenantId = TenantContextHolder.getTenantId();
+        try {
+            setTenantId(tenantId);
+            CapabilityResult result = capabilityToolInvoker.invoke(call);
+            return adaptResult(descriptor, result);
+        } finally {
+            setTenantId(previousTenantId);
+        }
+    }
+
+    private static void setTenantId(Long tenantId) {
+        if (tenantId == null) {
+            TenantContextHolder.clear();
+        } else {
+            TenantContextHolder.setTenantId(tenantId);
         }
     }
 
