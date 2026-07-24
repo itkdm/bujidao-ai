@@ -7,6 +7,7 @@ import cn.iocoder.yudao.framework.security.core.filter.TokenAuthenticationFilter
 import cn.iocoder.yudao.module.mcp.framework.security.McpAuthenticatedTransportContextExtractor;
 import cn.iocoder.yudao.module.mcp.framework.security.McpAuthenticationEntryPoint;
 import cn.iocoder.yudao.module.mcp.framework.security.McpQueryTokenRejectingFilter;
+import cn.iocoder.yudao.module.mcp.framework.security.McpTenantContextFilter;
 import cn.iocoder.yudao.module.mcp.framework.tool.AcfMcpToolCallHandler;
 import cn.iocoder.yudao.module.mcp.framework.tool.AcfMcpToolSpecificationFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -98,7 +99,8 @@ public class YudaoMcpServerAutoConfiguration {
     @ConditionalOnMissingBean(name = "mcpSecurityFilterChain")
     public SecurityFilterChain mcpSecurityFilterChain(HttpSecurity http,
                                                       YudaoMcpServerProperties properties,
-                                                      TokenAuthenticationFilter tokenAuthenticationFilter)
+                                                      TokenAuthenticationFilter tokenAuthenticationFilter,
+                                                      McpTenantContextFilter tenantContextFilter)
             throws Exception {
         http.securityMatcher(properties.getEndpoint())
                 .authorizeHttpRequests(registry -> registry.anyRequest().authenticated())
@@ -108,8 +110,15 @@ public class YudaoMcpServerAutoConfiguration {
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(configurer -> configurer
                         .authenticationEntryPoint(new McpAuthenticationEntryPoint()))
-                .addFilterBefore(tokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(tokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(tenantContextFilter, TokenAuthenticationFilter.class);
         return http.build();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public McpTenantContextFilter mcpTenantContextFilter() {
+        return new McpTenantContextFilter();
     }
 
     @Bean(name = MCP_QUERY_TOKEN_FILTER_NAME)

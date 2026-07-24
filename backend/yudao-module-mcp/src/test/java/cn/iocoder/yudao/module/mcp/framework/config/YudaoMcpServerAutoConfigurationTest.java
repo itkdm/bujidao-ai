@@ -5,6 +5,7 @@ import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import cn.iocoder.yudao.framework.security.config.SecurityProperties;
 import cn.iocoder.yudao.framework.security.core.filter.TokenAuthenticationFilter;
 import cn.iocoder.yudao.framework.web.config.WebProperties;
+import cn.iocoder.yudao.module.mcp.framework.security.McpTenantContextFilter;
 import io.modelcontextprotocol.server.McpStatelessSyncServer;
 import io.modelcontextprotocol.server.McpTransportContextExtractor;
 import io.modelcontextprotocol.server.transport.HttpServletStatelessServerTransport;
@@ -50,6 +51,7 @@ class YudaoMcpServerAutoConfigurationTest {
                     assertThat(context).hasSingleBean(YudaoMcpToolProperties.class);
                     assertThat(context).hasSingleBean(McpTransportContextExtractor.class);
                     assertThat(context).hasSingleBean(ServerTransportSecurityValidator.class);
+                    assertThat(context).hasSingleBean(McpTenantContextFilter.class);
                     assertThat(context.getBean(YudaoMcpServerAutoConfiguration.MCP_QUERY_TOKEN_FILTER_NAME))
                             .isInstanceOf(org.springframework.boot.web.servlet.FilterRegistrationBean.class);
                 });
