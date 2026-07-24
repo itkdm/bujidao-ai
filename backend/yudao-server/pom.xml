@@ -32,6 +32,13 @@
             <version>${revision}</version>
         </dependency>
 
+        <!-- ACF 能力的 MCP Server 协议适配模块，默认关闭，通过 yudao.mcp.server.enabled 启用 -->
+        <dependency>
+            <groupId>cn.iocoder.boot</groupId>
+            <artifactId>yudao-module-mcp</artifactId>
+            <version>${revision}</version>
+        </dependency>
+
         <!-- 会员中心。默认注释，保证编译速度 -->
 <!--        <dependency>-->
 <!--            <groupId>cn.iocoder.boot</groupId>-->
