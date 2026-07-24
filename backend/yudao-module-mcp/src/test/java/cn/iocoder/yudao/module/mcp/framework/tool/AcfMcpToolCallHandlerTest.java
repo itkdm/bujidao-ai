@@ -109,6 +109,23 @@ class AcfMcpToolCallHandlerTest {
     }
 
     @Test
+    void shouldHideUnexpectedExceptionDetails() {
+        CapabilityToolInvoker invoker = mock(CapabilityToolInvoker.class);
+        CapabilityToolDescriptor descriptor = descriptor(Map.of("type", "object"), Map.of("type", "object"));
+        when(invoker.invoke(org.mockito.ArgumentMatchers.any()))
+                .thenThrow(new IllegalStateException("jdbc:mysql://internal/db token=secret-value"));
+
+        McpSchema.CallToolResult result = new AcfMcpToolCallHandler(invoker).handle(McpTransportContext.EMPTY,
+                descriptor, McpSchema.CallToolRequest.builder("demo.echo").arguments(Map.of()).build());
+
+        assertThat(result.isError()).isTrue();
+        assertThat(result.meta()).containsEntry(McpToolProtocolMetadata.ERROR_CODE, "INTERNAL_ERROR");
+        assertThat(result.content().get(0).toString())
+                .contains("Capability invocation failed")
+                .doesNotContain("jdbc:mysql", "internal", "secret-value");
+    }
+
+    @Test
     void shouldRejectInvalidControlMetadataBeforeAcfInvocation() {
         CapabilityToolInvoker invoker = mock(CapabilityToolInvoker.class);
         CapabilityToolDescriptor descriptor = descriptor(Map.of("type", "object"), Map.of("type", "object"));

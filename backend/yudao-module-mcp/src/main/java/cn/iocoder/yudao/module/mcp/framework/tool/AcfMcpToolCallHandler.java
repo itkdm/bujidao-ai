@@ -11,6 +11,8 @@ import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import cn.iocoder.yudao.module.mcp.framework.security.McpTransportContextKeys;
 import io.modelcontextprotocol.common.McpTransportContext;
 import io.modelcontextprotocol.spec.McpSchema;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -22,7 +24,10 @@ import java.util.Map;
  */
 public class AcfMcpToolCallHandler {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(AcfMcpToolCallHandler.class);
     private static final String SOURCE = "MCP";
+    private static final String INTERNAL_ERROR_CODE = "INTERNAL_ERROR";
+    private static final String INTERNAL_ERROR_MESSAGE = "Capability invocation failed";
 
     private final CapabilityToolInvoker capabilityToolInvoker;
 
@@ -40,15 +45,22 @@ public class AcfMcpToolCallHandler {
             return errorResult(CapabilityStatus.FAILURE, "BAD_REQUEST", exception.getMessage(),
                     false, null, null);
         }
-        CapabilityToolCall call = CapabilityToolCall.builder()
-                .capabilityName(descriptor.getCapabilityName())
-                .arguments(adaptArguments(descriptor, request.arguments()))
-                .context(createContext(transportContext, control.clientRequestId()))
-                .idempotencyKey(control.idempotencyKey())
-                .confirmationToken(control.confirmationToken())
-                .build();
-        CapabilityResult result = capabilityToolInvoker.invoke(call);
-        return adaptResult(descriptor, result);
+        try {
+            CapabilityToolCall call = CapabilityToolCall.builder()
+                    .capabilityName(descriptor.getCapabilityName())
+                    .arguments(adaptArguments(descriptor, request.arguments()))
+                    .context(createContext(transportContext, control.clientRequestId()))
+                    .idempotencyKey(control.idempotencyKey())
+                    .confirmationToken(control.confirmationToken())
+                    .build();
+            CapabilityResult result = capabilityToolInvoker.invoke(call);
+            return adaptResult(descriptor, result);
+        } catch (RuntimeException exception) {
+            LOGGER.warn("Unexpected MCP tool invocation failure: capability={}, exceptionType={}",
+                    descriptor.getCapabilityName(), exception.getClass().getName());
+            return errorResult(CapabilityStatus.FAILURE, INTERNAL_ERROR_CODE, INTERNAL_ERROR_MESSAGE,
+                    false, null, null);
+        }
     }
 
     private static CapabilityContext createContext(McpTransportContext transportContext, String clientRequestId) {

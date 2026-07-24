@@ -4,6 +4,7 @@ import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolDescriptor;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
+import cn.iocoder.yudao.framework.security.config.SecurityProperties;
 import cn.iocoder.yudao.framework.web.config.WebProperties;
 import cn.iocoder.yudao.module.mcp.framework.security.McpTransportContextKeys;
 import cn.iocoder.yudao.module.mcp.framework.tool.McpSchemaAdapter;
@@ -33,6 +34,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.context.annotation.Bean;
+import org.springframework.security.web.SecurityFilterChain;
 
 import java.util.Map;
 import java.time.Duration;
@@ -86,6 +88,33 @@ class McpServerInitializeIntegrationTest {
                 .isEqualTo("bujidao-mcp-server");
         assertThat(payload.path("result").path("capabilities").isObject()).isTrue();
         assertThat(payload.path("result").path("capabilities").path("tools").isObject()).isTrue();
+    }
+
+    @Test
+    void shouldRejectInvalidOriginThroughRealServletContainer() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setOrigin("https://attacker.example");
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                "http://127.0.0.1:" + port + "/mcp",
+                new HttpEntity<>("{}", headers), String.class);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(403);
+    }
+
+    @Test
+    void shouldRejectQueryTokenThroughRealServletContainer() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                "http://127.0.0.1:" + port + "/mcp?token=sensitive-token",
+                new HttpEntity<>("{}", headers), String.class);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(401);
+        assertThat(response.getHeaders().getFirst("WWW-Authenticate")).isEqualTo("Bearer");
+        assertThat(response.getBody()).doesNotContain("sensitive-token");
     }
 
     @Test
@@ -208,6 +237,16 @@ class McpServerInitializeIntegrationTest {
             WebProperties properties = new WebProperties();
             properties.setAdminUi(new WebProperties.Ui());
             return properties;
+        }
+
+        @Bean
+        SecurityProperties securityProperties() {
+            return new SecurityProperties();
+        }
+
+        @Bean("mcpSecurityFilterChain")
+        SecurityFilterChain mcpSecurityFilterChain() {
+            return mock(SecurityFilterChain.class);
         }
     }
 
