@@ -7,6 +7,7 @@ import cn.iocoder.yudao.framework.security.core.filter.TokenAuthenticationFilter
 import cn.iocoder.yudao.module.mcp.framework.security.McpAuthenticatedTransportContextExtractor;
 import cn.iocoder.yudao.module.mcp.framework.security.McpAuthenticationEntryPoint;
 import cn.iocoder.yudao.module.mcp.framework.security.McpQueryTokenRejectingFilter;
+import cn.iocoder.yudao.module.mcp.framework.security.McpRequestSizeLimitFilter;
 import cn.iocoder.yudao.module.mcp.framework.security.McpTenantContextFilter;
 import cn.iocoder.yudao.module.mcp.framework.tool.AcfMcpToolCallHandler;
 import cn.iocoder.yudao.module.mcp.framework.tool.AcfMcpToolSpecificationFactory;
@@ -57,6 +58,7 @@ public class YudaoMcpServerAutoConfiguration {
 
     public static final String MCP_SERVLET_NAME = "bujidaoMcpServlet";
     public static final String MCP_QUERY_TOKEN_FILTER_NAME = "bujidaoMcpQueryTokenFilter";
+    public static final String MCP_REQUEST_SIZE_FILTER_NAME = "bujidaoMcpRequestSizeFilter";
 
     @Bean
     @ConditionalOnMissingBean(McpJsonMapper.class)
@@ -131,6 +133,19 @@ public class YudaoMcpServerAutoConfiguration {
         registration.addUrlPatterns(properties.getEndpoint());
         registration.setDispatcherTypes(DispatcherType.REQUEST);
         registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
+        return registration;
+    }
+
+    @Bean(name = MCP_REQUEST_SIZE_FILTER_NAME)
+    @ConditionalOnMissingBean(name = MCP_REQUEST_SIZE_FILTER_NAME)
+    public FilterRegistrationBean<McpRequestSizeLimitFilter> mcpRequestSizeFilterRegistration(
+            YudaoMcpServerProperties properties) {
+        FilterRegistrationBean<McpRequestSizeLimitFilter> registration = new FilterRegistrationBean<>();
+        registration.setFilter(new McpRequestSizeLimitFilter(properties.getMaxRequestSize().toBytes()));
+        registration.setName(MCP_REQUEST_SIZE_FILTER_NAME);
+        registration.addUrlPatterns(properties.getEndpoint());
+        registration.setDispatcherTypes(DispatcherType.REQUEST);
+        registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 1);
         return registration;
     }
 

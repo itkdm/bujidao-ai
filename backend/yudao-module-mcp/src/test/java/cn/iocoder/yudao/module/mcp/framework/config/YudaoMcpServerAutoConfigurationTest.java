@@ -54,6 +54,8 @@ class YudaoMcpServerAutoConfigurationTest {
                     assertThat(context).hasSingleBean(McpTenantContextFilter.class);
                     assertThat(context.getBean(YudaoMcpServerAutoConfiguration.MCP_QUERY_TOKEN_FILTER_NAME))
                             .isInstanceOf(org.springframework.boot.web.servlet.FilterRegistrationBean.class);
+                    assertThat(context.getBean(YudaoMcpServerAutoConfiguration.MCP_REQUEST_SIZE_FILTER_NAME))
+                            .isInstanceOf(org.springframework.boot.web.servlet.FilterRegistrationBean.class);
                 });
     }
 
@@ -83,6 +85,14 @@ class YudaoMcpServerAutoConfigurationTest {
         contextRunner.withPropertyValues(
                         "yudao.mcp.server.enabled=true",
                         "yudao.mcp.server.endpoint=/**")
+                .run(context -> assertThat(context).hasFailed());
+    }
+
+    @Test
+    void shouldRejectInvalidRequestSizeConfiguration() {
+        contextRunner.withPropertyValues(
+                        "yudao.mcp.server.enabled=true",
+                        "yudao.mcp.server.max-request-size=0B")
                 .run(context -> assertThat(context).hasFailed());
     }
 

@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.util.unit.DataSize;
 import org.springframework.validation.annotation.Validated;
 
 import java.time.Duration;
@@ -51,9 +52,19 @@ public class YudaoMcpServerProperties {
 
     private Duration requestTimeout = Duration.ofSeconds(30);
 
+    /**
+     * 单次 MCP 请求允许读取的最大请求体，避免 chunked 请求绕过 Content-Length 检查。
+     */
+    private DataSize maxRequestSize = DataSize.ofMegabytes(1);
+
     @AssertTrue(message = "request-timeout must be greater than zero")
     public boolean isRequestTimeoutValid() {
         return requestTimeout != null && !requestTimeout.isZero() && !requestTimeout.isNegative();
+    }
+
+    @AssertTrue(message = "max-request-size must be greater than zero")
+    public boolean isMaxRequestSizeValid() {
+        return maxRequestSize != null && maxRequestSize.toBytes() > 0;
     }
 
     @AssertTrue(message = "endpoint must be a fixed path starting with '/' and must not be root")
