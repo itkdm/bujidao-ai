@@ -4,8 +4,13 @@ import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolDescriptor;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
+import cn.iocoder.yudao.framework.web.config.WebProperties;
+import cn.iocoder.yudao.module.mcp.framework.security.McpTransportContextKeys;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.modelcontextprotocol.common.McpTransportContext;
+import io.modelcontextprotocol.server.McpTransportContextExtractor;
+import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringBootConfiguration;
@@ -32,7 +37,8 @@ import static org.mockito.Mockito.when;
 @SpringBootTest(classes = McpServerInitializeIntegrationTest.TestApplication.class,
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {"yudao.mcp.server.enabled=true",
-                "yudao.mcp.tools.exposed-capabilities=demo.echo"})
+                "yudao.mcp.tools.exposed-capabilities=demo.echo",
+                "yudao.web.admin-ui.url=http://localhost"})
 class McpServerInitializeIntegrationTest {
 
     @LocalServerPort
@@ -146,6 +152,21 @@ class McpServerInitializeIntegrationTest {
             when(invoker.invoke(org.mockito.ArgumentMatchers.any()))
                     .thenReturn(CapabilityResult.success("demo.echo", (Object) "hello"));
             return invoker;
+        }
+
+        @Bean
+        McpTransportContextExtractor<HttpServletRequest> mcpTransportContextExtractor() {
+            return request -> McpTransportContext.create(Map.of(
+                    McpTransportContextKeys.USER_ID, 1L,
+                    McpTransportContextKeys.TENANT_ID, 2L,
+                    McpTransportContextKeys.CONSUMER_ID, "integration-test"));
+        }
+
+        @Bean
+        WebProperties webProperties() {
+            WebProperties properties = new WebProperties();
+            properties.setAdminUi(new WebProperties.Ui());
+            return properties;
         }
     }
 

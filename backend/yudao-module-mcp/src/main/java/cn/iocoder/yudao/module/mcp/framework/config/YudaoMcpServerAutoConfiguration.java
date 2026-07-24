@@ -4,10 +4,13 @@ import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import cn.iocoder.yudao.module.mcp.framework.tool.AcfMcpToolCallHandler;
 import cn.iocoder.yudao.module.mcp.framework.tool.AcfMcpToolSpecificationFactory;
+import cn.iocoder.yudao.module.mcp.framework.security.McpAuthenticatedTransportContextExtractor;
+import cn.iocoder.yudao.module.mcp.framework.security.McpAuthorizeRequestsCustomizer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpServer;
+import io.modelcontextprotocol.server.McpTransportContextExtractor;
 import io.modelcontextprotocol.server.McpStatelessSyncServer;
 import io.modelcontextprotocol.server.McpStatelessServerFeatures;
 import io.modelcontextprotocol.server.transport.HttpServletStatelessServerTransport;
@@ -21,6 +24,7 @@ import org.springframework.boot.autoconfigure.jackson.JacksonAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.web.servlet.ServletRegistrationBean;
 import org.springframework.context.annotation.Bean;
+import jakarta.servlet.http.HttpServletRequest;
 
 import java.util.List;
 
@@ -47,11 +51,25 @@ public class YudaoMcpServerAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean(HttpServletStatelessServerTransport.class)
     public HttpServletStatelessServerTransport mcpStatelessServerTransport(
-            McpJsonMapper jsonMapper, YudaoMcpServerProperties properties) {
+            McpJsonMapper jsonMapper, YudaoMcpServerProperties properties,
+            McpTransportContextExtractor<HttpServletRequest> contextExtractor) {
         return HttpServletStatelessServerTransport.builder()
                 .jsonMapper(jsonMapper)
                 .messageEndpoint(properties.getEndpoint())
+                .contextExtractor(contextExtractor)
                 .build();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(McpTransportContextExtractor.class)
+    public McpTransportContextExtractor<HttpServletRequest> mcpTransportContextExtractor() {
+        return new McpAuthenticatedTransportContextExtractor();
+    }
+
+    @Bean("mcpAuthorizeRequestsCustomizer")
+    @ConditionalOnMissingBean(name = "mcpAuthorizeRequestsCustomizer")
+    public McpAuthorizeRequestsCustomizer mcpAuthorizeRequestsCustomizer(YudaoMcpServerProperties properties) {
+        return new McpAuthorizeRequestsCustomizer(properties);
     }
 
     @Bean

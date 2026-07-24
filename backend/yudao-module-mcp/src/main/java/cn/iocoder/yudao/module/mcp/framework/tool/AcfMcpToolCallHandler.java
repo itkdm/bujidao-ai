@@ -7,6 +7,8 @@ import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCall;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolDescriptor;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
+import cn.iocoder.yudao.module.mcp.framework.security.McpTransportContextKeys;
+import io.modelcontextprotocol.common.McpTransportContext;
 import io.modelcontextprotocol.spec.McpSchema;
 
 import java.util.LinkedHashMap;
@@ -27,22 +29,34 @@ public class AcfMcpToolCallHandler {
         this.capabilityToolInvoker = capabilityToolInvoker;
     }
 
-    public McpSchema.CallToolResult handle(CapabilityToolDescriptor descriptor,
+    public McpSchema.CallToolResult handle(McpTransportContext transportContext,
+                                           CapabilityToolDescriptor descriptor,
                                            McpSchema.CallToolRequest request) {
         CapabilityToolCall call = CapabilityToolCall.builder()
                 .capabilityName(descriptor.getCapabilityName())
                 .arguments(adaptArguments(descriptor, request.arguments()))
-                .context(createContext())
+                .context(createContext(transportContext))
                 .build();
         CapabilityResult result = capabilityToolInvoker.invoke(call);
         return adaptResult(descriptor, result);
     }
 
-    private static CapabilityContext createContext() {
+    private static CapabilityContext createContext(McpTransportContext transportContext) {
         return CapabilityContext.builder()
+                .userId(contextValue(transportContext, McpTransportContextKeys.USER_ID, Long.class))
+                .tenantId(contextValue(transportContext, McpTransportContextKeys.TENANT_ID, Long.class))
                 .source(SOURCE)
                 .consumerType(CapabilityConsumerType.MCP)
+                .consumerId(contextValue(transportContext, McpTransportContextKeys.CONSUMER_ID, String.class))
                 .build();
+    }
+
+    private static <T> T contextValue(McpTransportContext context, String key, Class<T> type) {
+        if (context == null) {
+            return null;
+        }
+        Object value = context.get(key);
+        return type.isInstance(value) ? type.cast(value) : null;
     }
 
     private static Object adaptArguments(CapabilityToolDescriptor descriptor, Map<String, Object> arguments) {

@@ -83,7 +83,7 @@ public class AcfMcpToolSpecificationFactory {
                 .build();
         return McpStatelessServerFeatures.SyncToolSpecification.builder()
                 .tool(tool)
-                .callHandler((transportContext, request) -> toolCallHandler.handle(descriptor, request))
+                .callHandler((transportContext, request) -> toolCallHandler.handle(transportContext, descriptor, request))
                 .build();
     }
 

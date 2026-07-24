@@ -5,6 +5,8 @@ import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCall;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolDescriptor;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
+import cn.iocoder.yudao.module.mcp.framework.security.McpTransportContextKeys;
+import io.modelcontextprotocol.common.McpTransportContext;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -29,7 +31,12 @@ class AcfMcpToolCallHandlerTest {
                 .arguments(Map.of("message", "hello"))
                 .build();
 
-        McpSchema.CallToolResult result = new AcfMcpToolCallHandler(invoker).handle(descriptor, request);
+        McpTransportContext transportContext = McpTransportContext.create(Map.of(
+                McpTransportContextKeys.USER_ID, 1L,
+                McpTransportContextKeys.TENANT_ID, 2L,
+                McpTransportContextKeys.CONSUMER_ID, "user:1"));
+        McpSchema.CallToolResult result = new AcfMcpToolCallHandler(invoker)
+                .handle(transportContext, descriptor, request);
 
         assertThat(result.isError()).isFalse();
         assertThat(result.structuredContent()).isEqualTo(Map.of("message", "hello"));
@@ -38,6 +45,9 @@ class AcfMcpToolCallHandlerTest {
         assertThat(call.getArguments()).isEqualTo(Map.of("message", "hello"));
         assertThat(call.getContext().getSource()).isEqualTo("MCP");
         assertThat(call.getContext().getConsumerType()).isEqualTo(CapabilityConsumerType.MCP);
+        assertThat(call.getContext().getUserId()).isEqualTo(1L);
+        assertThat(call.getContext().getTenantId()).isEqualTo(2L);
+        assertThat(call.getContext().getConsumerId()).isEqualTo("user:1");
         verify(invoker).invoke(call);
     }
 
@@ -51,7 +61,8 @@ class AcfMcpToolCallHandlerTest {
                 .arguments(Map.of(McpSchemaAdapter.INPUT_VALUE_PROPERTY, "hello"))
                 .build();
 
-        McpSchema.CallToolResult result = new AcfMcpToolCallHandler(invoker).handle(descriptor, request);
+        McpSchema.CallToolResult result = new AcfMcpToolCallHandler(invoker)
+                .handle(McpTransportContext.EMPTY, descriptor, request);
 
         assertThat(callCaptor.getValue().getArguments()).isEqualTo("hello");
         assertThat(result.structuredContent()).isEqualTo(Map.of(McpSchemaAdapter.OUTPUT_RESULT_PROPERTY, 5));
@@ -64,7 +75,7 @@ class AcfMcpToolCallHandlerTest {
         when(invoker.invoke(org.mockito.ArgumentMatchers.any()))
                 .thenReturn(CapabilityResult.denied("demo.echo", "PERMISSION_DENIED", "Permission denied"));
 
-        McpSchema.CallToolResult result = new AcfMcpToolCallHandler(invoker).handle(descriptor,
+        McpSchema.CallToolResult result = new AcfMcpToolCallHandler(invoker).handle(McpTransportContext.EMPTY, descriptor,
                 McpSchema.CallToolRequest.builder("demo.echo").arguments(Map.of()).build());
 
         assertThat(result.isError()).isTrue();
@@ -77,7 +88,7 @@ class AcfMcpToolCallHandlerTest {
         CapabilityToolInvoker invoker = mock(CapabilityToolInvoker.class);
         CapabilityToolDescriptor descriptor = descriptor(Map.of("type", "object"), Map.of("type", "null"));
 
-        McpSchema.CallToolResult result = new AcfMcpToolCallHandler(invoker).handle(descriptor,
+        McpSchema.CallToolResult result = new AcfMcpToolCallHandler(invoker).handle(McpTransportContext.EMPTY, descriptor,
                 McpSchema.CallToolRequest.builder("demo.echo").arguments(Map.of()).build());
 
         assertThat(result.isError()).isTrue();
