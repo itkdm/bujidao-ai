@@ -6,11 +6,16 @@ import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import cn.iocoder.yudao.framework.web.config.WebProperties;
 import cn.iocoder.yudao.module.mcp.framework.security.McpTransportContextKeys;
+import cn.iocoder.yudao.module.mcp.framework.tool.McpSchemaAdapter;
 import cn.iocoder.yudao.module.mcp.framework.tool.McpToolProtocolMetadata;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.common.McpTransportContext;
+import io.modelcontextprotocol.client.McpClient;
+import io.modelcontextprotocol.client.McpSyncClient;
+import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
 import io.modelcontextprotocol.server.McpTransportContextExtractor;
+import io.modelcontextprotocol.spec.McpSchema;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,6 +35,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.context.annotation.Bean;
 
 import java.util.Map;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -127,6 +133,37 @@ class McpServerInitializeIntegrationTest {
         assertThat(result.path("structuredContent").path("result").asText()).isEqualTo("hello");
         assertThat(result.path("_meta").path(McpToolProtocolMetadata.TRACE_ID).asText())
                 .isEqualTo("trace-integration");
+    }
+
+    @Test
+    void shouldWorkWithOfficialMcpClient() {
+        HttpClientStreamableHttpTransport transport = HttpClientStreamableHttpTransport
+                .builder("http://127.0.0.1:" + port)
+                .endpoint("/mcp")
+                .openConnectionOnStartup(false)
+                .resumableStreams(false)
+                .build();
+        try (McpSyncClient client = McpClient.sync(transport)
+                .clientInfo(new McpSchema.Implementation("official-client-test", "1.0.0"))
+                .initializationTimeout(Duration.ofSeconds(10))
+                .requestTimeout(Duration.ofSeconds(10))
+                .build()) {
+            McpSchema.InitializeResult initializeResult = client.initialize();
+            assertThat(initializeResult.serverInfo().name()).isEqualTo("bujidao-mcp-server");
+
+            McpSchema.ListToolsResult toolsResult = client.listTools();
+            assertThat(toolsResult.tools()).extracting(McpSchema.Tool::name)
+                    .containsExactly("demo.echo");
+
+            McpSchema.CallToolResult callResult = client.callTool(
+                    McpSchema.CallToolRequest.builder("demo.echo")
+                            .arguments(Map.of("message", "hello"))
+                            .build());
+            assertThat(callResult.isError()).isFalse();
+            assertThat(callResult.structuredContent())
+                    .isEqualTo(Map.of(McpSchemaAdapter.OUTPUT_RESULT_PROPERTY, "hello"));
+            assertThat(callResult.meta()).containsEntry(McpToolProtocolMetadata.TRACE_ID, "trace-integration");
+        }
     }
 
     @SpringBootConfiguration
