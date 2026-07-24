@@ -6,6 +6,7 @@ import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import cn.iocoder.yudao.framework.web.config.WebProperties;
 import cn.iocoder.yudao.module.mcp.framework.security.McpTransportContextKeys;
+import cn.iocoder.yudao.module.mcp.framework.tool.McpToolProtocolMetadata;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.common.McpTransportContext;
@@ -124,6 +125,8 @@ class McpServerInitializeIntegrationTest {
         JsonNode result = objectMapper.readTree(response.getBody()).path("result");
         assertThat(result.path("isError").asBoolean()).isFalse();
         assertThat(result.path("structuredContent").path("result").asText()).isEqualTo("hello");
+        assertThat(result.path("_meta").path(McpToolProtocolMetadata.TRACE_ID).asText())
+                .isEqualTo("trace-integration");
     }
 
     @SpringBootConfiguration
@@ -150,7 +153,8 @@ class McpServerInitializeIntegrationTest {
         CapabilityToolInvoker capabilityToolInvoker() {
             CapabilityToolInvoker invoker = mock(CapabilityToolInvoker.class);
             when(invoker.invoke(org.mockito.ArgumentMatchers.any()))
-                    .thenReturn(CapabilityResult.success("demo.echo", (Object) "hello"));
+                    .thenReturn(CapabilityResult.success("demo.echo", (Object) "hello")
+                            .withTraceId("trace-integration"));
             return invoker;
         }
 

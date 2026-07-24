@@ -80,6 +80,11 @@ public class AcfMcpToolSpecificationFactory {
                 .inputSchema(McpSchemaAdapter.adaptInputSchema(descriptor.getInputSchema()))
                 .outputSchema(McpSchemaAdapter.adaptOutputSchema(descriptor.getOutputSchema()))
                 .annotations(annotations)
+                .meta(McpToolProtocolMetadata.toolMetadata(
+                        descriptor.getVersion(),
+                        descriptor.getRiskLevel() == null ? null : descriptor.getRiskLevel().name(),
+                        descriptor.isIdempotencyRequired(),
+                        descriptor.isConfirmationRequired()))
                 .build();
         return McpStatelessServerFeatures.SyncToolSpecification.builder()
                 .tool(tool)

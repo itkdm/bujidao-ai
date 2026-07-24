@@ -2,6 +2,7 @@ package cn.iocoder.yudao.module.mcp.framework.tool;
 
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolDescriptor;
+import cn.iocoder.yudao.framework.acf.core.enums.CapabilityRiskLevel;
 import cn.iocoder.yudao.module.mcp.framework.config.YudaoMcpToolProperties;
 import io.modelcontextprotocol.server.McpStatelessServerFeatures;
 import io.modelcontextprotocol.spec.McpSchema;
@@ -44,6 +45,10 @@ class AcfMcpToolSpecificationFactoryTest {
         assertThat(tool.inputSchema()).containsEntry("type", "object");
         assertThat(tool.annotations().readOnlyHint()).isTrue();
         assertThat(tool.annotations().openWorldHint()).isFalse();
+        assertThat(tool.meta()).containsEntry(McpToolProtocolMetadata.CAPABILITY_VERSION, "1.0.0")
+                .containsEntry(McpToolProtocolMetadata.RISK_LEVEL, "LOW")
+                .containsEntry(McpToolProtocolMetadata.IDEMPOTENCY_REQUIRED, false)
+                .containsEntry(McpToolProtocolMetadata.CONFIRMATION_REQUIRED, false);
     }
 
     @Test
@@ -104,10 +109,13 @@ class AcfMcpToolSpecificationFactoryTest {
         when(descriptor.getCapabilityName()).thenReturn(name);
         when(descriptor.getTitle()).thenReturn("Demo Tool");
         when(descriptor.getDescription()).thenReturn("Demo description");
+        when(descriptor.getVersion()).thenReturn("1.0.0");
+        when(descriptor.getRiskLevel()).thenReturn(CapabilityRiskLevel.LOW);
         when(descriptor.getInputSchema()).thenReturn(Map.of("type", "object", "properties", Map.of()));
         when(descriptor.getOutputSchema()).thenReturn(Map.of("type", "string"));
         when(descriptor.isSideEffect()).thenReturn(sideEffect);
         when(descriptor.isConfirmationRequired()).thenReturn(confirmationRequired);
+        when(descriptor.isIdempotencyRequired()).thenReturn(sideEffect || confirmationRequired);
         return descriptor;
     }
 

@@ -1,6 +1,8 @@
 package cn.iocoder.yudao.module.mcp.framework.tool;
 
 import cn.iocoder.yudao.framework.acf.core.enums.CapabilityConsumerType;
+import cn.iocoder.yudao.framework.acf.core.enums.CapabilityRiskLevel;
+import cn.iocoder.yudao.framework.acf.core.model.CapabilityConfirmationChallenge;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCall;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolDescriptor;
@@ -12,10 +14,12 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.util.Map;
+import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class AcfMcpToolCallHandlerTest {
@@ -27,9 +31,11 @@ class AcfMcpToolCallHandlerTest {
         ArgumentCaptor<CapabilityToolCall> callCaptor = ArgumentCaptor.forClass(CapabilityToolCall.class);
         when(invoker.invoke(callCaptor.capture()))
                 .thenReturn(CapabilityResult.success("demo.echo", Map.of("message", "hello")));
-        McpSchema.CallToolRequest request = McpSchema.CallToolRequest.builder("demo.echo")
-                .arguments(Map.of("message", "hello"))
-                .build();
+        McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("demo.echo",
+                Map.of("message", "hello"), Map.of(
+                McpToolProtocolMetadata.IDEMPOTENCY_KEY, "idem-001",
+                McpToolProtocolMetadata.CONFIRMATION_TOKEN, "confirm-001",
+                McpToolProtocolMetadata.CLIENT_REQUEST_ID, "request-001"));
 
         McpTransportContext transportContext = McpTransportContext.create(Map.of(
                 McpTransportContextKeys.USER_ID, 1L,
@@ -48,6 +54,9 @@ class AcfMcpToolCallHandlerTest {
         assertThat(call.getContext().getUserId()).isEqualTo(1L);
         assertThat(call.getContext().getTenantId()).isEqualTo(2L);
         assertThat(call.getContext().getConsumerId()).isEqualTo("user:1");
+        assertThat(call.getContext().getClientRequestId()).isEqualTo("request-001");
+        assertThat(call.getIdempotencyKey()).isEqualTo("idem-001");
+        assertThat(call.getConfirmationToken()).isEqualTo("confirm-001");
         verify(invoker).invoke(call);
     }
 
@@ -73,7 +82,8 @@ class AcfMcpToolCallHandlerTest {
         CapabilityToolInvoker invoker = mock(CapabilityToolInvoker.class);
         CapabilityToolDescriptor descriptor = descriptor(Map.of("type", "object"), Map.of("type", "object"));
         when(invoker.invoke(org.mockito.ArgumentMatchers.any()))
-                .thenReturn(CapabilityResult.denied("demo.echo", "PERMISSION_DENIED", "Permission denied"));
+                .thenReturn(CapabilityResult.denied("demo.echo", "PERMISSION_DENIED", "Permission denied")
+                        .withTraceId("trace-denied"));
 
         McpSchema.CallToolResult result = new AcfMcpToolCallHandler(invoker).handle(McpTransportContext.EMPTY, descriptor,
                 McpSchema.CallToolRequest.builder("demo.echo").arguments(Map.of()).build());
@@ -81,6 +91,9 @@ class AcfMcpToolCallHandlerTest {
         assertThat(result.isError()).isTrue();
         assertThat(result.content().get(0).toString()).contains("Permission denied");
         assertThat(result.structuredContent()).isNull();
+        assertThat(result.meta()).containsEntry(McpToolProtocolMetadata.STATUS, "DENIED")
+                .containsEntry(McpToolProtocolMetadata.ERROR_CODE, "PERMISSION_DENIED")
+                .containsEntry(McpToolProtocolMetadata.TRACE_ID, "trace-denied");
     }
 
     @Test
@@ -93,6 +106,49 @@ class AcfMcpToolCallHandlerTest {
 
         assertThat(result.isError()).isTrue();
         assertThat(result.content().get(0).toString()).contains("Capability invocation failed");
+    }
+
+    @Test
+    void shouldRejectInvalidControlMetadataBeforeAcfInvocation() {
+        CapabilityToolInvoker invoker = mock(CapabilityToolInvoker.class);
+        CapabilityToolDescriptor descriptor = descriptor(Map.of("type", "object"), Map.of("type", "object"));
+        McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("demo.echo", Map.of(),
+                Map.of(McpToolProtocolMetadata.IDEMPOTENCY_KEY, 123));
+
+        McpSchema.CallToolResult result = new AcfMcpToolCallHandler(invoker)
+                .handle(McpTransportContext.EMPTY, descriptor, request);
+
+        assertThat(result.isError()).isTrue();
+        assertThat(result.meta()).containsEntry(McpToolProtocolMetadata.ERROR_CODE, "BAD_REQUEST");
+        verifyNoInteractions(invoker);
+    }
+
+    @Test
+    void shouldExposeConfirmationChallengeAsSafeMetadata() {
+        CapabilityToolInvoker invoker = mock(CapabilityToolInvoker.class);
+        CapabilityToolDescriptor descriptor = descriptor(Map.of("type", "object"), Map.of("type", "object"));
+        CapabilityConfirmationChallenge challenge = CapabilityConfirmationChallenge.builder()
+                .challengeId("challenge-001")
+                .capabilityName("demo.echo")
+                .capabilityVersion("1.0.0")
+                .riskLevel(CapabilityRiskLevel.HIGH)
+                .expiresAt(LocalDateTime.of(2026, 7, 24, 20, 0))
+                .requestDigest("internal-digest")
+                .build();
+        when(invoker.invoke(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(CapabilityResult.confirmationRequired("demo.echo", challenge)
+                        .withTraceId("trace-confirm"));
+
+        McpSchema.CallToolResult result = new AcfMcpToolCallHandler(invoker).handle(McpTransportContext.EMPTY,
+                descriptor, McpSchema.CallToolRequest.builder("demo.echo").arguments(Map.of()).build());
+
+        assertThat(result.isError()).isTrue();
+        assertThat(result.meta()).containsEntry(McpToolProtocolMetadata.STATUS, "CONFIRM_REQUIRED")
+                .containsEntry(McpToolProtocolMetadata.TRACE_ID, "trace-confirm");
+        Map<?, ?> challengeMetadata = (Map<?, ?>) result.meta()
+                .get(McpToolProtocolMetadata.CONFIRMATION_CHALLENGE);
+        assertThat(challengeMetadata.get("challengeId")).isEqualTo("challenge-001");
+        assertThat(challengeMetadata.containsKey("requestDigest")).isFalse();
     }
 
     private static CapabilityToolDescriptor descriptor(Map<String, Object> inputSchema,
