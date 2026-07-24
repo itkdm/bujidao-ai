@@ -40,8 +40,10 @@ import cn.iocoder.yudao.framework.acf.core.service.CapabilityRegistry;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityRequestDigestGenerator;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityVisibilityService;
 import cn.iocoder.yudao.framework.acf.core.service.DefaultCapabilityGovernanceService;
+import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolExportService;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCall;
+import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolDescriptor;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import cn.iocoder.yudao.framework.common.biz.system.permission.PermissionCommonApi;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -83,6 +85,7 @@ class YudaoAcfAutoConfigurationTest {
             assertThat(context).hasSingleBean(CapabilityPolicyChain.class);
             assertThat(context).hasSingleBean(CapabilityGovernanceService.class);
             assertThat(context).hasSingleBean(CapabilityVisibilityService.class);
+            assertThat(context).hasSingleBean(CapabilityToolCatalog.class);
             assertThat(context).hasSingleBean(CapabilityToolExportService.class);
             assertThat(context).hasSingleBean(CapabilityToolInvoker.class);
             assertThat(context).hasSingleBean(CapabilityRequestDigestGenerator.class);
@@ -100,6 +103,18 @@ class YudaoAcfAutoConfigurationTest {
             assertThat(context).doesNotHaveBean(CapabilityAuditService.class);
             assertThat(CapabilityExecutor.class.getConstructors()).hasSize(1);
         });
+    }
+
+    @Test
+    void shouldExposeDeclaredToolsWithoutAuthenticatedContext() {
+        contextRunner.withUserConfiguration(CapabilityProviderConfig.class)
+                .run(context -> {
+                    CapabilityToolDescriptor descriptor = context.getBean(CapabilityToolCatalog.class)
+                            .getDeclared("test.auto.echo");
+
+                    assertThat(descriptor.getCapabilityName()).isEqualTo("test.auto.echo");
+                    assertThat(descriptor.getPermissions()).containsExactly("test:auto:echo");
+                });
     }
 
     @Test

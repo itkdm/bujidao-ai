@@ -2,6 +2,7 @@ package cn.iocoder.yudao.framework.acf.core.tool;
 
 import cn.iocoder.yudao.framework.acf.core.enums.CapabilityPermissionMode;
 import cn.iocoder.yudao.framework.acf.core.enums.CapabilityRiskLevel;
+import cn.iocoder.yudao.framework.acf.core.model.CapabilityDefinition;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -53,6 +54,23 @@ public final class CapabilityToolDescriptor {
         this.riskLevel = riskLevel;
         this.sideEffect = sideEffect;
         this.confirmationRequired = confirmationRequired;
+    }
+
+    static CapabilityToolDescriptor from(CapabilityDefinition definition) {
+        return CapabilityToolDescriptor.builder()
+                .capabilityName(definition.getName())
+                .version(definition.getVersion())
+                .title(definition.getTitle())
+                .description(definition.getDescription())
+                .category(definition.getCategory())
+                .inputSchema(definition.getInputSchema())
+                .outputSchema(definition.getOutputSchema())
+                .permissionMode(definition.getPermissionMode())
+                .permissions(definition.getPermissions())
+                .riskLevel(definition.getRiskLevel())
+                .sideEffect(definition.isSideEffect())
+                .confirmationRequired(definition.isConfirmationRequired())
+                .build();
     }
 
     /**

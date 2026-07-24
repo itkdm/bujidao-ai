@@ -1,6 +1,5 @@
 package cn.iocoder.yudao.framework.acf.core.tool;
 
-import cn.iocoder.yudao.framework.acf.core.model.CapabilityDefinition;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityVisibilityQuery;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityVisibilityService;
 import lombok.RequiredArgsConstructor;
@@ -19,25 +18,8 @@ public class CapabilityToolExportService {
 
     public List<CapabilityToolDescriptor> export(CapabilityVisibilityQuery query) {
         return visibilityService.listVisible(query).stream()
-                .map(this::toDescriptor)
+                .map(CapabilityToolDescriptor::from)
                 .toList();
-    }
-
-    private CapabilityToolDescriptor toDescriptor(CapabilityDefinition definition) {
-        return CapabilityToolDescriptor.builder()
-                .capabilityName(definition.getName())
-                .version(definition.getVersion())
-                .title(definition.getTitle())
-                .description(definition.getDescription())
-                .category(definition.getCategory())
-                .inputSchema(definition.getInputSchema())
-                .outputSchema(definition.getOutputSchema())
-                .permissionMode(definition.getPermissionMode())
-                .permissions(definition.getPermissions())
-                .riskLevel(definition.getRiskLevel())
-                .sideEffect(definition.isSideEffect())
-                .confirmationRequired(definition.isConfirmationRequired())
-                .build();
     }
 
 }
