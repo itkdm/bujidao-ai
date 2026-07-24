@@ -44,7 +44,9 @@ class AcfMcpToolSpecificationFactoryTest {
         assertThat(tool.title()).isEqualTo("Demo Tool");
         assertThat(tool.inputSchema()).containsEntry("type", "object");
         assertThat(tool.annotations().readOnlyHint()).isTrue();
-        assertThat(tool.annotations().openWorldHint()).isFalse();
+        assertThat(tool.annotations().idempotentHint()).isTrue();
+        assertThat(tool.annotations().destructiveHint()).isNull();
+        assertThat(tool.annotations().openWorldHint()).isNull();
         assertThat(tool.meta()).containsEntry(McpToolProtocolMetadata.CAPABILITY_VERSION, "1.0.0")
                 .containsEntry(McpToolProtocolMetadata.RISK_LEVEL, "LOW")
                 .containsEntry(McpToolProtocolMetadata.IDEMPOTENCY_REQUIRED, false)
@@ -96,7 +98,7 @@ class AcfMcpToolSpecificationFactoryTest {
         properties.setAllowConfirmationRequired(true);
         McpSchema.Tool tool = createFactory().createToolSpecifications().get(0).tool();
         assertThat(tool.annotations().readOnlyHint()).isFalse();
-        assertThat(tool.annotations().destructiveHint()).isTrue();
+        assertThat(tool.annotations().destructiveHint()).isNull();
     }
 
     private AcfMcpToolSpecificationFactory createFactory() {

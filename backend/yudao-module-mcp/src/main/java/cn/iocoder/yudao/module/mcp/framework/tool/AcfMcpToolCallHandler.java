@@ -10,10 +10,12 @@ import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolDescriptor;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import cn.iocoder.yudao.module.mcp.framework.security.McpTransportContextKeys;
 import io.modelcontextprotocol.common.McpTransportContext;
+import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -30,9 +32,11 @@ public class AcfMcpToolCallHandler {
     private static final String INTERNAL_ERROR_MESSAGE = "Capability invocation failed";
 
     private final CapabilityToolInvoker capabilityToolInvoker;
+    private final McpJsonMapper jsonMapper;
 
-    public AcfMcpToolCallHandler(CapabilityToolInvoker capabilityToolInvoker) {
+    public AcfMcpToolCallHandler(CapabilityToolInvoker capabilityToolInvoker, McpJsonMapper jsonMapper) {
         this.capabilityToolInvoker = capabilityToolInvoker;
+        this.jsonMapper = jsonMapper;
     }
 
     public McpSchema.CallToolResult handle(McpTransportContext transportContext,
@@ -90,8 +94,8 @@ public class AcfMcpToolCallHandler {
         return safeArguments.get(McpSchemaAdapter.INPUT_VALUE_PROPERTY);
     }
 
-    private static McpSchema.CallToolResult adaptResult(CapabilityToolDescriptor descriptor,
-                                                        CapabilityResult result) {
+    private McpSchema.CallToolResult adaptResult(CapabilityToolDescriptor descriptor,
+                                                 CapabilityResult result) {
         if (result == null) {
             return errorResult(CapabilityStatus.FAILURE, null, "Capability invocation failed",
                     false, null, null);
@@ -104,12 +108,23 @@ public class AcfMcpToolCallHandler {
                     result.isRetryable(), result.getTraceId(), challenge);
         }
         Object structuredContent = adaptStructuredContent(descriptor, result.getData());
-        return McpSchema.CallToolResult.builder()
-                .addTextContent(defaultMessage(result.getMessage(), "Capability executed successfully"))
+        McpSchema.CallToolResult.Builder builder = McpSchema.CallToolResult.builder()
+                .addTextContent(serializeStructuredContent(structuredContent))
                 .structuredContent(structuredContent)
                 .meta(resultMetadata(result))
-                .isError(false)
-                .build();
+                .isError(false);
+        if (result.getMessage() != null && !result.getMessage().isBlank()) {
+            builder.addTextContent(result.getMessage());
+        }
+        return builder.build();
+    }
+
+    private String serializeStructuredContent(Object structuredContent) {
+        try {
+            return jsonMapper.writeValueAsString(structuredContent);
+        } catch (IOException exception) {
+            throw new IllegalStateException("Failed to serialize MCP structured content", exception);
+        }
     }
 
     private static McpSchema.CallToolResult errorResult(CapabilityStatus status, String errorCode,

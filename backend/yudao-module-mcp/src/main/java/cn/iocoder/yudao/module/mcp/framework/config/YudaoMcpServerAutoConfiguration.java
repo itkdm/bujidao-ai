@@ -167,8 +167,9 @@ public class YudaoMcpServerAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public AcfMcpToolCallHandler acfMcpToolCallHandler(CapabilityToolInvoker capabilityToolInvoker) {
-        return new AcfMcpToolCallHandler(capabilityToolInvoker);
+    public AcfMcpToolCallHandler acfMcpToolCallHandler(CapabilityToolInvoker capabilityToolInvoker,
+                                                       McpJsonMapper jsonMapper) {
+        return new AcfMcpToolCallHandler(capabilityToolInvoker, jsonMapper);
     }
 
     @Bean

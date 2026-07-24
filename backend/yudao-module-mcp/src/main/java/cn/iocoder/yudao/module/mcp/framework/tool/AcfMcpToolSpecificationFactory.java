@@ -69,9 +69,7 @@ public class AcfMcpToolSpecificationFactory {
         McpSchema.ToolAnnotations annotations = McpSchema.ToolAnnotations.builder()
                 .title(descriptor.getTitle())
                 .readOnlyHint(!descriptor.isSideEffect())
-                .destructiveHint(descriptor.isSideEffect())
                 .idempotentHint(!descriptor.isSideEffect())
-                .openWorldHint(false)
                 .build();
         McpSchema.Tool tool = McpSchema.Tool.builder()
                 .name(descriptor.getCapabilityName())

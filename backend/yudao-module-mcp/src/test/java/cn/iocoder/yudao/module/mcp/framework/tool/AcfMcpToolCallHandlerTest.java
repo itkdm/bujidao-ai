@@ -8,7 +8,9 @@ import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCall;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolDescriptor;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import cn.iocoder.yudao.module.mcp.framework.security.McpTransportContextKeys;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.common.McpTransportContext;
+import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -41,10 +43,12 @@ class AcfMcpToolCallHandlerTest {
                 McpTransportContextKeys.USER_ID, 1L,
                 McpTransportContextKeys.TENANT_ID, 2L,
                 McpTransportContextKeys.CONSUMER_ID, "user:1"));
-        McpSchema.CallToolResult result = new AcfMcpToolCallHandler(invoker)
+        McpSchema.CallToolResult result = createHandler(invoker)
                 .handle(transportContext, descriptor, request);
 
         assertThat(result.isError()).isFalse();
+        assertThat(result.content().get(0).toString()).contains("{\"message\":\"hello\"}");
+        assertThat(result.content()).hasSize(1);
         assertThat(result.structuredContent()).isEqualTo(Map.of("message", "hello"));
         CapabilityToolCall call = callCaptor.getValue();
         assertThat(call.getCapabilityName()).isEqualTo("demo.echo");
@@ -65,15 +69,18 @@ class AcfMcpToolCallHandlerTest {
         CapabilityToolInvoker invoker = mock(CapabilityToolInvoker.class);
         CapabilityToolDescriptor descriptor = descriptor(Map.of("type", "string"), Map.of("type", "integer"));
         ArgumentCaptor<CapabilityToolCall> callCaptor = ArgumentCaptor.forClass(CapabilityToolCall.class);
-        when(invoker.invoke(callCaptor.capture())).thenReturn(CapabilityResult.success("demo.length", 5));
+        when(invoker.invoke(callCaptor.capture()))
+                .thenReturn(CapabilityResult.success("demo.length", 5, "Length calculated"));
         McpSchema.CallToolRequest request = McpSchema.CallToolRequest.builder("demo.length")
                 .arguments(Map.of(McpSchemaAdapter.INPUT_VALUE_PROPERTY, "hello"))
                 .build();
 
-        McpSchema.CallToolResult result = new AcfMcpToolCallHandler(invoker)
+        McpSchema.CallToolResult result = createHandler(invoker)
                 .handle(McpTransportContext.EMPTY, descriptor, request);
 
         assertThat(callCaptor.getValue().getArguments()).isEqualTo("hello");
+        assertThat(result.content().get(0).toString()).contains("{\"result\":5}");
+        assertThat(result.content().get(1).toString()).contains("Length calculated");
         assertThat(result.structuredContent()).isEqualTo(Map.of(McpSchemaAdapter.OUTPUT_RESULT_PROPERTY, 5));
     }
 
@@ -85,7 +92,7 @@ class AcfMcpToolCallHandlerTest {
                 .thenReturn(CapabilityResult.denied("demo.echo", "PERMISSION_DENIED", "Permission denied")
                         .withTraceId("trace-denied"));
 
-        McpSchema.CallToolResult result = new AcfMcpToolCallHandler(invoker).handle(McpTransportContext.EMPTY, descriptor,
+        McpSchema.CallToolResult result = createHandler(invoker).handle(McpTransportContext.EMPTY, descriptor,
                 McpSchema.CallToolRequest.builder("demo.echo").arguments(Map.of()).build());
 
         assertThat(result.isError()).isTrue();
@@ -101,7 +108,7 @@ class AcfMcpToolCallHandlerTest {
         CapabilityToolInvoker invoker = mock(CapabilityToolInvoker.class);
         CapabilityToolDescriptor descriptor = descriptor(Map.of("type", "object"), Map.of("type", "null"));
 
-        McpSchema.CallToolResult result = new AcfMcpToolCallHandler(invoker).handle(McpTransportContext.EMPTY, descriptor,
+        McpSchema.CallToolResult result = createHandler(invoker).handle(McpTransportContext.EMPTY, descriptor,
                 McpSchema.CallToolRequest.builder("demo.echo").arguments(Map.of()).build());
 
         assertThat(result.isError()).isTrue();
@@ -115,7 +122,7 @@ class AcfMcpToolCallHandlerTest {
         when(invoker.invoke(org.mockito.ArgumentMatchers.any()))
                 .thenThrow(new IllegalStateException("jdbc:mysql://internal/db token=secret-value"));
 
-        McpSchema.CallToolResult result = new AcfMcpToolCallHandler(invoker).handle(McpTransportContext.EMPTY,
+        McpSchema.CallToolResult result = createHandler(invoker).handle(McpTransportContext.EMPTY,
                 descriptor, McpSchema.CallToolRequest.builder("demo.echo").arguments(Map.of()).build());
 
         assertThat(result.isError()).isTrue();
@@ -132,7 +139,7 @@ class AcfMcpToolCallHandlerTest {
         McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("demo.echo", Map.of(),
                 Map.of(McpToolProtocolMetadata.IDEMPOTENCY_KEY, 123));
 
-        McpSchema.CallToolResult result = new AcfMcpToolCallHandler(invoker)
+        McpSchema.CallToolResult result = createHandler(invoker)
                 .handle(McpTransportContext.EMPTY, descriptor, request);
 
         assertThat(result.isError()).isTrue();
@@ -156,7 +163,7 @@ class AcfMcpToolCallHandlerTest {
                 .thenReturn(CapabilityResult.confirmationRequired("demo.echo", challenge)
                         .withTraceId("trace-confirm"));
 
-        McpSchema.CallToolResult result = new AcfMcpToolCallHandler(invoker).handle(McpTransportContext.EMPTY,
+        McpSchema.CallToolResult result = createHandler(invoker).handle(McpTransportContext.EMPTY,
                 descriptor, McpSchema.CallToolRequest.builder("demo.echo").arguments(Map.of()).build());
 
         assertThat(result.isError()).isTrue();
@@ -175,6 +182,10 @@ class AcfMcpToolCallHandlerTest {
         when(descriptor.getInputSchema()).thenReturn(inputSchema);
         when(descriptor.getOutputSchema()).thenReturn(outputSchema);
         return descriptor;
+    }
+
+    private static AcfMcpToolCallHandler createHandler(CapabilityToolInvoker invoker) {
+        return new AcfMcpToolCallHandler(invoker, new JacksonMcpJsonMapper(new ObjectMapper()));
     }
 
 }
