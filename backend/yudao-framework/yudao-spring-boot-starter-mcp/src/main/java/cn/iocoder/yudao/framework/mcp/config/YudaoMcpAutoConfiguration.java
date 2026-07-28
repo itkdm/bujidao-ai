@@ -5,7 +5,9 @@ import cn.iocoder.yudao.framework.mcp.security.McpAuthenticatedTransportContextE
 import cn.iocoder.yudao.framework.mcp.security.McpAuthenticationEntryPoint;
 import cn.iocoder.yudao.framework.mcp.security.McpQueryTokenRejectingFilter;
 import cn.iocoder.yudao.framework.mcp.security.McpScopeAuthorizationFilter;
+import cn.iocoder.yudao.framework.mcp.security.McpStrictAccessTokenFilter;
 import cn.iocoder.yudao.framework.mcp.security.McpTenantContextFilter;
+import cn.iocoder.yudao.framework.common.biz.system.oauth2.OAuth2TokenCommonApi;
 import cn.iocoder.yudao.framework.mcp.tool.McpToolSpecificationProvider;
 import cn.iocoder.yudao.framework.mcp.transport.McpRequestSizeLimitFilter;
 import cn.iocoder.yudao.framework.security.config.SecurityProperties;
@@ -103,6 +105,7 @@ public class YudaoMcpAutoConfiguration {
     public SecurityFilterChain mcpSecurityFilterChain(HttpSecurity http,
                                                       YudaoMcpServerProperties properties,
                                                       TokenAuthenticationFilter tokenAuthenticationFilter,
+                                                      McpStrictAccessTokenFilter strictAccessTokenFilter,
                                                       McpScopeAuthorizationFilter scopeAuthorizationFilter,
                                                       McpTenantContextFilter tenantContextFilter)
             throws Exception {
@@ -116,9 +119,18 @@ public class YudaoMcpAutoConfiguration {
                 .exceptionHandling(configurer -> configurer
                         .authenticationEntryPoint(new McpAuthenticationEntryPoint(properties)))
                 .addFilterBefore(tokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterAfter(scopeAuthorizationFilter, TokenAuthenticationFilter.class)
+                .addFilterAfter(strictAccessTokenFilter, TokenAuthenticationFilter.class)
+                .addFilterAfter(scopeAuthorizationFilter, McpStrictAccessTokenFilter.class)
                 .addFilterAfter(tenantContextFilter, McpScopeAuthorizationFilter.class);
         return http.build();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public McpStrictAccessTokenFilter mcpStrictAccessTokenFilter(
+            YudaoMcpServerProperties properties, SecurityProperties securityProperties,
+            OAuth2TokenCommonApi oauth2TokenApi) {
+        return new McpStrictAccessTokenFilter(properties, securityProperties, oauth2TokenApi);
     }
 
     @Bean

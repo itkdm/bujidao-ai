@@ -34,6 +34,10 @@ public class McpAuthenticatedTransportContextExtractor
             values.put(McpTransportContextKeys.TENANT_ID, tenantId);
         }
         values.put(McpTransportContextKeys.CONSUMER_ID, "user:" + loginUser.getId());
+        String clientId = loginUser.getContext(McpTransportContextKeys.CLIENT_ID, String.class);
+        if (clientId != null) {
+            values.put(McpTransportContextKeys.CLIENT_ID, clientId);
+        }
         return McpTransportContext.create(values);
     }
 

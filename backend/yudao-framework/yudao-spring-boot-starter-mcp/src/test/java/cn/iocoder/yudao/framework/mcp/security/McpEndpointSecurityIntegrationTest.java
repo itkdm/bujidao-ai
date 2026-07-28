@@ -109,6 +109,8 @@ class McpEndpointSecurityIntegrationTest {
         assertThat(captor.getValue().getContext().getUserId()).isEqualTo(1001L);
         assertThat(captor.getValue().getContext().getTenantId()).isEqualTo(2001L);
         assertThat(captor.getValue().getContext().getConsumerId()).isEqualTo("user:1001");
+        assertThat(captor.getValue().getContext().getAttributes())
+                .containsEntry("oauthClientId", "workbuddy-mcp");
         assertThat(invokedTenantId).hasValue(2001L);
     }
 
@@ -207,12 +209,18 @@ class McpEndpointSecurityIntegrationTest {
         OAuth2TokenCommonApi oauth2TokenCommonApi() {
             OAuth2TokenCommonApi api = mock(OAuth2TokenCommonApi.class);
             OAuth2AccessTokenCheckRespDTO token = new OAuth2AccessTokenCheckRespDTO()
+                    .setAccessToken("valid-token")
+                    .setRefreshToken("valid-refresh-token")
+                    .setClientId("workbuddy-mcp")
                     .setUserId(1001L)
                     .setTenantId(2001L)
                     .setScopes(List.of("mcp:access"))
                     .setExpiresTime(LocalDateTime.now().plusMinutes(10));
             when(api.checkAccessToken("valid-token")).thenReturn(token);
             OAuth2AccessTokenCheckRespDTO tokenWithoutScope = new OAuth2AccessTokenCheckRespDTO()
+                    .setAccessToken("token-without-mcp-scope")
+                    .setRefreshToken("token-without-mcp-scope-refresh")
+                    .setClientId("workbuddy-mcp")
                     .setUserId(1002L)
                     .setTenantId(2001L)
                     .setScopes(List.of("user.read"))

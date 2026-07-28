@@ -97,7 +97,16 @@ public class AcfMcpToolCallHandler {
                 .consumerType(CapabilityConsumerType.MCP)
                 .consumerId(contextValue(transportContext, McpTransportContextKeys.CONSUMER_ID, String.class))
                 .clientRequestId(clientRequestId)
+                .attributes(contextAttributes(transportContext))
                 .build();
+    }
+
+    private static Map<String, Object> contextAttributes(McpTransportContext transportContext) {
+        String clientId = contextValue(transportContext, McpTransportContextKeys.CLIENT_ID, String.class);
+        if (clientId == null || clientId.isBlank()) {
+            return Map.of();
+        }
+        return Map.of("oauthClientId", clientId);
     }
 
     private static <T> T contextValue(McpTransportContext context, String key, Class<T> type) {

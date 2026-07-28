@@ -16,6 +16,18 @@ import java.util.Map;
 public class OAuth2AccessTokenCheckRespDTO implements Serializable {
 
     /**
+     * 访问令牌
+     */
+    private String accessToken;
+    /**
+     * 刷新令牌
+     */
+    private String refreshToken;
+    /**
+     * 客户端编号
+     */
+    private String clientId;
+    /**
      * 用户编号
      */
     private Long userId;

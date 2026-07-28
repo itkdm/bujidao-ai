@@ -4,6 +4,7 @@ import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolDescriptor;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
+import cn.iocoder.yudao.framework.common.biz.system.oauth2.OAuth2TokenCommonApi;
 import cn.iocoder.yudao.framework.security.config.SecurityProperties;
 import cn.iocoder.yudao.framework.web.config.WebProperties;
 import cn.iocoder.yudao.framework.mcp.security.McpTransportContextKeys;
@@ -242,6 +243,11 @@ class McpServerInitializeIntegrationTest {
         @Bean
         SecurityProperties securityProperties() {
             return new SecurityProperties();
+        }
+
+        @Bean
+        OAuth2TokenCommonApi oauth2TokenCommonApi() {
+            return mock(OAuth2TokenCommonApi.class);
         }
 
         @Bean("mcpSecurityFilterChain")

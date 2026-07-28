@@ -2,6 +2,7 @@ package cn.iocoder.yudao.framework.mcp.config;
 
 import cn.iocoder.yudao.framework.acf.config.YudaoAcfAutoConfiguration;
 import cn.iocoder.yudao.framework.acf.core.annotation.AgentCapability;
+import cn.iocoder.yudao.framework.common.biz.system.oauth2.OAuth2TokenCommonApi;
 import cn.iocoder.yudao.framework.common.biz.system.permission.PermissionCommonApi;
 import cn.iocoder.yudao.framework.security.config.SecurityProperties;
 import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
@@ -121,6 +122,11 @@ class McpAcfExecutionIntegrationTest {
         @Bean
         SecurityProperties securityProperties() {
             return new SecurityProperties();
+        }
+
+        @Bean
+        OAuth2TokenCommonApi oauth2TokenCommonApi() {
+            return mock(OAuth2TokenCommonApi.class);
         }
 
         @Bean("mcpSecurityFilterChain")

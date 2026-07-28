@@ -2,9 +2,11 @@ package cn.iocoder.yudao.framework.mcp.config;
 
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
+import cn.iocoder.yudao.framework.common.biz.system.oauth2.OAuth2TokenCommonApi;
 import cn.iocoder.yudao.framework.mcp.oauth2.McpOAuthMetadataController;
 import cn.iocoder.yudao.framework.security.config.SecurityProperties;
 import cn.iocoder.yudao.framework.security.core.filter.TokenAuthenticationFilter;
+import cn.iocoder.yudao.framework.mcp.security.McpStrictAccessTokenFilter;
 import cn.iocoder.yudao.framework.web.config.WebProperties;
 import cn.iocoder.yudao.framework.mcp.security.McpScopeAuthorizationFilter;
 import cn.iocoder.yudao.framework.mcp.security.McpTenantContextFilter;
@@ -29,6 +31,7 @@ class YudaoMcpAutoConfigurationTest {
                     YudaoMcpAutoConfiguration.class, YudaoMcpAcfAutoConfiguration.class))
             .withBean(CapabilityToolCatalog.class, () -> mock(CapabilityToolCatalog.class))
             .withBean(CapabilityToolInvoker.class, () -> mock(CapabilityToolInvoker.class))
+            .withBean(OAuth2TokenCommonApi.class, () -> mock(OAuth2TokenCommonApi.class))
             .withBean(TokenAuthenticationFilter.class, () -> mock(TokenAuthenticationFilter.class))
             .withBean("mcpSecurityFilterChain", SecurityFilterChain.class, () -> mock(SecurityFilterChain.class))
             .withBean(SecurityProperties.class, SecurityProperties::new)
@@ -56,6 +59,7 @@ class YudaoMcpAutoConfigurationTest {
                     assertThat(context).hasSingleBean(ServerTransportSecurityValidator.class);
                     assertThat(context).hasSingleBean(McpTenantContextFilter.class);
                     assertThat(context).hasSingleBean(McpScopeAuthorizationFilter.class);
+                    assertThat(context).hasSingleBean(McpStrictAccessTokenFilter.class);
                     assertThat(context.getBean(YudaoMcpServerProperties.class).getRequiredScopes())
                             .containsExactly("mcp:access");
                     assertThat(context.getBean(YudaoMcpAutoConfiguration.MCP_QUERY_TOKEN_FILTER_NAME))
