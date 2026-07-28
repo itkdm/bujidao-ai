@@ -1,5 +1,6 @@
 package cn.iocoder.yudao.framework.mcp.security;
 
+import cn.iocoder.yudao.framework.mcp.config.YudaoMcpServerProperties;
 import cn.iocoder.yudao.framework.security.core.LoginUser;
 import cn.iocoder.yudao.framework.security.core.util.SecurityFrameworkUtils;
 import jakarta.servlet.FilterChain;
@@ -20,7 +21,7 @@ import static org.mockito.Mockito.verify;
 class McpScopeAuthorizationFilterTest {
 
     private final McpScopeAuthorizationFilter filter =
-            new McpScopeAuthorizationFilter(List.of("mcp:access"));
+            new McpScopeAuthorizationFilter(properties(List.of("mcp:access")));
 
     @AfterEach
     void clearContext() {
@@ -51,6 +52,9 @@ class McpScopeAuthorizationFilterTest {
 
         verify(chain, never()).doFilter(request, response);
         assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_FORBIDDEN);
+        assertThat(response.getHeader("WWW-Authenticate"))
+                .contains("error=\"insufficient_scope\"", "scope=\"mcp:access\"",
+                        "resource_metadata=\"http://localhost/.well-known/oauth-protected-resource/mcp\"");
     }
 
     @Test
@@ -82,7 +86,7 @@ class McpScopeAuthorizationFilterTest {
     @Test
     void shouldRequireAllConfiguredScopes() throws Exception {
         McpScopeAuthorizationFilter multiScopeFilter =
-                new McpScopeAuthorizationFilter(List.of("mcp:access", "mcp:tools"));
+                new McpScopeAuthorizationFilter(properties(List.of("mcp:access", "mcp:tools")));
         MockHttpServletRequest request = new MockHttpServletRequest();
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = mock(FilterChain.class);
@@ -127,6 +131,12 @@ class McpScopeAuthorizationFilterTest {
         loginUser.setTenantId(2001L);
         loginUser.setScopes(scopes);
         SecurityFrameworkUtils.setLoginUser(loginUser, request);
+    }
+
+    private static YudaoMcpServerProperties properties(List<String> requiredScopes) {
+        YudaoMcpServerProperties properties = new YudaoMcpServerProperties();
+        properties.setRequiredScopes(requiredScopes);
+        return properties;
     }
 
 }

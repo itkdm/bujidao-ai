@@ -1,7 +1,9 @@
 package cn.iocoder.yudao.framework.mcp.security;
 
+import cn.iocoder.yudao.framework.mcp.config.YudaoMcpServerProperties;
 import cn.iocoder.yudao.framework.security.core.LoginUser;
 import cn.iocoder.yudao.framework.security.core.util.SecurityFrameworkUtils;
+import lombok.RequiredArgsConstructor;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -20,14 +22,15 @@ import java.util.Set;
  *
  * @author bujidao
  */
+@RequiredArgsConstructor
 public class McpScopeAuthorizationFilter extends OncePerRequestFilter {
 
     private static final String ERROR_MESSAGE = "Authenticated user lacks the required scope for the MCP endpoint";
 
-    private final Set<String> requiredScopes;
+    private final YudaoMcpServerProperties properties;
 
-    public McpScopeAuthorizationFilter(List<String> requiredScopes) {
-        this.requiredScopes = Set.copyOf(requiredScopes);
+    private Set<String> requiredScopes() {
+        return Set.copyOf(properties.getRequiredScopes());
     }
 
     @Override
@@ -41,6 +44,8 @@ public class McpScopeAuthorizationFilter extends OncePerRequestFilter {
         }
 
         if (!hasRequiredScopes(loginUser)) {
+            response.setHeader("WWW-Authenticate",
+                    McpBearerAuthenticationHeaders.insufficientScope(request, properties));
             response.sendError(HttpServletResponse.SC_FORBIDDEN, ERROR_MESSAGE);
             return;
         }
@@ -52,7 +57,7 @@ public class McpScopeAuthorizationFilter extends OncePerRequestFilter {
         if (grantedScopes == null || grantedScopes.isEmpty()) {
             return false;
         }
-        return grantedScopes.containsAll(requiredScopes);
+        return grantedScopes.containsAll(requiredScopes());
     }
 
 }

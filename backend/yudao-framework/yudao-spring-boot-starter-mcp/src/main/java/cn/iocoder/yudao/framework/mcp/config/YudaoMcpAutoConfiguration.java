@@ -1,5 +1,6 @@
 package cn.iocoder.yudao.framework.mcp.config;
 
+import cn.iocoder.yudao.framework.mcp.oauth2.McpOAuthMetadataController;
 import cn.iocoder.yudao.framework.mcp.security.McpAuthenticatedTransportContextExtractor;
 import cn.iocoder.yudao.framework.mcp.security.McpAuthenticationEntryPoint;
 import cn.iocoder.yudao.framework.mcp.security.McpQueryTokenRejectingFilter;
@@ -9,6 +10,7 @@ import cn.iocoder.yudao.framework.mcp.tool.McpToolSpecificationProvider;
 import cn.iocoder.yudao.framework.mcp.transport.McpRequestSizeLimitFilter;
 import cn.iocoder.yudao.framework.security.config.SecurityProperties;
 import cn.iocoder.yudao.framework.security.core.filter.TokenAuthenticationFilter;
+import cn.iocoder.yudao.framework.web.config.WebProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
@@ -112,7 +114,7 @@ public class YudaoMcpAutoConfiguration {
                 .sessionManagement(configurer -> configurer
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(configurer -> configurer
-                        .authenticationEntryPoint(new McpAuthenticationEntryPoint()))
+                        .authenticationEntryPoint(new McpAuthenticationEntryPoint(properties)))
                 .addFilterBefore(tokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterAfter(scopeAuthorizationFilter, TokenAuthenticationFilter.class)
                 .addFilterAfter(tenantContextFilter, McpScopeAuthorizationFilter.class);
@@ -122,7 +124,14 @@ public class YudaoMcpAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public McpScopeAuthorizationFilter mcpScopeAuthorizationFilter(YudaoMcpServerProperties properties) {
-        return new McpScopeAuthorizationFilter(properties.getRequiredScopes());
+        return new McpScopeAuthorizationFilter(properties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public McpOAuthMetadataController mcpOAuthMetadataController(
+            YudaoMcpServerProperties properties, ObjectProvider<WebProperties> webProperties) {
+        return new McpOAuthMetadataController(properties, webProperties);
     }
 
     @Bean

@@ -2,6 +2,7 @@ package cn.iocoder.yudao.framework.mcp.config;
 
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
+import cn.iocoder.yudao.framework.mcp.oauth2.McpOAuthMetadataController;
 import cn.iocoder.yudao.framework.security.config.SecurityProperties;
 import cn.iocoder.yudao.framework.security.core.filter.TokenAuthenticationFilter;
 import cn.iocoder.yudao.framework.web.config.WebProperties;
@@ -50,6 +51,7 @@ class YudaoMcpAutoConfigurationTest {
                     assertThat(context).hasSingleBean(HttpServletStatelessServerTransport.class);
                     assertThat(context).hasSingleBean(YudaoMcpServerProperties.class);
                     assertThat(context).hasSingleBean(YudaoMcpAcfProperties.class);
+                    assertThat(context).hasSingleBean(McpOAuthMetadataController.class);
                     assertThat(context).hasSingleBean(McpTransportContextExtractor.class);
                     assertThat(context).hasSingleBean(ServerTransportSecurityValidator.class);
                     assertThat(context).hasSingleBean(McpTenantContextFilter.class);

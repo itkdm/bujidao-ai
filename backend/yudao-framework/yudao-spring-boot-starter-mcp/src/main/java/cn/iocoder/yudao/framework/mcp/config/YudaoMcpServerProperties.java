@@ -51,8 +51,35 @@ public class YudaoMcpServerProperties {
     @NotEmpty
     private List<@NotBlank String> requiredScopes = List.of("mcp:access");
 
+    /**
+     * MCP 资源的外部访问地址。未配置时按当前请求推导。
+     */
+    private String publicResourceUri;
+
+    /**
+     * OAuth 授权服务器 issuer。未配置时按当前请求 Host 推导。
+     */
+    private String authorizationServerIssuer;
+
+    /**
+     * 浏览器授权入口。未配置时使用 yudao.web.admin-ui.url + /sso。
+     */
+    private String authorizationEndpoint;
+
+    /**
+     * OAuth token endpoint。未配置时使用 yudao.web.admin-api.prefix + /system/oauth2/token。
+     */
+    private String tokenEndpoint;
+
+    /**
+     * OAuth token revoke endpoint。未配置时复用 tokenEndpoint。
+     */
+    private String revocationEndpoint;
+
     @NotBlank
     private String name = "bujidao-mcp-server";
+
+    private String resourceDocumentation;
 
     @NotBlank
     private String version = "1.0.0";
