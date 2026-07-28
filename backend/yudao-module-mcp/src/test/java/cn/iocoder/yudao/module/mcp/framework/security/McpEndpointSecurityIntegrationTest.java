@@ -45,6 +45,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -121,6 +122,33 @@ class McpEndpointSecurityIntegrationTest {
         assertThat(response.getStatusCode().value()).isEqualTo(403);
     }
 
+    @Test
+    void shouldRejectAuthenticatedTokenWithoutRequiredScope() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth("token-without-mcp-scope");
+
+        ResponseEntity<String> response = postInitialize(headers);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(403);
+        verify(capabilityToolInvoker, never()).invoke(any());
+    }
+
+    @Test
+    void shouldRejectRequestFromDisallowedOrigin() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth("valid-token");
+        headers.setOrigin("https://attacker.example");
+
+        ResponseEntity<String> response = postInitialize(headers);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(403);
+        verify(capabilityToolInvoker, never()).invoke(any());
+    }
+
+    // 非法 Host 的 421 判定在 YudaoMcpServerAutoConfigurationTest 中通过 Validator 直接覆盖。
+    // 此处不做端到端用例：Host 属于 HttpURLConnection 受限 Header，自定义值会被静默丢弃，
+    // 放开需要 JVM 级系统属性，且 Origin 用例已经证明 Validator 已接入 Transport。
+
     private ResponseEntity<String> postInitialize(HttpHeaders headers) {
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setAccept(List.of(MediaType.APPLICATION_JSON, MediaType.TEXT_EVENT_STREAM));
@@ -180,9 +208,15 @@ class McpEndpointSecurityIntegrationTest {
             OAuth2AccessTokenCheckRespDTO token = new OAuth2AccessTokenCheckRespDTO()
                     .setUserId(1001L)
                     .setTenantId(2001L)
-                    .setScopes(List.of())
+                    .setScopes(List.of("mcp:access"))
                     .setExpiresTime(LocalDateTime.now().plusMinutes(10));
             when(api.checkAccessToken("valid-token")).thenReturn(token);
+            OAuth2AccessTokenCheckRespDTO tokenWithoutScope = new OAuth2AccessTokenCheckRespDTO()
+                    .setUserId(1002L)
+                    .setTenantId(2001L)
+                    .setScopes(List.of("user.read"))
+                    .setExpiresTime(LocalDateTime.now().plusMinutes(10));
+            when(api.checkAccessToken("token-without-mcp-scope")).thenReturn(tokenWithoutScope);
             return api;
         }
 

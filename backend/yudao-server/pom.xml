@@ -101,12 +101,12 @@
 <!--            <version>${revision}</version>-->
 <!--        </dependency>-->
 
-        <!-- ERP 相关模块。默认注释，保证编译速度 -->
-<!--        <dependency>-->
-<!--            <groupId>cn.iocoder.boot</groupId>-->
-<!--            <artifactId>yudao-module-erp</artifactId>-->
-<!--            <version>${revision}</version>-->
-<!--        </dependency>-->
+        <!-- ERP 相关模块。为 MCP/ACF 提供首批真实只读业务能力，因此启用 -->
+        <dependency>
+            <groupId>cn.iocoder.boot</groupId>
+            <artifactId>yudao-module-erp</artifactId>
+            <version>${revision}</version>
+        </dependency>
 
         <!-- AI 大模型相关模块。默认注释，保证编译速度 -->
 <!--        <dependency>-->

@@ -42,6 +42,15 @@ public class YudaoMcpServerProperties {
     @NotEmpty
     private List<@NotBlank String> allowedHosts = List.of("localhost:*", "127.0.0.1:*");
 
+    /**
+     * 访问 MCP Endpoint 必须具备的授权范围，取自认证 Token 的 scope。
+     *
+     * 采用「全部满足」语义：认证用户缺少其中任意一项即返回 403。
+     * 该配置不允许为空，避免把 MCP Endpoint 降级为「任意已认证用户可用」。
+     */
+    @NotEmpty
+    private List<@NotBlank String> requiredScopes = List.of("mcp:access");
+
     @NotBlank
     private String name = "bujidao-mcp-server";
 

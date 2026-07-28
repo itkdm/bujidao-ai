@@ -5,6 +5,7 @@ import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import cn.iocoder.yudao.framework.security.config.SecurityProperties;
 import cn.iocoder.yudao.framework.security.core.filter.TokenAuthenticationFilter;
 import cn.iocoder.yudao.framework.web.config.WebProperties;
+import cn.iocoder.yudao.module.mcp.framework.security.McpScopeAuthorizationFilter;
 import cn.iocoder.yudao.module.mcp.framework.security.McpTenantContextFilter;
 import io.modelcontextprotocol.server.McpStatelessSyncServer;
 import io.modelcontextprotocol.server.McpTransportContextExtractor;
@@ -52,6 +53,9 @@ class YudaoMcpServerAutoConfigurationTest {
                     assertThat(context).hasSingleBean(McpTransportContextExtractor.class);
                     assertThat(context).hasSingleBean(ServerTransportSecurityValidator.class);
                     assertThat(context).hasSingleBean(McpTenantContextFilter.class);
+                    assertThat(context).hasSingleBean(McpScopeAuthorizationFilter.class);
+                    assertThat(context.getBean(YudaoMcpServerProperties.class).getRequiredScopes())
+                            .containsExactly("mcp:access");
                     assertThat(context.getBean(YudaoMcpServerAutoConfiguration.MCP_QUERY_TOKEN_FILTER_NAME))
                             .isInstanceOf(org.springframework.boot.web.servlet.FilterRegistrationBean.class);
                     assertThat(context.getBean(YudaoMcpServerAutoConfiguration.MCP_REQUEST_SIZE_FILTER_NAME))
@@ -93,6 +97,14 @@ class YudaoMcpServerAutoConfigurationTest {
         contextRunner.withPropertyValues(
                         "yudao.mcp.server.enabled=true",
                         "yudao.mcp.server.max-request-size=0B")
+                .run(context -> assertThat(context).hasFailed());
+    }
+
+    @Test
+    void shouldRejectEmptyRequiredScopesConfiguration() {
+        contextRunner.withPropertyValues(
+                        "yudao.mcp.server.enabled=true",
+                        "yudao.mcp.server.required-scopes=")
                 .run(context -> assertThat(context).hasFailed());
     }
 

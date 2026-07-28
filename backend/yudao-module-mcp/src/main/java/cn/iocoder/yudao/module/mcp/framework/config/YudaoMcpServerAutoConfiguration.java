@@ -8,6 +8,7 @@ import cn.iocoder.yudao.module.mcp.framework.security.McpAuthenticatedTransportC
 import cn.iocoder.yudao.module.mcp.framework.security.McpAuthenticationEntryPoint;
 import cn.iocoder.yudao.module.mcp.framework.security.McpQueryTokenRejectingFilter;
 import cn.iocoder.yudao.module.mcp.framework.security.McpRequestSizeLimitFilter;
+import cn.iocoder.yudao.module.mcp.framework.security.McpScopeAuthorizationFilter;
 import cn.iocoder.yudao.module.mcp.framework.security.McpTenantContextFilter;
 import cn.iocoder.yudao.module.mcp.framework.tool.AcfMcpToolCallHandler;
 import cn.iocoder.yudao.module.mcp.framework.tool.AcfMcpToolSpecificationFactory;
@@ -102,8 +103,10 @@ public class YudaoMcpServerAutoConfiguration {
     public SecurityFilterChain mcpSecurityFilterChain(HttpSecurity http,
                                                       YudaoMcpServerProperties properties,
                                                       TokenAuthenticationFilter tokenAuthenticationFilter,
+                                                      McpScopeAuthorizationFilter scopeAuthorizationFilter,
                                                       McpTenantContextFilter tenantContextFilter)
             throws Exception {
+        // 过滤器顺序：认证 -> scope 判定 -> 租户上下文收口，避免为无权限请求绑定租户上下文
         http.securityMatcher(properties.getEndpoint())
                 .authorizeHttpRequests(registry -> registry.anyRequest().authenticated())
                 .csrf(AbstractHttpConfigurer::disable)
@@ -113,8 +116,15 @@ public class YudaoMcpServerAutoConfiguration {
                 .exceptionHandling(configurer -> configurer
                         .authenticationEntryPoint(new McpAuthenticationEntryPoint()))
                 .addFilterBefore(tokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterAfter(tenantContextFilter, TokenAuthenticationFilter.class);
+                .addFilterAfter(scopeAuthorizationFilter, TokenAuthenticationFilter.class)
+                .addFilterAfter(tenantContextFilter, McpScopeAuthorizationFilter.class);
         return http.build();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public McpScopeAuthorizationFilter mcpScopeAuthorizationFilter(YudaoMcpServerProperties properties) {
+        return new McpScopeAuthorizationFilter(properties.getRequiredScopes());
     }
 
     @Bean

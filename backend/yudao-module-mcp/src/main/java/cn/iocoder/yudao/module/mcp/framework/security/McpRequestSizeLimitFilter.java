@@ -47,11 +47,30 @@ public class McpRequestSizeLimitFilter extends OncePerRequestFilter {
                 throw exception;
             }
             reject(response);
+        } catch (RuntimeException exception) {
+            if (!isRequestBodyTooLarge(exception)) {
+                throw exception;
+            }
+            if (response.isCommitted()) {
+                throw exception;
+            }
+            reject(response);
         }
     }
 
     private static void reject(HttpServletResponse response) throws IOException {
         response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE, ERROR_MESSAGE);
+    }
+
+    private static boolean isRequestBodyTooLarge(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof RequestBodyTooLargeException) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     private static final class LimitedBodyRequest extends HttpServletRequestWrapper {

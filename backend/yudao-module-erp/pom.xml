@@ -26,6 +26,12 @@
 
         <!-- 业务组件 -->
 
+        <!-- ACF 能力治理内核，用于把 ERP 只读业务能力声明为 Agent 可调用能力 -->
+        <dependency>
+            <groupId>cn.iocoder.boot</groupId>
+            <artifactId>yudao-spring-boot-starter-acf</artifactId>
+        </dependency>
+
         <!-- Web 相关 -->
         <dependency>
             <groupId>cn.iocoder.boot</groupId>

@@ -1,5 +1,6 @@
 package cn.iocoder.yudao.module.mcp.framework.security;
 
+import cn.hutool.core.io.IORuntimeException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletRequestWrapper;
@@ -88,6 +89,30 @@ class McpRequestSizeLimitFilterTest {
         filter.doFilter(request, response, chain);
 
         assertThat(response.getStatus()).isEqualTo(413);
+    }
+
+    @Test
+    void shouldRejectOversizedBodyWhenDownstreamWrapsReadException() throws Exception {
+        MockHttpServletRequest source = requestWithBody("123456789");
+        HttpServletRequest request = new HttpServletRequestWrapper(source) {
+            @Override
+            public long getContentLengthLong() {
+                return -1;
+            }
+        };
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        FilterChain chain = (wrappedRequest, wrappedResponse) -> {
+            try {
+                ((HttpServletRequest) wrappedRequest).getInputStream().readAllBytes();
+            } catch (Exception exception) {
+                throw new IORuntimeException(exception);
+            }
+        };
+
+        filter.doFilter(request, response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(413);
+        assertThat(response.getErrorMessage()).isEqualTo("MCP request body is too large");
     }
 
     private static MockHttpServletRequest requestWithBody(String body) {
