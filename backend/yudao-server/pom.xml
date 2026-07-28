@@ -32,10 +32,10 @@
             <version>${revision}</version>
         </dependency>
 
-        <!-- ACF 能力的 MCP Server 协议适配模块，默认关闭，通过 yudao.mcp.server.enabled 启用 -->
+        <!-- MCP Server Starter，默认关闭，通过 yudao.mcp.server.enabled 启用 -->
         <dependency>
             <groupId>cn.iocoder.boot</groupId>
-            <artifactId>yudao-module-mcp</artifactId>
+            <artifactId>yudao-spring-boot-starter-mcp</artifactId>
             <version>${revision}</version>
         </dependency>
 
