@@ -4,6 +4,7 @@ import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.module.system.controller.admin.oauth2.vo.client.OAuth2ClientPageReqVO;
 import cn.iocoder.yudao.module.system.controller.admin.oauth2.vo.client.OAuth2ClientSaveReqVO;
 import cn.iocoder.yudao.module.system.dal.dataobject.oauth2.OAuth2ClientDO;
+import cn.iocoder.yudao.module.system.service.oauth2.dto.OAuth2DynamicClientRegistrationCreateReqDTO;
 import jakarta.validation.Valid;
 
 import java.util.Collection;
@@ -25,6 +26,17 @@ public interface OAuth2ClientService {
      * @return 编号
      */
     Long createOAuth2Client(@Valid OAuth2ClientSaveReqVO createReqVO);
+
+    /**
+     * 创建动态注册的 OAuth2 客户端。
+     *
+     * <p>用于 OAuth2 Dynamic Client Registration。该入口不复用后台管理 VO，
+     * 因为 native app 的 redirect_uri 可能是 custom scheme，不能套用后台表单的 URL 校验。</p>
+     *
+     * @param createReqDTO 创建信息
+     * @return 客户端
+     */
+    OAuth2ClientDO createDynamicOAuth2Client(OAuth2DynamicClientRegistrationCreateReqDTO createReqDTO);
 
     /**
      * 更新 OAuth2 客户端

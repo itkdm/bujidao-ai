@@ -76,6 +76,19 @@ public class YudaoMcpServerProperties {
      */
     private String revocationEndpoint;
 
+    /**
+     * 是否在 OAuth Authorization Server Metadata 中暴露 Dynamic Client Registration 端点。
+     *
+     * 该开关只影响 MCP discovery 元数据；真正的注册端点是否可用由授权服务器自行控制。
+     */
+    private boolean dynamicClientRegistrationEnabled = false;
+
+    /**
+     * OAuth Dynamic Client Registration endpoint。未配置时使用
+     * yudao.web.admin-api.prefix + /system/oauth2/register。
+     */
+    private String registrationEndpoint;
+
     @NotBlank
     private String name = "bujidao-mcp-server";
 

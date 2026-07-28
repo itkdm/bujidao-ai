@@ -217,4 +217,31 @@ public class OAuth2ClientServiceImplTest extends BaseDbUnitTest {
         }
     }
 
+    @Test
+    public void testValidOAuthClientFromCache_dynamicClientRedirectUriExactMatch() {
+        try (MockedStatic<SpringUtil> springUtilMockedStatic = mockStatic(SpringUtil.class)) {
+            springUtilMockedStatic.when(() -> SpringUtil.getBean(eq(OAuth2ClientServiceImpl.class)))
+                    .thenReturn(oauth2ClientService);
+
+            OAuth2ClientDO client = randomPojo(OAuth2ClientDO.class)
+                    .setClientId("mcp-dcr-demo")
+                    .setStatus(CommonStatusEnum.ENABLE.getStatus())
+                    .setRedirectUris(Collections.singletonList("http://127.0.0.1:12345/oauth/callback"))
+                    .setAuthorizedGrantTypes(Collections.singletonList("authorization_code"))
+                    .setScopes(Collections.singletonList("mcp:access"))
+                    .setAdditionalInformation("{\"dynamic_client_registration\":true}");
+            oauth2ClientMapper.insert(client);
+
+            OAuth2ClientDO result = oauth2ClientService.validOAuthClientFromCache(client.getClientId(), null,
+                    "authorization_code", Collections.singletonList("mcp:access"),
+                    "http://127.0.0.1:12345/oauth/callback");
+            assertPojoEquals(client, result);
+
+            assertServiceException(() -> oauth2ClientService.validOAuthClientFromCache(client.getClientId(), null,
+                            "authorization_code", Collections.singletonList("mcp:access"),
+                            "http://127.0.0.1:12345/oauth/callback/extra"),
+                    OAUTH2_CLIENT_REDIRECT_URI_NOT_MATCH, "http://127.0.0.1:12345/oauth/callback/extra");
+        }
+    }
+
 }

@@ -42,9 +42,22 @@ class McpOAuthMetadataControllerTest {
         assertThat(metadata.get("authorization_endpoint")).isEqualTo("https://auth.example.com/sso");
         assertThat(metadata.get("token_endpoint"))
                 .isEqualTo("https://auth.example.com/admin-api/system/oauth2/token");
+        assertThat(metadata).doesNotContainKey("registration_endpoint");
         assertThat(metadata.get("token_endpoint_auth_methods_supported"))
                 .isEqualTo(List.of("none", "client_secret_basic"));
         assertThat(metadata.get("code_challenge_methods_supported")).isEqualTo(List.of("S256"));
+    }
+
+    @Test
+    void shouldExposeRegistrationEndpointWhenEnabled() {
+        YudaoMcpServerProperties properties = new YudaoMcpServerProperties();
+        properties.setDynamicClientRegistrationEnabled(true);
+
+        Map<String, Object> metadata = new McpOAuthMetadataController(
+                properties, emptyBeanProvider()).authorizationServerMetadata(request());
+
+        assertThat(metadata.get("registration_endpoint"))
+                .isEqualTo("https://erp.example.com/admin-api/system/oauth2/register");
     }
 
     @Test
@@ -64,6 +77,19 @@ class McpOAuthMetadataControllerTest {
         assertThat(metadata.get("token_endpoint"))
                 .isEqualTo("https://erp.example.com/console-api/system/oauth2/token/raw");
         assertThat(metadata).doesNotContainKey("revocation_endpoint");
+    }
+
+    @Test
+    void shouldUseConfiguredRegistrationEndpoint() {
+        YudaoMcpServerProperties properties = new YudaoMcpServerProperties();
+        properties.setDynamicClientRegistrationEnabled(true);
+        properties.setRegistrationEndpoint("https://auth.example.com/oauth/register");
+
+        Map<String, Object> metadata = new McpOAuthMetadataController(
+                properties, emptyBeanProvider()).authorizationServerMetadata(request());
+
+        assertThat(metadata.get("registration_endpoint"))
+                .isEqualTo("https://auth.example.com/oauth/register");
     }
 
     private static MockHttpServletRequest request() {

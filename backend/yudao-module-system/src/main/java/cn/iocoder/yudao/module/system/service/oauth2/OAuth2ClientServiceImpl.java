@@ -6,6 +6,7 @@ import cn.hutool.core.util.StrUtil;
 import cn.hutool.extra.spring.SpringUtil;
 import cn.iocoder.yudao.framework.common.enums.CommonStatusEnum;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
+import cn.iocoder.yudao.framework.common.util.json.JsonUtils;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.framework.common.util.string.StrUtils;
 import cn.iocoder.yudao.module.system.controller.admin.oauth2.vo.client.OAuth2ClientPageReqVO;
@@ -13,6 +14,7 @@ import cn.iocoder.yudao.module.system.controller.admin.oauth2.vo.client.OAuth2Cl
 import cn.iocoder.yudao.module.system.dal.dataobject.oauth2.OAuth2ClientDO;
 import cn.iocoder.yudao.module.system.dal.mysql.oauth2.OAuth2ClientMapper;
 import cn.iocoder.yudao.module.system.dal.redis.RedisKeyConstants;
+import cn.iocoder.yudao.module.system.service.oauth2.dto.OAuth2DynamicClientRegistrationCreateReqDTO;
 import com.google.common.annotations.VisibleForTesting;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -23,6 +25,7 @@ import org.springframework.validation.annotation.Validated;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.module.system.enums.ErrorCodeConstants.*;
@@ -47,6 +50,29 @@ public class OAuth2ClientServiceImpl implements OAuth2ClientService {
         OAuth2ClientDO client = BeanUtils.toBean(createReqVO, OAuth2ClientDO.class);
         oauth2ClientMapper.insert(client);
         return client.getId();
+    }
+
+    @Override
+    public OAuth2ClientDO createDynamicOAuth2Client(OAuth2DynamicClientRegistrationCreateReqDTO createReqDTO) {
+        validateClientIdExists(null, createReqDTO.getClientId());
+        OAuth2ClientDO client = BeanUtils.toBean(createReqDTO, OAuth2ClientDO.class)
+                .setClientId(createReqDTO.getClientId())
+                .setSecret("")
+                .setName(createReqDTO.getClientName())
+                .setLogo(createReqDTO.getLogoUri())
+                .setDescription(createReqDTO.getDescription())
+                .setStatus(CommonStatusEnum.ENABLE.getStatus())
+                .setRedirectUris(createReqDTO.getRedirectUris())
+                .setAuthorizedGrantTypes(createReqDTO.getAuthorizedGrantTypes())
+                .setScopes(createReqDTO.getScopes())
+                .setAutoApproveScopes(createReqDTO.getAutoApproveScopes())
+                .setAuthorities(List.of())
+                .setResourceIds(createReqDTO.getResourceIds())
+                .setAdditionalInformation(createReqDTO.getAdditionalInformation())
+                .setAccessTokenValiditySeconds(createReqDTO.getAccessTokenValiditySeconds())
+                .setRefreshTokenValiditySeconds(createReqDTO.getRefreshTokenValiditySeconds());
+        oauth2ClientMapper.insert(client);
+        return client;
     }
 
     @Override
@@ -143,10 +169,36 @@ public class OAuth2ClientServiceImpl implements OAuth2ClientService {
             throw exception(OAUTH2_CLIENT_SCOPE_OVER);
         }
         // 校验回调地址
-        if (StrUtil.isNotEmpty(redirectUri) && !StrUtils.startWithAny(redirectUri, client.getRedirectUris())) {
+        if (StrUtil.isNotEmpty(redirectUri) && !isRedirectUriMatched(client, redirectUri)) {
             throw exception(OAUTH2_CLIENT_REDIRECT_URI_NOT_MATCH, redirectUri);
         }
         return client;
+    }
+
+    private static boolean isRedirectUriMatched(OAuth2ClientDO client, String redirectUri) {
+        if (isDynamicRegisteredClient(client)) {
+            return CollUtil.contains(client.getRedirectUris(), redirectUri);
+        }
+        return StrUtils.startWithAny(redirectUri, client.getRedirectUris());
+    }
+
+    private static boolean isDynamicRegisteredClient(OAuth2ClientDO client) {
+        if (client == null || StrUtil.isBlank(client.getAdditionalInformation())) {
+            return false;
+        }
+        try {
+            Map<?, ?> additionalInformation = JsonUtils.parseObject(client.getAdditionalInformation(), Map.class);
+            if (CollUtil.isEmpty((Map<?, ?>) additionalInformation)) {
+                return false;
+            }
+            Object value = additionalInformation.get("dynamic_client_registration");
+            if (value == null) {
+                value = additionalInformation.get("dynamicClientRegistration");
+            }
+            return Boolean.TRUE.equals(value) || StrUtil.equalsIgnoreCase(String.valueOf(value), "true");
+        } catch (RuntimeException exception) {
+            return false;
+        }
     }
 
     /**

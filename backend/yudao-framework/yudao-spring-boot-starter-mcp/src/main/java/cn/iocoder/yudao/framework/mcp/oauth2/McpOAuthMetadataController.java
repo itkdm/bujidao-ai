@@ -57,6 +57,10 @@ public class McpOAuthMetadataController {
         if (StrUtil.isNotBlank(revocationEndpoint)) {
             metadata.put("revocation_endpoint", revocationEndpoint);
         }
+        String registrationEndpoint = registrationEndpoint(origin);
+        if (StrUtil.isNotBlank(registrationEndpoint)) {
+            metadata.put("registration_endpoint", registrationEndpoint);
+        }
         metadata.put("response_types_supported", List.of("code"));
         metadata.put("grant_types_supported", List.of("authorization_code", "refresh_token"));
         metadata.put("code_challenge_methods_supported", List.of("S256"));
@@ -97,6 +101,16 @@ public class McpOAuthMetadataController {
             return absolute(origin, properties.getRevocationEndpoint());
         }
         return null;
+    }
+
+    private String registrationEndpoint(String origin) {
+        if (!properties.isDynamicClientRegistrationEnabled()) {
+            return null;
+        }
+        if (StrUtil.isNotBlank(properties.getRegistrationEndpoint())) {
+            return absolute(origin, properties.getRegistrationEndpoint());
+        }
+        return absolute(origin, adminApiPrefix() + "/system/oauth2/register");
     }
 
     private String adminApiPrefix() {
