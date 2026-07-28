@@ -18,6 +18,7 @@ import io.modelcontextprotocol.server.transport.ServerTransportSecurityValidator
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.jackson.JacksonAutoConfiguration;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.security.web.SecurityFilterChain;
 
@@ -63,9 +64,22 @@ class YudaoMcpAutoConfigurationTest {
                     assertThat(context.getBean(YudaoMcpServerProperties.class).getRequiredScopes())
                             .containsExactly("mcp:access");
                     assertThat(context.getBean(YudaoMcpAutoConfiguration.MCP_QUERY_TOKEN_FILTER_NAME))
-                            .isInstanceOf(org.springframework.boot.web.servlet.FilterRegistrationBean.class);
+                            .isInstanceOf(FilterRegistrationBean.class);
                     assertThat(context.getBean(YudaoMcpAutoConfiguration.MCP_REQUEST_SIZE_FILTER_NAME))
-                            .isInstanceOf(org.springframework.boot.web.servlet.FilterRegistrationBean.class);
+                            .isInstanceOf(FilterRegistrationBean.class);
+
+                    FilterRegistrationBean<?> strictAccessTokenFilterRegistration = context.getBean(
+                            YudaoMcpAutoConfiguration.MCP_STRICT_ACCESS_TOKEN_FILTER_REGISTRATION_NAME,
+                            FilterRegistrationBean.class);
+                    FilterRegistrationBean<?> scopeAuthorizationFilterRegistration = context.getBean(
+                            YudaoMcpAutoConfiguration.MCP_SCOPE_AUTHORIZATION_FILTER_REGISTRATION_NAME,
+                            FilterRegistrationBean.class);
+                    FilterRegistrationBean<?> tenantContextFilterRegistration = context.getBean(
+                            YudaoMcpAutoConfiguration.MCP_TENANT_CONTEXT_FILTER_REGISTRATION_NAME,
+                            FilterRegistrationBean.class);
+                    assertThat(strictAccessTokenFilterRegistration.isEnabled()).isFalse();
+                    assertThat(scopeAuthorizationFilterRegistration.isEnabled()).isFalse();
+                    assertThat(tenantContextFilterRegistration.isEnabled()).isFalse();
                 });
     }
 

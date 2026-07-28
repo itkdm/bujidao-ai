@@ -62,6 +62,12 @@ public class YudaoMcpAutoConfiguration {
     public static final String MCP_SERVLET_NAME = "bujidaoMcpServlet";
     public static final String MCP_QUERY_TOKEN_FILTER_NAME = "bujidaoMcpQueryTokenFilter";
     public static final String MCP_REQUEST_SIZE_FILTER_NAME = "bujidaoMcpRequestSizeFilter";
+    public static final String MCP_STRICT_ACCESS_TOKEN_FILTER_REGISTRATION_NAME =
+            "bujidaoMcpStrictAccessTokenFilterRegistration";
+    public static final String MCP_SCOPE_AUTHORIZATION_FILTER_REGISTRATION_NAME =
+            "bujidaoMcpScopeAuthorizationFilterRegistration";
+    public static final String MCP_TENANT_CONTEXT_FILTER_REGISTRATION_NAME =
+            "bujidaoMcpTenantContextFilterRegistration";
 
     @Bean
     @ConditionalOnMissingBean(McpJsonMapper.class)
@@ -152,6 +158,27 @@ public class YudaoMcpAutoConfiguration {
         return new McpTenantContextFilter();
     }
 
+    @Bean(name = MCP_STRICT_ACCESS_TOKEN_FILTER_REGISTRATION_NAME)
+    @ConditionalOnMissingBean(name = MCP_STRICT_ACCESS_TOKEN_FILTER_REGISTRATION_NAME)
+    public FilterRegistrationBean<McpStrictAccessTokenFilter> mcpStrictAccessTokenFilterRegistration(
+            McpStrictAccessTokenFilter filter) {
+        return disableServletFilterRegistration(filter);
+    }
+
+    @Bean(name = MCP_SCOPE_AUTHORIZATION_FILTER_REGISTRATION_NAME)
+    @ConditionalOnMissingBean(name = MCP_SCOPE_AUTHORIZATION_FILTER_REGISTRATION_NAME)
+    public FilterRegistrationBean<McpScopeAuthorizationFilter> mcpScopeAuthorizationFilterRegistration(
+            McpScopeAuthorizationFilter filter) {
+        return disableServletFilterRegistration(filter);
+    }
+
+    @Bean(name = MCP_TENANT_CONTEXT_FILTER_REGISTRATION_NAME)
+    @ConditionalOnMissingBean(name = MCP_TENANT_CONTEXT_FILTER_REGISTRATION_NAME)
+    public FilterRegistrationBean<McpTenantContextFilter> mcpTenantContextFilterRegistration(
+            McpTenantContextFilter filter) {
+        return disableServletFilterRegistration(filter);
+    }
+
     @Bean(name = MCP_QUERY_TOKEN_FILTER_NAME)
     @ConditionalOnMissingBean(name = MCP_QUERY_TOKEN_FILTER_NAME)
     public FilterRegistrationBean<McpQueryTokenRejectingFilter> mcpQueryTokenFilterRegistration(
@@ -214,6 +241,13 @@ public class YudaoMcpAutoConfiguration {
         return toolProviders.orderedStream()
                 .flatMap(provider -> provider.createToolSpecifications().stream())
                 .toList();
+    }
+
+    private static <T extends jakarta.servlet.Filter> FilterRegistrationBean<T> disableServletFilterRegistration(
+            T filter) {
+        FilterRegistrationBean<T> registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
     }
 
 }
