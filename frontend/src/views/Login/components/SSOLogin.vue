@@ -60,6 +60,9 @@ interface queryType {
   clientId: string
   redirectUri: string
   state: string
+  codeChallenge: string
+  codeChallengeMethod: string
+  resource: string
   scopes: string[]
 }
 const queryParams = reactive<queryType>({
@@ -68,6 +71,9 @@ const queryParams = reactive<queryType>({
   clientId: '',
   redirectUri: '',
   state: '',
+  codeChallenge: '',
+  codeChallengeMethod: '',
+  resource: '',
   scopes: [] // 优先从 query 参数获取；如果未传递，从后端获取
 })
 const ssoVisible = computed(() => unref(getLoginState) === LoginStateEnum.SSO) // 是否展示 SSO 登录的表单
@@ -90,6 +96,9 @@ const init = async () => {
   queryParams.clientId = route.query.client_id as string
   queryParams.redirectUri = route.query.redirect_uri as string
   queryParams.state = route.query.state as string
+  queryParams.codeChallenge = route.query.code_challenge as string
+  queryParams.codeChallengeMethod = route.query.code_challenge_method as string
+  queryParams.resource = route.query.resource as string
   if (route.query.scope) {
     queryParams.scopes = (route.query.scope as string).split(' ')
   }
@@ -165,6 +174,9 @@ const doAuthorize = (autoApprove, checkedScopes, uncheckedScopes) => {
     queryParams.clientId,
     queryParams.redirectUri,
     queryParams.state,
+    queryParams.codeChallenge,
+    queryParams.codeChallengeMethod,
+    queryParams.resource,
     autoApprove,
     checkedScopes,
     uncheckedScopes

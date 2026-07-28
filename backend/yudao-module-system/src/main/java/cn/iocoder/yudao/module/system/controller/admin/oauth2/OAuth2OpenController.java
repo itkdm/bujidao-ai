@@ -15,6 +15,7 @@ import cn.iocoder.yudao.module.system.convert.oauth2.OAuth2OpenConvert;
 import cn.iocoder.yudao.module.system.dal.dataobject.oauth2.OAuth2AccessTokenDO;
 import cn.iocoder.yudao.module.system.dal.dataobject.oauth2.OAuth2ApproveDO;
 import cn.iocoder.yudao.module.system.dal.dataobject.oauth2.OAuth2ClientDO;
+import cn.iocoder.yudao.module.system.enums.ErrorCodeConstants;
 import cn.iocoder.yudao.module.system.enums.oauth2.OAuth2GrantTypeEnum;
 import cn.iocoder.yudao.module.system.service.oauth2.OAuth2ApproveService;
 import cn.iocoder.yudao.module.system.service.oauth2.OAuth2ClientService;
@@ -37,6 +38,7 @@ import java.util.List;
 import java.util.Map;
 
 import static cn.iocoder.yudao.framework.common.exception.enums.GlobalErrorCodeConstants.BAD_REQUEST;
+import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception0;
 import static cn.iocoder.yudao.framework.common.pojo.CommonResult.success;
 import static cn.iocoder.yudao.framework.common.util.collection.CollectionUtils.convertList;
@@ -97,9 +99,13 @@ public class OAuth2OpenController {
     @SuppressWarnings("EnhancedSwitchMigration")
     public CommonResult<OAuth2OpenAccessTokenRespVO> postAccessToken(HttpServletRequest request,
                                                                      @RequestParam("grant_type") String grantType,
+                                                                     @RequestParam(value = "client_id", required = false) String clientId,
+                                                                     @RequestParam(value = "client_secret", required = false) String clientSecret,
                                                                      @RequestParam(value = "code", required = false) String code, // 授权码模式
                                                                      @RequestParam(value = "redirect_uri", required = false) String redirectUri, // 授权码模式
                                                                      @RequestParam(value = "state", required = false) String state, // 授权码模式
+                                                                     @RequestParam(value = "code_verifier", required = false) String codeVerifier, // 授权码模式
+                                                                     @RequestParam(value = "resource", required = false) String resource, // 授权码模式
                                                                      @RequestParam(value = "username", required = false) String username, // 密码模式
                                                                      @RequestParam(value = "password", required = false) String password, // 密码模式
                                                                      @RequestParam(value = "scope", required = false) String scope, // 密码模式
@@ -115,15 +121,15 @@ public class OAuth2OpenController {
         }
 
         // 1.2 校验客户端
-        String[] clientIdAndSecret = obtainBasicAuthorization(request);
-        OAuth2ClientDO client = oauth2ClientService.validOAuthClientFromCache(clientIdAndSecret[0], clientIdAndSecret[1],
-                grantType, scopes, redirectUri);
+        OAuth2ClientDO client = obtainTokenClient(request, clientId, clientSecret, grantType, scopes, redirectUri);
+        boolean pkceRequired = isPkceRequired(client);
 
         // 2. 根据授权模式，获取访问令牌
         OAuth2AccessTokenDO accessTokenDO;
         switch (grantTypeEnum) {
             case AUTHORIZATION_CODE:
-                accessTokenDO = oauth2GrantService.grantAuthorizationCodeForAccessToken(client.getClientId(), code, redirectUri, state);
+                accessTokenDO = oauth2GrantService.grantAuthorizationCodeForAccessToken(client.getClientId(), code,
+                        redirectUri, state, codeVerifier, resource, pkceRequired);
                 break;
             case PASSWORD:
                 accessTokenDO = oauth2GrantService.grantPassword(username, password, client.getClientId(), scopes);
@@ -141,16 +147,37 @@ public class OAuth2OpenController {
         return success(OAuth2OpenConvert.INSTANCE.convert(accessTokenDO));
     }
 
+    @PostMapping("/token/raw")
+    @PermitAll
+    @Operation(summary = "获得标准 OAuth2 访问令牌", description = "返回未包装的 OAuth2 token 响应，适合 MCP 等标准 OAuth 客户端调用")
+    @SuppressWarnings("EnhancedSwitchMigration")
+    public OAuth2OpenAccessTokenRespVO postRawAccessToken(HttpServletRequest request,
+                                                          @RequestParam("grant_type") String grantType,
+                                                          @RequestParam(value = "client_id", required = false) String clientId,
+                                                          @RequestParam(value = "client_secret", required = false) String clientSecret,
+                                                          @RequestParam(value = "code", required = false) String code,
+                                                          @RequestParam(value = "redirect_uri", required = false) String redirectUri,
+                                                          @RequestParam(value = "state", required = false) String state,
+                                                          @RequestParam(value = "code_verifier", required = false) String codeVerifier,
+                                                          @RequestParam(value = "resource", required = false) String resource,
+                                                          @RequestParam(value = "username", required = false) String username,
+                                                          @RequestParam(value = "password", required = false) String password,
+                                                          @RequestParam(value = "scope", required = false) String scope,
+                                                          @RequestParam(value = "refresh_token", required = false) String refreshToken) {
+        return postAccessToken(request, grantType, clientId, clientSecret, code, redirectUri, state, codeVerifier,
+                resource, username, password, scope, refreshToken).getData();
+    }
+
     @DeleteMapping("/token")
     @PermitAll
     @Operation(summary = "删除访问令牌")
     @Parameter(name = "token", required = true, description = "访问令牌", example = "biu")
     public CommonResult<Boolean> revokeToken(HttpServletRequest request,
+                                             @RequestParam(value = "client_id", required = false) String clientId,
+                                             @RequestParam(value = "client_secret", required = false) String clientSecret,
                                              @RequestParam("token") String token) {
         // 校验客户端
-        String[] clientIdAndSecret = obtainBasicAuthorization(request);
-        OAuth2ClientDO client = oauth2ClientService.validOAuthClientFromCache(clientIdAndSecret[0], clientIdAndSecret[1],
-                null, null, null);
+        OAuth2ClientDO client = obtainTokenClient(request, clientId, clientSecret, null, null, null);
 
         // 删除访问令牌
         return success(oauth2GrantService.revokeToken(client.getClientId(), token));
@@ -218,7 +245,10 @@ public class OAuth2OpenController {
                                               @RequestParam(value = "scope", required = false) String scope,
                                               @RequestParam("redirect_uri") String redirectUri,
                                               @RequestParam(value = "auto_approve") Boolean autoApprove,
-                                              @RequestParam(value = "state", required = false) String state) {
+                                              @RequestParam(value = "state", required = false) String state,
+                                              @RequestParam(value = "code_challenge", required = false) String codeChallenge,
+                                              @RequestParam(value = "code_challenge_method", required = false) String codeChallengeMethod,
+                                              @RequestParam(value = "resource", required = false) String resource) {
         @SuppressWarnings("unchecked")
         Map<String, Boolean> scopes = JsonUtils.parseObject(scope, Map.class);
         scopes = ObjectUtil.defaultIfNull(scopes, Collections.emptyMap());
@@ -229,6 +259,7 @@ public class OAuth2OpenController {
         // 1.2 校验 redirectUri 重定向域名是否合法 + 校验 scope 是否在 Client 授权范围内
         OAuth2ClientDO client = oauth2ClientService.validOAuthClientFromCache(clientId, null,
                 grantTypeEnum.getGrantType(), scopes.keySet(), redirectUri);
+        validatePkceAndResource(client, grantTypeEnum, codeChallenge, codeChallengeMethod, resource);
 
         // 2.1 假设 approved 为 null，说明是场景一
         if (Boolean.TRUE.equals(autoApprove)) {
@@ -247,7 +278,8 @@ public class OAuth2OpenController {
         // 3.1 如果是 code 授权码模式，则发放 code 授权码，并重定向
         List<String> approveScopes = convertList(scopes.entrySet(), Map.Entry::getKey, Map.Entry::getValue);
         if (grantTypeEnum == OAuth2GrantTypeEnum.AUTHORIZATION_CODE) {
-            return success(getAuthorizationCodeRedirect(getLoginUserId(), client, approveScopes, redirectUri, state));
+            return success(getAuthorizationCodeRedirect(getLoginUserId(), client, approveScopes, redirectUri, state,
+                    codeChallenge, codeChallengeMethod, resource));
         }
         // 3.2 如果是 token 则是 implicit 简化模式，则发送 accessToken 访问令牌，并重定向
         return success(getImplicitGrantRedirect(getLoginUserId(), client, approveScopes, redirectUri, state));
@@ -275,10 +307,11 @@ public class OAuth2OpenController {
     }
 
     private String getAuthorizationCodeRedirect(Long userId, OAuth2ClientDO client,
-                                                List<String> scopes, String redirectUri, String state) {
+                                                List<String> scopes, String redirectUri, String state,
+                                                String codeChallenge, String codeChallengeMethod, String resource) {
         // 1. 创建 code 授权码
         String authorizationCode = oauth2GrantService.grantAuthorizationCodeForCode(userId, getUserType(), client.getClientId(), scopes,
-                redirectUri, state);
+                redirectUri, state, codeChallenge, codeChallengeMethod, resource);
         // 2. 拼接重定向的 URL
         return OAuth2Utils.buildAuthorizationCodeRedirectUri(redirectUri, authorizationCode, state);
     }
@@ -293,6 +326,82 @@ public class OAuth2OpenController {
             throw exception0(BAD_REQUEST.getCode(), "client_id 或 client_secret 未正确传递");
         }
         return clientIdAndSecret;
+    }
+
+    private OAuth2ClientDO obtainTokenClient(HttpServletRequest request, String clientId, String clientSecret,
+                                             String grantType, List<String> scopes, String redirectUri) {
+        String[] clientIdAndSecret = HttpUtils.obtainBasicAuthorization(request);
+        if (ArrayUtil.isNotEmpty(clientIdAndSecret) && clientIdAndSecret.length == 2) {
+            return oauth2ClientService.validOAuthClientFromCache(clientIdAndSecret[0], clientIdAndSecret[1],
+                    grantType, scopes, redirectUri);
+        }
+        if (StrUtil.isBlank(clientId)) {
+            throw exception0(BAD_REQUEST.getCode(), "client_id 或 client_secret 未正确传递");
+        }
+        if (StrUtil.isNotBlank(clientSecret)) {
+            return oauth2ClientService.validOAuthClientFromCache(clientId, clientSecret, grantType, scopes, redirectUri);
+        }
+        OAuth2ClientDO client = oauth2ClientService.validOAuthClientFromCache(clientId, null, grantType, scopes, redirectUri);
+        if (!isPublicClient(client)) {
+            throw exception0(BAD_REQUEST.getCode(), "client_id 或 client_secret 未正确传递");
+        }
+        return client;
+    }
+
+    private void validatePkceAndResource(OAuth2ClientDO client, OAuth2GrantTypeEnum grantTypeEnum,
+                                         String codeChallenge, String codeChallengeMethod, String resource) {
+        if (grantTypeEnum != OAuth2GrantTypeEnum.AUTHORIZATION_CODE) {
+            return;
+        }
+        if (StrUtil.isBlank(codeChallenge)) {
+            if (isPkceRequired(client)) {
+                throw exception(ErrorCodeConstants.OAUTH2_GRANT_CODE_CHALLENGE_MISSING);
+            }
+            return;
+        }
+        if (!StrUtil.equals(codeChallengeMethod, "S256")) {
+            throw exception(ErrorCodeConstants.OAUTH2_GRANT_CODE_CHALLENGE_METHOD_UNSUPPORTED);
+        }
+        String configuredResource = getAdditionalString(client, "mcp_resource", "mcpResource");
+        if (StrUtil.isAllNotBlank(resource, configuredResource) && !StrUtil.equals(resource, configuredResource)) {
+            throw exception(ErrorCodeConstants.OAUTH2_GRANT_RESOURCE_MISMATCH);
+        }
+    }
+
+    private static boolean isPkceRequired(OAuth2ClientDO client) {
+        return isPublicClient(client) || getAdditionalBoolean(client, "require_pkce", "requirePkce");
+    }
+
+    private static boolean isPublicClient(OAuth2ClientDO client) {
+        return StrUtil.equals(getAdditionalString(client, "token_endpoint_auth_method", "tokenEndpointAuthMethod"), "none")
+                || getAdditionalBoolean(client, "public_client", "publicClient")
+                || getAdditionalBoolean(client, "mcp_public_client", "mcpPublicClient");
+    }
+
+    private static boolean getAdditionalBoolean(OAuth2ClientDO client, String snakeKey, String camelKey) {
+        String value = getAdditionalString(client, snakeKey, camelKey);
+        return StrUtil.equalsIgnoreCase(value, "true");
+    }
+
+    private static String getAdditionalString(OAuth2ClientDO client, String snakeKey, String camelKey) {
+        if (client == null || StrUtil.isBlank(client.getAdditionalInformation())) {
+            return null;
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> additionalInformation;
+        try {
+            additionalInformation = JsonUtils.parseObject(client.getAdditionalInformation(), Map.class);
+        } catch (RuntimeException exception) {
+            return null;
+        }
+        if (additionalInformation == null) {
+            return null;
+        }
+        Object value = additionalInformation.get(snakeKey);
+        if (value == null) {
+            value = additionalInformation.get(camelKey);
+        }
+        return value == null ? null : value.toString();
     }
 
 }

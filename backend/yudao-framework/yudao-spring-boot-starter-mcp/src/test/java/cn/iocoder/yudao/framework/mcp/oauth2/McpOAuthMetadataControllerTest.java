@@ -62,7 +62,8 @@ class McpOAuthMetadataControllerTest {
 
         assertThat(metadata.get("authorization_endpoint")).isEqualTo("https://ui.example.com/sso");
         assertThat(metadata.get("token_endpoint"))
-                .isEqualTo("https://erp.example.com/console-api/system/oauth2/token");
+                .isEqualTo("https://erp.example.com/console-api/system/oauth2/token/raw");
+        assertThat(metadata).doesNotContainKey("revocation_endpoint");
     }
 
     private static MockHttpServletRequest request() {

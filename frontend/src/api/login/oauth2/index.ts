@@ -11,6 +11,9 @@ export const authorize = (
   clientId: string,
   redirectUri: string,
   state: string,
+  codeChallenge: string,
+  codeChallengeMethod: string,
+  resource: string,
   autoApprove: boolean,
   checkedScopes: string[],
   uncheckedScopes: string[]
@@ -34,6 +37,9 @@ export const authorize = (
       client_id: clientId,
       redirect_uri: redirectUri,
       state: state,
+      code_challenge: codeChallenge,
+      code_challenge_method: codeChallengeMethod,
+      resource: resource,
       auto_approve: autoApprove,
       scope: JSON.stringify(scopes)
     }

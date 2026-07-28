@@ -7,8 +7,8 @@
  2. 本脚本只新增一个专用客户端 mcp-local-test，不修改 default 等既有客户端，
     避免影响管理后台的既有登录。
  3. 可重复执行（先按 client_id 物理删除再插入）。
- 4. secret 是本地联调用的占位值，不是任何真实环境的凭据；
-    部署到共享或生产环境时必须换成随机密钥，并通过配置中心/密钥管理下发，不要沿用本文件的值。
+ 4. mcp-local-test 是 public client，用 authorization_code + PKCE 获取令牌；
+    不需要在 WorkBuddy 等桌面 Agent 中保存 client_secret。
  5. ERP 能力还会校验 erp:product:query 等功能权限，这些菜单权限已包含在 ruoyi-vue-pro.sql 中，
     用超级管理员账号登录即可通过。
 */
@@ -24,20 +24,20 @@ INSERT INTO system_oauth2_client (
     creator, updater, deleted
 ) VALUES (
     'mcp-local-test',
-    'mcp-local-test-secret',
+    '',
     'MCP 本地联调客户端',
     '',
     '仅用于本地 MCP / ACF 端到端联调，注册 mcp:access 授权范围',
     0, -- status：0 开启
     1800,
     2592000,
-    '["http://127.0.0.1:48080"]',
-    '["password","refresh_token","client_credentials"]',
+    '["http://127.0.0.1","http://localhost"]',
+    '["authorization_code","refresh_token"]',
     '["mcp:access"]',
     '["mcp:access"]',
     '["mcp:access"]',
-    '[]',
-    '{}',
+    '["http://127.0.0.1:48080/mcp"]',
+    '{"token_endpoint_auth_method":"none","require_pkce":true,"mcp_resource":"http://127.0.0.1:48080/mcp"}',
     '1', '1', b'0'
 );
 
