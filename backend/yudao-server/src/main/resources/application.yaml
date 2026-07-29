@@ -264,6 +264,29 @@ yudao:
   web:
     admin-ui:
       url: http://dashboard.yudao.iocoder.cn # Admin 管理后台 UI 的地址
+  mcp: # MCP Server 相关配置项，注意与上方 spring.ai.mcp 不是同一套实现
+    server:
+      enabled: true # 是否开启自建 MCP Server
+      endpoint: /mcp # MCP 端点，走独立的 Security 过滤器链
+      dynamic-client-registration-enabled: true # OAuth metadata 暴露 DCR 注册端点，供通用 MCP 客户端自动认证
+      # allowed-origins / allowed-hosts 默认只放通 localhost、127.0.0.1，部署到其他域名时必须显式配置
+      required-scopes: # 访问 MCP 端点所需的 OAuth2 scope，缺失时返回 403
+        - mcp:access
+    acf:
+      # 白名单机制：只有列在这里的能力才会暴露为 MCP Tool，新增能力需要显式登记
+      exposed-capabilities:
+        - erp.product.search
+        - erp.stock.query
+        - erp.warehouse.search
+        - erp.customer.search
+        - erp.supplier.search
+      allow-side-effects: false # 首期只暴露只读能力
+      allow-confirmation-required: false # 首期不暴露需要人工确认的能力
+    oauth:
+      dynamic-client-registration-enabled: true # 开启 OAuth2 DCR；远程部署时必须结合 redirect_uri 策略收紧
+      allow-private-use-uri-scheme-redirects: true # 允许 workbuddy://、vscode:// 等桌面客户端回调
+      default-scopes:
+        - mcp:access
   xss:
     enable: false
     exclude-urls: # 如下两个 url，仅仅是为了演示，去掉配置也没关系
