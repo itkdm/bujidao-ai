@@ -142,6 +142,31 @@ public class OAuth2GrantServiceImplTest extends BaseMockitoUnitTest {
     }
 
     @Test
+    public void testGrantAuthorizationCodeForAccessToken_withoutState() {
+        // 准备参数
+        String clientId = randomString();
+        String code = randomString();
+        List<String> scopes = Lists.newArrayList("read", "write");
+        String redirectUri = randomString();
+        // mock 方法（code）
+        OAuth2CodeDO codeDO = randomPojo(OAuth2CodeDO.class, o -> {
+            o.setClientId(clientId);
+            o.setRedirectUri(redirectUri);
+            o.setState(randomString());
+            o.setScopes(scopes);
+        });
+        when(oauth2CodeService.consumeAuthorizationCode(eq(code))).thenReturn(codeDO);
+        // mock 方法（创建令牌）
+        OAuth2AccessTokenDO accessTokenDO = randomPojo(OAuth2AccessTokenDO.class);
+        when(oauth2TokenService.createAccessToken(eq(codeDO.getUserId()), eq(codeDO.getUserType()),
+                eq(codeDO.getClientId()), eq(codeDO.getScopes()))).thenReturn(accessTokenDO);
+
+        // 调用，并断言。标准 OAuth2 token 请求不携带 state，应允许通过。
+        assertPojoEquals(accessTokenDO, oauth2GrantService.grantAuthorizationCodeForAccessToken(
+                clientId, code, redirectUri, null));
+    }
+
+    @Test
     public void testGrantAuthorizationCodeForAccessToken_withPkceAndResource() {
         // 准备参数
         String clientId = randomString();

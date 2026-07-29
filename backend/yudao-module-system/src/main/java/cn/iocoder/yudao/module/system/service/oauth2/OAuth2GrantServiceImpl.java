@@ -88,9 +88,8 @@ public class OAuth2GrantServiceImpl implements OAuth2GrantService {
         if (!StrUtil.equals(redirectUri, codeDO.getRedirectUri())) {
             throw exception(ErrorCodeConstants.OAUTH2_GRANT_REDIRECT_URI_MISMATCH);
         }
-        // 校验 state 是否匹配
-        state = StrUtil.nullToDefault(state, ""); // 数据库 state 为 null 时，会设置为 "" 空串
-        if (!StrUtil.equals(state, codeDO.getState())) {
+        // 校验 state 是否匹配。标准 OAuth2 token 请求不会携带 state；如果调用方额外传递，则做一致性校验。
+        if (StrUtil.isNotBlank(state) && !StrUtil.equals(state, codeDO.getState())) {
             throw exception(ErrorCodeConstants.OAUTH2_GRANT_STATE_MISMATCH);
         }
         validateAuthorizationCodeExtra(codeExtra, codeVerifier, resource, pkceRequired);
