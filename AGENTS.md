@@ -133,9 +133,18 @@ Get-CimInstance Win32_Process -Filter "ProcessId=<pid>" | Select-Object ProcessI
 
 详细本地开发流程见 `docs/local-dev.md`。
 
-后端默认端口是 `48080`。仓库内的 `backend/yudao-server/src/main/resources/application-local.yaml` 应保持为可提交的安全配置。真实本机配置放到根目录 `runtime-config/application-local.yaml`，该目录已被 `.gitignore` 忽略。如果为了本机运行修改了数据库、Redis、对象存储、三方应用等配置：
+后端默认端口是 `48080`。默认本地启动直接使用仓库内的 `backend/yudao-server/src/main/resources/application-local.yaml`，不要再默认追加 `--spring.config.additional-location=runtime-config/`。当前开发分支的本机 MySQL、Redis 密码、MCP 开关等联调配置就保存在这份 tracked YAML 的工作区版本中，并通过 `skip-worktree` 隔离提交。
+
+因此：
+
+- 不要在普通本地启动、重打包、问题排查时使用 `runtime-config` 覆盖配置。
+- 不要在“恢复上游侵入修改”时把 `application-local.yaml` 恢复到 `origin/*` 或上游安全默认值；这会丢掉本地可运行配置。
+- 如果误恢复了，先用 `git restore --source HEAD --worktree -- backend/yudao-server/src/main/resources/application-local.yaml` 恢复当前分支本地配置，再重新打包启动。
+
+如果为了本机运行临时修改了 `application-local.yaml`、`application.yaml` 等 tracked 配置：
 
 - 将这类修改视为本地运行改动，不要提交或推送。
+- 可以用 `git update-index --skip-worktree <file>` 临时隔离本机配置；后续确需提交配置变更时，先用 `git update-index --no-skip-worktree <file>` 放开。
 - 汇报或排查时必须脱敏，不要把密码、Token、Secret、私钥原文写进对话或日志摘要。
 - 结束前用 `git status --short --branch` 明确列出本地改动，尤其是包含本地凭据的配置文件。
 
@@ -154,9 +163,8 @@ $logs = Join-Path $repo 'runtime-logs'
 New-Item -ItemType Directory -Force -Path $logs | Out-Null
 $java = 'D:\jdk\jdk17\jdk-17.0.12\bin\java.exe'
 $jar = Join-Path $repo 'backend\yudao-server\target\yudao-server.jar'
-$config = 'optional:file:' + $repo.Replace('\', '/') + '/runtime-config/'
 Start-Process -WindowStyle Hidden -FilePath $java `
-  -ArgumentList @('-jar',('"{0}"' -f $jar),'--spring.profiles.active=local',("--spring.config.additional-location=$config")) `
+  -ArgumentList @('-jar',('"{0}"' -f $jar),'--spring.profiles.active=local') `
   -RedirectStandardOutput (Join-Path $logs 'yudao-server.out.log') `
   -RedirectStandardError (Join-Path $logs 'yudao-server.err.log')
 ```
