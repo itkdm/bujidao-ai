@@ -1,4 +1,4 @@
-package cn.iocoder.yudao.module.system.controller.admin.oauth2.vo.open;
+package cn.iocoder.yudao.module.mcp.controller.admin.oauth2.vo;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
@@ -6,12 +6,12 @@ import lombok.Data;
 import java.util.List;
 
 /**
- * OAuth2 Dynamic Client Registration 响应。
+ * MCP OAuth Dynamic Client Registration 响应。
  *
  * @author bujidao
  */
 @Data
-public class OAuth2ClientRegistrationRespVO {
+public class McpOAuthClientRegistrationRespVO {
 
     @JsonProperty("client_id")
     private String clientId;

@@ -1,4 +1,4 @@
-package cn.iocoder.yudao.module.system.framework.oauth2.config;
+package cn.iocoder.yudao.module.mcp.framework.oauth2.config;
 
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -10,21 +10,26 @@ import org.springframework.validation.annotation.Validated;
 import java.util.List;
 
 /**
- * OAuth2 动态客户端注册配置。
+ * MCP OAuth 适配配置。
  *
  * @author bujidao
  */
-@ConfigurationProperties(prefix = OAuth2DynamicClientRegistrationProperties.PREFIX)
+@ConfigurationProperties(prefix = McpOAuthProperties.PREFIX)
 @Validated
 @Data
-public class OAuth2DynamicClientRegistrationProperties {
+public class McpOAuthProperties {
 
-    public static final String PREFIX = "yudao.oauth2.dynamic-client-registration";
+    public static final String PREFIX = "yudao.mcp.oauth";
 
     /**
-     * 是否开启 OAuth2 Dynamic Client Registration 端点。
+     * 是否开启 MCP OAuth 适配端点。
      */
-    private boolean enabled = false;
+    private boolean enabled = true;
+
+    /**
+     * 是否开启 OAuth2 Dynamic Client Registration。
+     */
+    private boolean dynamicClientRegistrationEnabled = true;
 
     /**
      * 动态客户端编号前缀。
@@ -47,7 +52,7 @@ public class OAuth2DynamicClientRegistrationProperties {
     /**
      * 是否允许 native app 私有 URI scheme，例如 workbuddy://、vscode://。
      */
-    private boolean allowPrivateUseUriSchemeRedirects = false;
+    private boolean allowPrivateUseUriSchemeRedirects = true;
 
     /**
      * 额外允许的 redirect_uri 前缀，用于部署方显式开放 HTTPS 回调等场景。

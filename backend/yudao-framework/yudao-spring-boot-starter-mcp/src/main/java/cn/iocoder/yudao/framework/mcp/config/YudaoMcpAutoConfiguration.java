@@ -225,6 +225,7 @@ public class YudaoMcpAutoConfiguration {
                                                          ObjectProvider<McpToolSpecificationProvider> toolProviders) {
         McpSchema.ServerCapabilities capabilities = McpSchema.ServerCapabilities.builder()
                 .tools(false)
+                .resources(false, false)
                 .build();
         return McpServer.sync(transport)
                 .jsonMapper(jsonMapper)
@@ -233,6 +234,8 @@ public class YudaoMcpAutoConfiguration {
                 .requestTimeout(properties.getRequestTimeout())
                 .capabilities(capabilities)
                 .tools(createToolSpecifications(toolProviders))
+                .resources(List.of())
+                .resourceTemplates(List.of())
                 .build();
     }
 

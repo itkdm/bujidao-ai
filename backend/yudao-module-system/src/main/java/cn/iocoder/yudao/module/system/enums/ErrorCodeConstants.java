@@ -142,12 +142,6 @@ public interface ErrorCodeConstants {
     ErrorCode OAUTH2_GRANT_CLIENT_ID_MISMATCH = new ErrorCode(1_002_021_000, "client_id 不匹配");
     ErrorCode OAUTH2_GRANT_REDIRECT_URI_MISMATCH = new ErrorCode(1_002_021_001, "redirect_uri 不匹配");
     ErrorCode OAUTH2_GRANT_STATE_MISMATCH = new ErrorCode(1_002_021_002, "state 不匹配");
-    ErrorCode OAUTH2_GRANT_CODE_VERIFIER_MISSING = new ErrorCode(1_002_021_003, "code_verifier 不能为空");
-    ErrorCode OAUTH2_GRANT_CODE_VERIFIER_MISMATCH = new ErrorCode(1_002_021_004, "code_verifier 不匹配");
-    ErrorCode OAUTH2_GRANT_RESOURCE_MISMATCH = new ErrorCode(1_002_021_005, "resource 不匹配");
-    ErrorCode OAUTH2_GRANT_CODE_CHALLENGE_METHOD_UNSUPPORTED = new ErrorCode(1_002_021_006,
-            "code_challenge_method 仅支持 S256");
-    ErrorCode OAUTH2_GRANT_CODE_CHALLENGE_MISSING = new ErrorCode(1_002_021_007, "code_challenge 不能为空");
 
     // ========== OAuth2 授权 1-002-022-000 =========
     ErrorCode OAUTH2_CODE_NOT_EXISTS = new ErrorCode(1_002_022_000, "code 不存在");

@@ -177,18 +177,18 @@ public class OAuth2TokenServiceImpl implements OAuth2TokenService {
     }
 
     private OAuth2AccessTokenDO createOAuth2AccessToken(OAuth2RefreshTokenDO refreshTokenDO, OAuth2ClientDO clientDO) {
+        OAuth2AccessTokenDO accessTokenDO = new OAuth2AccessTokenDO().setAccessToken(generateAccessToken())
+                .setUserId(refreshTokenDO.getUserId()).setUserType(refreshTokenDO.getUserType())
+                .setUserInfo(buildUserInfo(refreshTokenDO.getUserId(), refreshTokenDO.getUserType()))
+                .setClientId(clientDO.getClientId()).setScopes(refreshTokenDO.getScopes())
+                .setRefreshToken(refreshTokenDO.getRefreshToken())
+                .setExpiresTime(LocalDateTime.now().plusSeconds(clientDO.getAccessTokenValiditySeconds()));
         // 优先从 refreshToken 获取租户编号，避免 ThreadLocal 被污染时导致 tenantId 为 null
         // 可能关联的 issue：https://t.zsxq.com/JIi5G
         Long tenantId = refreshTokenDO.getTenantId();
         if (tenantId == null) {
             tenantId = TenantContextHolder.getTenantId();
         }
-        OAuth2AccessTokenDO accessTokenDO = new OAuth2AccessTokenDO().setAccessToken(generateAccessToken())
-                .setUserId(refreshTokenDO.getUserId()).setUserType(refreshTokenDO.getUserType())
-                .setUserInfo(buildUserInfo(refreshTokenDO.getUserId(), refreshTokenDO.getUserType(), tenantId))
-                .setClientId(clientDO.getClientId()).setScopes(refreshTokenDO.getScopes())
-                .setRefreshToken(refreshTokenDO.getRefreshToken())
-                .setExpiresTime(LocalDateTime.now().plusSeconds(clientDO.getAccessTokenValiditySeconds()));
         accessTokenDO.setTenantId(tenantId);
         oauth2AccessTokenMapper.insert(accessTokenDO);
         // 记录到 Redis 中
@@ -233,13 +233,6 @@ public class OAuth2TokenServiceImpl implements OAuth2TokenService {
             return Collections.emptyMap();
         }
         throw new IllegalArgumentException("未知用户类型：" + userType);
-    }
-
-    private Map<String, String> buildUserInfo(Long userId, Integer userType, Long tenantId) {
-        if (tenantId == null) {
-            return buildUserInfo(userId, userType);
-        }
-        return TenantUtils.execute(tenantId, () -> buildUserInfo(userId, userType));
     }
 
     private static String generateAccessToken() {

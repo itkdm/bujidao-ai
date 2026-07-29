@@ -9,7 +9,6 @@ import cn.iocoder.yudao.framework.common.exception.ErrorCode;
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.util.collection.SetUtils;
 import cn.iocoder.yudao.framework.common.util.object.ObjectUtils;
-import cn.iocoder.yudao.framework.tenant.core.aop.TenantIgnore;
 import cn.iocoder.yudao.framework.test.core.ut.BaseMockitoUnitTest;
 import cn.iocoder.yudao.module.system.controller.admin.oauth2.vo.open.OAuth2OpenAccessTokenRespVO;
 import cn.iocoder.yudao.module.system.controller.admin.oauth2.vo.open.OAuth2OpenAuthorizeInfoRespVO;
@@ -69,15 +68,6 @@ public class OAuth2OpenControllerTest extends BaseMockitoUnitTest {
     private OAuth2TokenService oauth2TokenService;
 
     @Test
-    public void testPostRawAccessToken_tenantIgnore() {
-        assertTrue(List.of(OAuth2OpenController.class.getDeclaredMethods()).stream()
-                .filter(method -> "postRawAccessToken".equals(method.getName()))
-                .findFirst()
-                .orElseThrow()
-                .isAnnotationPresent(TenantIgnore.class));
-    }
-
-    @Test
     public void testPostAccessToken_authorizationCode() {
         // 准备参数
         String granType = OAuth2GrantTypeEnum.AUTHORIZATION_CODE.getGrantType();
@@ -93,46 +83,15 @@ public class OAuth2OpenControllerTest extends BaseMockitoUnitTest {
         OAuth2AccessTokenDO accessTokenDO = randomPojo(OAuth2AccessTokenDO.class)
                 .setExpiresTime(LocalDateTimeUtil.offset(LocalDateTime.now(), 30000L, ChronoUnit.MILLIS));
         when(oauth2GrantService.grantAuthorizationCodeForAccessToken(eq("test_client_id"),
-                eq(code), eq(redirectUri), eq(state), isNull(), isNull(), eq(false))).thenReturn(accessTokenDO);
+                eq(code), eq(redirectUri), eq(state))).thenReturn(accessTokenDO);
 
         // 调用
         CommonResult<OAuth2OpenAccessTokenRespVO> result = oauth2OpenController.postAccessToken(request, granType,
-                null, null, code, redirectUri, state, null, null, null, null, null, null);
+                code, redirectUri, state, null, null, null, null);
         // 断言
         assertEquals(0, result.getCode());
         assertPojoEquals(accessTokenDO, result.getData());
         assertTrue(ObjectUtils.equalsAny(result.getData().getExpiresIn(), 29L, 30L));  // 执行过程会过去几毫秒
-    }
-
-    @Test
-    public void testPostAccessToken_publicClientWithPkce() {
-        // 准备参数
-        String grantType = OAuth2GrantTypeEnum.AUTHORIZATION_CODE.getGrantType();
-        String clientId = "mcp-local-test";
-        String code = randomString();
-        String redirectUri = "http://127.0.0.1/callback";
-        String state = randomString();
-        String codeVerifier = randomString();
-        String resource = "http://127.0.0.1:48080/mcp";
-        HttpServletRequest request = mock(HttpServletRequest.class);
-        // mock 方法（client）
-        OAuth2ClientDO client = randomPojo(OAuth2ClientDO.class).setClientId(clientId)
-                .setAdditionalInformation("{\"token_endpoint_auth_method\":\"none\",\"require_pkce\":true}");
-        when(oauth2ClientService.validOAuthClientFromCache(eq(clientId), isNull(), eq(grantType),
-                eq(new ArrayList<>()), eq(redirectUri))).thenReturn(client);
-
-        // mock 方法（访问令牌）
-        OAuth2AccessTokenDO accessTokenDO = randomPojo(OAuth2AccessTokenDO.class)
-                .setExpiresTime(LocalDateTimeUtil.offset(LocalDateTime.now(), 30000L, ChronoUnit.MILLIS));
-        when(oauth2GrantService.grantAuthorizationCodeForAccessToken(eq(clientId), eq(code), eq(redirectUri),
-                eq(state), eq(codeVerifier), eq(resource), eq(true))).thenReturn(accessTokenDO);
-
-        // 调用
-        CommonResult<OAuth2OpenAccessTokenRespVO> result = oauth2OpenController.postAccessToken(request, grantType,
-                clientId, null, code, redirectUri, state, codeVerifier, resource, null, null, null, null);
-        // 断言
-        assertEquals(0, result.getCode());
-        assertPojoEquals(accessTokenDO, result.getData());
     }
 
     @Test
@@ -156,7 +115,7 @@ public class OAuth2OpenControllerTest extends BaseMockitoUnitTest {
 
         // 调用
         CommonResult<OAuth2OpenAccessTokenRespVO> result = oauth2OpenController.postAccessToken(request, granType,
-                null, null, null, null, null, null, null, username, password, scope, null);
+                null, null, null, username, password, scope, null);
         // 断言
         assertEquals(0, result.getCode());
         assertPojoEquals(accessTokenDO, result.getData());
@@ -182,7 +141,7 @@ public class OAuth2OpenControllerTest extends BaseMockitoUnitTest {
 
         // 调用
         CommonResult<OAuth2OpenAccessTokenRespVO> result = oauth2OpenController.postAccessToken(request, granType,
-                null, null, null, null, null, null, null, null, password, null, refreshToken);
+                null, null, null, null, password, null, refreshToken);
         // 断言
         assertEquals(0, result.getCode());
         assertPojoEquals(accessTokenDO, result.getData());
@@ -193,8 +152,8 @@ public class OAuth2OpenControllerTest extends BaseMockitoUnitTest {
     public void testPostAccessToken_implicit() {
         // 调用，并断言
         assertServiceException(() -> oauth2OpenController.postAccessToken(null,
-                        OAuth2GrantTypeEnum.IMPLICIT.getGrantType(), null, null, null, null, null,
-                        null, null, null, null, null, null),
+                        OAuth2GrantTypeEnum.IMPLICIT.getGrantType(), null, null, null,
+                        null, null, null, null),
                 new ErrorCode(400, "Token 接口不支持 implicit 授权模式"));
     }
 
@@ -211,7 +170,7 @@ public class OAuth2OpenControllerTest extends BaseMockitoUnitTest {
         when(oauth2GrantService.revokeToken(eq("demo_client_id"), eq(token))).thenReturn(true);
 
         // 调用
-        CommonResult<Boolean> result = oauth2OpenController.revokeToken(request, null, null, token);
+        CommonResult<Boolean> result = oauth2OpenController.revokeToken(request, token);
         // 断言
         assertEquals(0, result.getCode());
         assertTrue(result.getData());
@@ -261,7 +220,7 @@ public class OAuth2OpenControllerTest extends BaseMockitoUnitTest {
     public void testApproveOrDeny_grantTypeError() {
         // 调用，并断言
         assertServiceException(() -> oauth2OpenController.approveOrDeny(randomString(), null,
-                        null, null, null, null, null, null, null),
+                        null, null, null, null),
                 new ErrorCode(400, "response_type 参数值只允许 code 和 token"));
     }
 
@@ -280,7 +239,7 @@ public class OAuth2OpenControllerTest extends BaseMockitoUnitTest {
 
         // 调用
         CommonResult<String> result = oauth2OpenController.approveOrDeny(responseType, clientId,
-                scope, redirectUri, true, state, null, null, null);
+                scope, redirectUri, true, state);
         // 断言
         assertEquals(0, result.getCode());
         assertNull(result.getData());
@@ -301,7 +260,7 @@ public class OAuth2OpenControllerTest extends BaseMockitoUnitTest {
 
         // 调用
         CommonResult<String> result = oauth2OpenController.approveOrDeny(responseType, clientId,
-                scope, redirectUri, false, state, null, null, null);
+                scope, redirectUri, false, state);
         // 断言
         assertEquals(0, result.getCode());
         assertEquals("https://www.iocoder.cn#error=access_denied&error_description=User%20denied%20access&state=test", result.getData());
@@ -330,7 +289,7 @@ public class OAuth2OpenControllerTest extends BaseMockitoUnitTest {
 
         // 调用
         CommonResult<String> result = oauth2OpenController.approveOrDeny(responseType, clientId,
-                scope, redirectUri, true, state, null, null, null);
+                scope, redirectUri, true, state);
         // 断言
         assertEquals(0, result.getCode());
         assertThat(result.getData(), anyOf( // 29 和 30 都有一定概率，主要是时间计算
@@ -358,12 +317,11 @@ public class OAuth2OpenControllerTest extends BaseMockitoUnitTest {
         // mock 方法（访问令牌）
         String authorizationCode = "test_code";
         when(oauth2GrantService.grantAuthorizationCodeForCode(isNull(), eq(UserTypeEnum.ADMIN.getValue()),
-                eq(clientId), eq(ListUtil.toList("read")), eq(redirectUri), eq(state),
-                isNull(), isNull(), isNull())).thenReturn(authorizationCode);
+                eq(clientId), eq(ListUtil.toList("read")), eq(redirectUri), eq(state))).thenReturn(authorizationCode);
 
         // 调用
         CommonResult<String> result = oauth2OpenController.approveOrDeny(responseType, clientId,
-                scope, redirectUri, false, state, null, null, null);
+                scope, redirectUri, false, state);
         // 断言
         assertEquals(0, result.getCode());
         assertEquals("https://www.iocoder.cn?code=test_code&state=test", result.getData());

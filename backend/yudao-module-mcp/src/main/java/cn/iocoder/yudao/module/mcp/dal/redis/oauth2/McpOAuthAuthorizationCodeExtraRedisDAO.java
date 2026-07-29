@@ -1,4 +1,4 @@
-package cn.iocoder.yudao.module.system.dal.redis.oauth2;
+package cn.iocoder.yudao.module.mcp.dal.redis.oauth2;
 
 import cn.hutool.core.date.LocalDateTimeUtil;
 import cn.iocoder.yudao.framework.common.util.json.JsonUtils;
@@ -10,25 +10,25 @@ import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.concurrent.TimeUnit;
 
-import static cn.iocoder.yudao.module.system.dal.redis.RedisKeyConstants.OAUTH2_AUTHORIZATION_CODE_EXTRA;
+import static cn.iocoder.yudao.module.mcp.enums.McpRedisKeyConstants.MCP_OAUTH2_AUTHORIZATION_CODE_EXTRA;
 
 /**
- * OAuth2 授权码扩展信息的 RedisDAO。
+ * MCP OAuth 授权码扩展信息 RedisDAO。
  *
  * @author bujidao
  */
 @Repository
-public class OAuth2AuthorizationCodeExtraRedisDAO {
+public class McpOAuthAuthorizationCodeExtraRedisDAO {
 
     @Resource
     private StringRedisTemplate stringRedisTemplate;
 
-    public OAuth2AuthorizationCodeExtraDO get(String code) {
+    public McpOAuthAuthorizationCodeExtraDO get(String code) {
         return JsonUtils.parseObject(stringRedisTemplate.opsForValue().get(formatKey(code)),
-                OAuth2AuthorizationCodeExtraDO.class);
+                McpOAuthAuthorizationCodeExtraDO.class);
     }
 
-    public void set(OAuth2AuthorizationCodeExtraDO codeExtra) {
+    public void set(McpOAuthAuthorizationCodeExtraDO codeExtra) {
         long timeout = LocalDateTimeUtil.between(LocalDateTime.now(), codeExtra.getExpiresTime(), ChronoUnit.SECONDS);
         if (timeout > 0) {
             stringRedisTemplate.opsForValue().set(formatKey(codeExtra.getCode()),
@@ -41,7 +41,7 @@ public class OAuth2AuthorizationCodeExtraRedisDAO {
     }
 
     private static String formatKey(String code) {
-        return String.format(OAUTH2_AUTHORIZATION_CODE_EXTRA, code);
+        return String.format(MCP_OAUTH2_AUTHORIZATION_CODE_EXTRA, code);
     }
 
 }

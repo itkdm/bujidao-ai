@@ -32,10 +32,10 @@
             <version>${revision}</version>
         </dependency>
 
-        <!-- MCP Server Starter，默认关闭，通过 yudao.mcp.server.enabled 启用 -->
+        <!-- MCP 模块，默认关闭，通过 yudao.mcp.server.enabled 启用 -->
         <dependency>
             <groupId>cn.iocoder.boot</groupId>
-            <artifactId>yudao-spring-boot-starter-mcp</artifactId>
+            <artifactId>yudao-module-mcp</artifactId>
             <version>${revision}</version>
         </dependency>
 

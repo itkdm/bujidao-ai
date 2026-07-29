@@ -64,7 +64,7 @@ public class McpOAuthMetadataController {
         metadata.put("response_types_supported", List.of("code"));
         metadata.put("grant_types_supported", List.of("authorization_code", "refresh_token"));
         metadata.put("code_challenge_methods_supported", List.of("S256"));
-        metadata.put("token_endpoint_auth_methods_supported", List.of("none", "client_secret_basic"));
+        metadata.put("token_endpoint_auth_methods_supported", List.of("none"));
         metadata.put("scopes_supported", properties.getRequiredScopes());
         return metadata;
     }
@@ -86,21 +86,21 @@ public class McpOAuthMetadataController {
         WebProperties webProperties = webPropertiesProvider.getIfAvailable();
         String adminUiUrl = webProperties == null || webProperties.getAdminUi() == null
                 ? null : webProperties.getAdminUi().getUrl();
-        return absolute(StrUtil.blankToDefault(adminUiUrl, origin), "/sso");
+        return absolute(StrUtil.blankToDefault(adminUiUrl, origin), "/mcp/sso");
     }
 
     private String tokenEndpoint(String origin) {
         if (StrUtil.isNotBlank(properties.getTokenEndpoint())) {
             return absolute(origin, properties.getTokenEndpoint());
         }
-        return absolute(origin, adminApiPrefix() + "/system/oauth2/token/raw");
+        return absolute(origin, adminApiPrefix() + "/mcp/oauth2/token");
     }
 
     private String revocationEndpoint(String origin) {
         if (StrUtil.isNotBlank(properties.getRevocationEndpoint())) {
             return absolute(origin, properties.getRevocationEndpoint());
         }
-        return null;
+        return absolute(origin, adminApiPrefix() + "/mcp/oauth2/revoke");
     }
 
     private String registrationEndpoint(String origin) {
@@ -110,7 +110,7 @@ public class McpOAuthMetadataController {
         if (StrUtil.isNotBlank(properties.getRegistrationEndpoint())) {
             return absolute(origin, properties.getRegistrationEndpoint());
         }
-        return absolute(origin, adminApiPrefix() + "/system/oauth2/register");
+        return absolute(origin, adminApiPrefix() + "/mcp/oauth2/register");
     }
 
     private String adminApiPrefix() {

@@ -50,14 +50,6 @@ public interface OAuth2GrantService {
                                          String redirectUri, String state);
 
     /**
-     * 授权码模式，第一阶段，获得 code 授权码，并记录 PKCE、resource 等扩展参数
-     */
-    String grantAuthorizationCodeForCode(Long userId, Integer userType,
-                                         String clientId, List<String> scopes,
-                                         String redirectUri, String state,
-                                         String codeChallenge, String codeChallengeMethod, String resource);
-
-    /**
      * 授权码模式，第二阶段，获得 accessToken 访问令牌
      *
      * 对应 Spring Security OAuth2 的 AuthorizationCodeTokenGranter 功能
@@ -70,14 +62,6 @@ public interface OAuth2GrantService {
      */
     OAuth2AccessTokenDO grantAuthorizationCodeForAccessToken(String clientId, String code,
                                                              String redirectUri, String state);
-
-    /**
-     * 授权码模式，第二阶段，校验 PKCE、resource 等扩展参数后获得 accessToken 访问令牌
-     */
-    OAuth2AccessTokenDO grantAuthorizationCodeForAccessToken(String clientId, String code,
-                                                             String redirectUri, String state,
-                                                             String codeVerifier, String resource,
-                                                             boolean pkceRequired);
 
     /**
      * 密码模式

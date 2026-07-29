@@ -89,6 +89,7 @@ class McpServerInitializeIntegrationTest {
                 .isEqualTo("bujidao-mcp-server");
         assertThat(payload.path("result").path("capabilities").isObject()).isTrue();
         assertThat(payload.path("result").path("capabilities").path("tools").isObject()).isTrue();
+        assertThat(payload.path("result").path("capabilities").path("resources").isObject()).isTrue();
     }
 
     @Test
@@ -142,11 +143,44 @@ class McpServerInitializeIntegrationTest {
     }
 
     @Test
+    void shouldReturnEmptyResourcesForClientCompatibility() throws Exception {
+        HttpHeaders headers = mcpHeaders();
+        String request = """
+                {"jsonrpc":"2.0","id":4,"method":"resources/list","params":{}}
+                """;
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                "http://127.0.0.1:" + port + "/mcp",
+                new HttpEntity<>(request, headers), String.class);
+
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+        JsonNode result = objectMapper.readTree(response.getBody()).path("result");
+        assertThat(result.path("resources").isArray()).isTrue();
+        assertThat(result.path("resources")).isEmpty();
+        assertThat(response.getBody()).doesNotContain("Missing handler");
+    }
+
+    @Test
+    void shouldReturnEmptyResourceTemplatesForClientCompatibility() throws Exception {
+        HttpHeaders headers = mcpHeaders();
+        String request = """
+                {"jsonrpc":"2.0","id":5,"method":"resources/templates/list","params":{}}
+                """;
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                "http://127.0.0.1:" + port + "/mcp",
+                new HttpEntity<>(request, headers), String.class);
+
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+        JsonNode result = objectMapper.readTree(response.getBody()).path("result");
+        assertThat(result.path("resourceTemplates").isArray()).isTrue();
+        assertThat(result.path("resourceTemplates")).isEmpty();
+        assertThat(response.getBody()).doesNotContain("Missing handler");
+    }
+
+    @Test
     void shouldCallAllowlistedToolThroughAcfInvoker() throws Exception {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.setAccept(java.util.List.of(MediaType.APPLICATION_JSON, MediaType.TEXT_EVENT_STREAM));
-        headers.set("MCP-Protocol-Version", "2025-11-25");
+        HttpHeaders headers = mcpHeaders();
         String request = """
                 {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{
                   "name":"demo.echo","arguments":{"message":"hello"}
@@ -194,6 +228,14 @@ class McpServerInitializeIntegrationTest {
                     .isEqualTo(Map.of(McpSchemaAdapter.OUTPUT_RESULT_PROPERTY, "hello"));
             assertThat(callResult.meta()).containsEntry(AcfMcpToolProtocolMetadata.TRACE_ID, "trace-integration");
         }
+    }
+
+    private static HttpHeaders mcpHeaders() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setAccept(java.util.List.of(MediaType.APPLICATION_JSON, MediaType.TEXT_EVENT_STREAM));
+        headers.set("MCP-Protocol-Version", "2025-11-25");
+        return headers;
     }
 
     @SpringBootConfiguration

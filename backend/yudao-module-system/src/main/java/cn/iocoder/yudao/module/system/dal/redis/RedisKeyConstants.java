@@ -68,14 +68,6 @@ public interface RedisKeyConstants {
     String OAUTH2_ACCESS_TOKEN = "oauth2_access_token:%s";
 
     /**
-     * OAuth2 授权码扩展信息的缓存
-     * <p>
-     * KEY 格式：oauth2_authorization_code_extra:{code}
-     * VALUE 数据类型：String 授权码 PKCE、resource 等扩展信息
-     */
-    String OAUTH2_AUTHORIZATION_CODE_EXTRA = "oauth2_authorization_code_extra:%s";
-
-    /**
      * 站内信模版的缓存
      * <p>
      * KEY 格式：notify_template:{code}
