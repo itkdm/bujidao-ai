@@ -308,7 +308,7 @@ const handleLogin = async (params) => {
     }
     // 判断是否为SSO登录
     if (redirect.indexOf('sso') !== -1) {
-      window.location.href = window.location.href.replace('/login?redirect=', '')
+      window.location.href = redirect
     } else {
       push({ path: redirect || permissionStore.addRouters[0].path })
     }

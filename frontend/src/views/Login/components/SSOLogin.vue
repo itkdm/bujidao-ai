@@ -5,11 +5,7 @@
     <el-tabs class="form" style="float: none" value="uname">
       <el-tab-pane :label="client.name" name="uname" />
     </el-tabs>
-    <div v-if="redirecting" class="login-form text-center">
-      <div class="mb-4 text-xl font-bold">授权已完成</div>
-      <div class="text-gray-500">请在浏览器弹窗中打开客户端，或返回客户端继续使用。</div>
-    </div>
-    <div v-else>
+    <div>
       <el-form :model="formData" class="login-form">
         <!-- 授权范围的选择 -->
         此第三方应用请求获得以下权限：
@@ -28,7 +24,6 @@
         <!-- 下方的登录按钮 -->
         <el-form-item class="w-full">
           <el-button
-            :disabled="redirecting"
             :loading="formLoading"
             class="w-3/5"
             type="primary"
@@ -37,9 +32,7 @@
             <span v-if="!formLoading">同意授权</span>
             <span v-else>授 权 中...</span>
           </el-button>
-          <el-button :disabled="redirecting" class="w-3/10" @click.prevent="handleAuthorize(false)">
-            拒绝
-          </el-button>
+          <el-button class="w-3/10" @click.prevent="handleAuthorize(false)">拒绝</el-button>
         </el-form-item>
       </el-form>
     </div>
@@ -67,9 +60,6 @@ interface queryType {
   clientId: string
   redirectUri: string
   state: string
-  codeChallenge: string
-  codeChallengeMethod: string
-  resource: string
   scopes: string[]
 }
 const queryParams = reactive<queryType>({
@@ -78,9 +68,6 @@ const queryParams = reactive<queryType>({
   clientId: '',
   redirectUri: '',
   state: '',
-  codeChallenge: '',
-  codeChallengeMethod: '',
-  resource: '',
   scopes: [] // 优先从 query 参数获取；如果未传递，从后端获取
 })
 const ssoVisible = computed(() => unref(getLoginState) === LoginStateEnum.SSO) // 是否展示 SSO 登录的表单
@@ -91,7 +78,6 @@ const formData = reactive<formType>({
   scopes: [] // 已选中的 scope 数组
 })
 const formLoading = ref(false) // 表单是否提交中
-const redirecting = ref(false) // 是否已经跳转回 OAuth 客户端
 
 /** 初始化授权信息 */
 const init = async () => {
@@ -104,9 +90,6 @@ const init = async () => {
   queryParams.clientId = route.query.client_id as string
   queryParams.redirectUri = route.query.redirect_uri as string
   queryParams.state = route.query.state as string
-  queryParams.codeChallenge = route.query.code_challenge as string
-  queryParams.codeChallengeMethod = route.query.code_challenge_method as string
-  queryParams.resource = route.query.resource as string
   if (route.query.scope) {
     queryParams.scopes = (route.query.scope as string).split(' ')
   }
@@ -115,7 +98,7 @@ const init = async () => {
   if (queryParams.scopes.length > 0) {
     const data = await doAuthorize(true, queryParams.scopes, [])
     if (data) {
-      await redirectToClient(data)
+      location.href = data
       return
     }
   }
@@ -169,17 +152,10 @@ const handleAuthorize = async (approved) => {
     if (!data) {
       return
     }
-    await redirectToClient(data)
+    location.href = data
   } finally {
     formLoading.value = false
   }
-}
-
-/** 跳转回 OAuth 客户端 */
-const redirectToClient = async (url: string) => {
-  redirecting.value = true
-  await nextTick()
-  location.href = url
 }
 
 /** 调用授权 API 接口 */
@@ -189,9 +165,6 @@ const doAuthorize = (autoApprove, checkedScopes, uncheckedScopes) => {
     queryParams.clientId,
     queryParams.redirectUri,
     queryParams.state,
-    queryParams.codeChallenge,
-    queryParams.codeChallengeMethod,
-    queryParams.resource,
     autoApprove,
     checkedScopes,
     uncheckedScopes

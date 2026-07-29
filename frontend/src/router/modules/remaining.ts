@@ -194,6 +194,16 @@ const remainingRouter: AppRouteRecordRaw[] = [
     }
   },
   {
+    path: '/mcp/sso',
+    component: () => import('@/views/mcp/sso/index.vue'),
+    name: 'McpSSOLogin',
+    meta: {
+      hidden: true,
+      title: 'MCP 授权',
+      noTagsView: true
+    }
+  },
+  {
     path: '/social-login',
     component: () => import('@/views/Login/SocialLogin.vue'),
     name: 'SocialLogin',
