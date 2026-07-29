@@ -9,6 +9,7 @@ import cn.iocoder.yudao.framework.common.exception.ErrorCode;
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.util.collection.SetUtils;
 import cn.iocoder.yudao.framework.common.util.object.ObjectUtils;
+import cn.iocoder.yudao.framework.tenant.core.aop.TenantIgnore;
 import cn.iocoder.yudao.framework.test.core.ut.BaseMockitoUnitTest;
 import cn.iocoder.yudao.module.system.controller.admin.oauth2.vo.open.OAuth2OpenAccessTokenRespVO;
 import cn.iocoder.yudao.module.system.controller.admin.oauth2.vo.open.OAuth2OpenAuthorizeInfoRespVO;
@@ -66,6 +67,15 @@ public class OAuth2OpenControllerTest extends BaseMockitoUnitTest {
     private OAuth2ApproveService oauth2ApproveService;
     @Mock
     private OAuth2TokenService oauth2TokenService;
+
+    @Test
+    public void testPostRawAccessToken_tenantIgnore() {
+        assertTrue(List.of(OAuth2OpenController.class.getDeclaredMethods()).stream()
+                .filter(method -> "postRawAccessToken".equals(method.getName()))
+                .findFirst()
+                .orElseThrow()
+                .isAnnotationPresent(TenantIgnore.class));
+    }
 
     @Test
     public void testPostAccessToken_authorizationCode() {

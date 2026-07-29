@@ -6,6 +6,7 @@ import cn.iocoder.yudao.framework.common.exception.ErrorCode;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.date.DateUtils;
 import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
+import cn.iocoder.yudao.framework.tenant.core.util.TenantUtils;
 import cn.iocoder.yudao.framework.test.core.ut.BaseDbAndRedisUnitTest;
 import cn.iocoder.yudao.module.system.controller.admin.oauth2.vo.token.OAuth2AccessTokenPageReqVO;
 import cn.iocoder.yudao.module.system.dal.dataobject.oauth2.OAuth2AccessTokenDO;
@@ -189,6 +190,39 @@ public class OAuth2TokenServiceImplTest extends BaseDbAndRedisUnitTest {
         OAuth2AccessTokenDO redisAccessTokenDO = oauth2AccessTokenRedisDAO.get(newAccessTokenDO.getAccessToken());
         // TODO @芋艿：expiresTime 被屏蔽，仅 win11 会复现，建议后续修复。
         assertPojoEquals(newAccessTokenDO, redisAccessTokenDO, "expiresTime", "createTime", "updateTime", "deleted");
+    }
+
+    @Test
+    public void testRefreshAccessToken_tenantRecoveredWhenRequestIgnoresTenant() {
+        // 准备参数
+        Long tenantId = randomLongId();
+        String refreshToken = randomString();
+        String clientId = randomString();
+        // mock 方法
+        OAuth2ClientDO clientDO = randomPojo(OAuth2ClientDO.class).setClientId(clientId)
+                .setAccessTokenValiditySeconds(30);
+        when(oauth2ClientService.validOAuthClientFromCache(eq(clientId))).thenReturn(clientDO);
+        // mock 数据（刷新令牌）
+        OAuth2RefreshTokenDO refreshTokenDO = randomPojo(OAuth2RefreshTokenDO.class, o ->
+                o.setRefreshToken(refreshToken).setClientId(clientId)
+                        .setExpiresTime(LocalDateTime.now().plusDays(1))
+                        .setUserType(UserTypeEnum.ADMIN.getValue())
+                        .setTenantId(tenantId));
+        TenantUtils.execute(tenantId, () -> oauth2RefreshTokenMapper.insert(refreshTokenDO));
+        // mock 数据（用户）
+        AdminUserDO user = randomPojo(AdminUserDO.class);
+        when(adminUserService.getUser(refreshTokenDO.getUserId())).thenAnswer(invocation -> {
+            assertEquals(tenantId, TenantContextHolder.getTenantId());
+            assertFalse(TenantContextHolder.isIgnore());
+            return user;
+        });
+
+        // 调用
+        OAuth2AccessTokenDO newAccessTokenDO = TenantUtils.executeIgnore(
+                () -> oauth2TokenService.refreshAccessToken(refreshToken, clientId));
+        // 断言，新的访问令牌恢复到了刷新令牌对应的租户
+        assertEquals(tenantId, newAccessTokenDO.getTenantId());
+        assertEquals(user.getNickname(), newAccessTokenDO.getUserInfo().get("nickname"));
     }
 
     @Test

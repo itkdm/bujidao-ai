@@ -122,7 +122,7 @@ public class OAuth2ClientRegistrationController {
                 .setRedirectUris(redirectUris)
                 .setAuthorizedGrantTypes(grantTypes)
                 .setScopes(scopes)
-                .setAutoApproveScopes(scopes)
+                .setAutoApproveScopes(List.of())
                 .setResourceIds(List.of())
                 .setAdditionalInformation(JsonUtils.toJsonString(additionalInformation))
                 .setAccessTokenValiditySeconds(properties.getAccessTokenValiditySeconds())

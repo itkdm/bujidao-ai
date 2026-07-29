@@ -8,6 +8,7 @@ import cn.iocoder.yudao.framework.common.enums.UserTypeEnum;
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.util.http.HttpUtils;
 import cn.iocoder.yudao.framework.common.util.json.JsonUtils;
+import cn.iocoder.yudao.framework.tenant.core.aop.TenantIgnore;
 import cn.iocoder.yudao.module.system.controller.admin.oauth2.vo.open.OAuth2OpenAccessTokenRespVO;
 import cn.iocoder.yudao.module.system.controller.admin.oauth2.vo.open.OAuth2OpenAuthorizeInfoRespVO;
 import cn.iocoder.yudao.module.system.controller.admin.oauth2.vo.open.OAuth2OpenCheckTokenRespVO;
@@ -149,6 +150,7 @@ public class OAuth2OpenController {
 
     @PostMapping("/token/raw")
     @PermitAll
+    @TenantIgnore
     @Operation(summary = "获得标准 OAuth2 访问令牌", description = "返回未包装的 OAuth2 token 响应，适合 MCP 等标准 OAuth 客户端调用")
     @SuppressWarnings("EnhancedSwitchMigration")
     public OAuth2OpenAccessTokenRespVO postRawAccessToken(HttpServletRequest request,

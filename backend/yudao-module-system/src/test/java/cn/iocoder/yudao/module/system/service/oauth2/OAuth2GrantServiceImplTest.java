@@ -1,6 +1,7 @@
 package cn.iocoder.yudao.module.system.service.oauth2;
 
 import cn.iocoder.yudao.framework.common.enums.UserTypeEnum;
+import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
 import cn.iocoder.yudao.framework.test.core.ut.BaseMockitoUnitTest;
 import cn.iocoder.yudao.module.system.dal.dataobject.oauth2.OAuth2AccessTokenDO;
 import cn.iocoder.yudao.module.system.dal.dataobject.oauth2.OAuth2CodeDO;
@@ -117,18 +118,23 @@ public class OAuth2GrantServiceImplTest extends BaseMockitoUnitTest {
         List<String> scopes = Lists.newArrayList("read", "write");
         String redirectUri = randomString();
         String state = randomString();
+        Long tenantId = randomLongId();
         // mock 方法（code）
         OAuth2CodeDO codeDO = randomPojo(OAuth2CodeDO.class, o -> {
             o.setClientId(clientId);
             o.setRedirectUri(redirectUri);
             o.setState(state);
             o.setScopes(scopes);
+            o.setTenantId(tenantId);
         });
         when(oauth2CodeService.consumeAuthorizationCode(eq(code))).thenReturn(codeDO);
         // mock 方法（创建令牌）
         OAuth2AccessTokenDO accessTokenDO = randomPojo(OAuth2AccessTokenDO.class);
         when(oauth2TokenService.createAccessToken(eq(codeDO.getUserId()), eq(codeDO.getUserType()),
-                eq(codeDO.getClientId()), eq(codeDO.getScopes()))).thenReturn(accessTokenDO);
+                eq(codeDO.getClientId()), eq(codeDO.getScopes()))).thenAnswer(invocation -> {
+                    assertEquals(tenantId, TenantContextHolder.getTenantId());
+                    return accessTokenDO;
+                });
 
         // 调用，并断言
         assertPojoEquals(accessTokenDO, oauth2GrantService.grantAuthorizationCodeForAccessToken(

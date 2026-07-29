@@ -4,6 +4,7 @@ import cn.hutool.core.lang.Assert;
 import cn.hutool.core.util.ObjectUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.iocoder.yudao.framework.common.enums.UserTypeEnum;
+import cn.iocoder.yudao.framework.tenant.core.util.TenantUtils;
 import cn.iocoder.yudao.module.system.dal.dataobject.oauth2.OAuth2AccessTokenDO;
 import cn.iocoder.yudao.module.system.dal.dataobject.oauth2.OAuth2CodeDO;
 import cn.iocoder.yudao.module.system.dal.redis.oauth2.OAuth2AuthorizationCodeExtraDO;
@@ -95,7 +96,11 @@ public class OAuth2GrantServiceImpl implements OAuth2GrantService {
         validateAuthorizationCodeExtra(codeExtra, codeVerifier, resource, pkceRequired);
         oauth2AuthorizationCodeExtraRedisDAO.delete(code);
 
-        // 创建访问令牌
+        // 创建访问令牌。标准 OAuth 客户端不会传递本系统的 tenant-id 请求头，因此需要从授权码恢复租户上下文。
+        if (codeDO.getTenantId() != null) {
+            return TenantUtils.execute(codeDO.getTenantId(), () -> oauth2TokenService.createAccessToken(
+                    codeDO.getUserId(), codeDO.getUserType(), codeDO.getClientId(), codeDO.getScopes()));
+        }
         return oauth2TokenService.createAccessToken(codeDO.getUserId(), codeDO.getUserType(),
                 codeDO.getClientId(), codeDO.getScopes());
     }

@@ -67,7 +67,7 @@ class OAuth2ClientRegistrationControllerTest {
         ArgumentCaptor<OAuth2DynamicClientRegistrationCreateReqDTO> captor =
                 ArgumentCaptor.forClass(OAuth2DynamicClientRegistrationCreateReqDTO.class);
         org.mockito.Mockito.verify(oauth2ClientService).createDynamicOAuth2Client(captor.capture());
-        assertThat(captor.getValue().getAutoApproveScopes()).containsExactly("mcp:access");
+        assertThat(captor.getValue().getAutoApproveScopes()).isEmpty();
         assertThat(captor.getValue().getAdditionalInformation())
                 .contains("\"dynamic_client_registration\":true")
                 .contains("\"require_pkce\":true");
