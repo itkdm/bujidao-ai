@@ -67,6 +67,8 @@ class YudaoMcpAutoConfigurationTest {
                             .isInstanceOf(FilterRegistrationBean.class);
                     assertThat(context.getBean(YudaoMcpAutoConfiguration.MCP_REQUEST_SIZE_FILTER_NAME))
                             .isInstanceOf(FilterRegistrationBean.class);
+                    assertThat(context.getBean(YudaoMcpAutoConfiguration.MCP_REQUEST_BODY_CHARSET_FILTER_NAME))
+                            .isInstanceOf(FilterRegistrationBean.class);
 
                     FilterRegistrationBean<?> strictAccessTokenFilterRegistration = context.getBean(
                             YudaoMcpAutoConfiguration.MCP_STRICT_ACCESS_TOKEN_FILTER_REGISTRATION_NAME,

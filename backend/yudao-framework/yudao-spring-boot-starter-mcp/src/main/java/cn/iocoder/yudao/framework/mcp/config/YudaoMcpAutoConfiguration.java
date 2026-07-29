@@ -1,5 +1,6 @@
 package cn.iocoder.yudao.framework.mcp.config;
 
+import cn.iocoder.yudao.framework.common.enums.WebFilterOrderEnum;
 import cn.iocoder.yudao.framework.mcp.oauth2.McpOAuthMetadataController;
 import cn.iocoder.yudao.framework.mcp.security.McpAuthenticatedTransportContextExtractor;
 import cn.iocoder.yudao.framework.mcp.security.McpAuthenticationEntryPoint;
@@ -9,6 +10,7 @@ import cn.iocoder.yudao.framework.mcp.security.McpStrictAccessTokenFilter;
 import cn.iocoder.yudao.framework.mcp.security.McpTenantContextFilter;
 import cn.iocoder.yudao.framework.common.biz.system.oauth2.OAuth2TokenCommonApi;
 import cn.iocoder.yudao.framework.mcp.tool.McpToolSpecificationProvider;
+import cn.iocoder.yudao.framework.mcp.transport.McpRequestBodyCharsetFilter;
 import cn.iocoder.yudao.framework.mcp.transport.McpRequestSizeLimitFilter;
 import cn.iocoder.yudao.framework.security.config.SecurityProperties;
 import cn.iocoder.yudao.framework.security.core.filter.TokenAuthenticationFilter;
@@ -62,6 +64,7 @@ public class YudaoMcpAutoConfiguration {
     public static final String MCP_SERVLET_NAME = "bujidaoMcpServlet";
     public static final String MCP_QUERY_TOKEN_FILTER_NAME = "bujidaoMcpQueryTokenFilter";
     public static final String MCP_REQUEST_SIZE_FILTER_NAME = "bujidaoMcpRequestSizeFilter";
+    public static final String MCP_REQUEST_BODY_CHARSET_FILTER_NAME = "bujidaoMcpRequestBodyCharsetFilter";
     public static final String MCP_STRICT_ACCESS_TOKEN_FILTER_REGISTRATION_NAME =
             "bujidaoMcpStrictAccessTokenFilterRegistration";
     public static final String MCP_SCOPE_AUTHORIZATION_FILTER_REGISTRATION_NAME =
@@ -202,6 +205,19 @@ public class YudaoMcpAutoConfiguration {
         registration.addUrlPatterns(properties.getEndpoint());
         registration.setDispatcherTypes(DispatcherType.REQUEST);
         registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 1);
+        return registration;
+    }
+
+    @Bean(name = MCP_REQUEST_BODY_CHARSET_FILTER_NAME)
+    @ConditionalOnMissingBean(name = MCP_REQUEST_BODY_CHARSET_FILTER_NAME)
+    public FilterRegistrationBean<McpRequestBodyCharsetFilter> mcpRequestBodyCharsetFilterRegistration(
+            YudaoMcpServerProperties properties) {
+        FilterRegistrationBean<McpRequestBodyCharsetFilter> registration = new FilterRegistrationBean<>();
+        registration.setFilter(new McpRequestBodyCharsetFilter());
+        registration.setName(MCP_REQUEST_BODY_CHARSET_FILTER_NAME);
+        registration.addUrlPatterns(properties.getEndpoint());
+        registration.setDispatcherTypes(DispatcherType.REQUEST);
+        registration.setOrder(WebFilterOrderEnum.REQUEST_BODY_CACHE_FILTER + 2);
         return registration;
     }
 

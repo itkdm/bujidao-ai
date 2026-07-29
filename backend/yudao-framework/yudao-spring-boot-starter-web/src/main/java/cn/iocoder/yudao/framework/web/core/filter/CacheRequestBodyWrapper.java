@@ -9,8 +9,6 @@ import jakarta.servlet.http.HttpServletRequestWrapper;
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.InputStreamReader;
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
 
 /**
  *  Request Body 缓存 Wrapper
@@ -31,9 +29,7 @@ public class CacheRequestBodyWrapper extends HttpServletRequestWrapper {
 
     @Override
     public BufferedReader getReader() {
-        Charset charset = getCharacterEncoding() == null
-                ? StandardCharsets.UTF_8 : Charset.forName(getCharacterEncoding());
-        return new BufferedReader(new InputStreamReader(this.getInputStream(), charset));
+        return new BufferedReader(new InputStreamReader(this.getInputStream()));
     }
 
     @Override
