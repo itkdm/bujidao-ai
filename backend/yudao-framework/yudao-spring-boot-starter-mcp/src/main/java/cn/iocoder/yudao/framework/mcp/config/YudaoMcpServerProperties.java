@@ -62,17 +62,17 @@ public class YudaoMcpServerProperties {
     private String authorizationServerIssuer;
 
     /**
-     * 浏览器授权入口。未配置时使用 yudao.web.admin-ui.url + /sso。
+     * 浏览器授权入口。未配置时使用 yudao.web.admin-ui.url + /mcp/sso。
      */
     private String authorizationEndpoint;
 
     /**
-     * OAuth token endpoint。未配置时使用 yudao.web.admin-api.prefix + /system/oauth2/token。
+     * OAuth token endpoint。未配置时使用 yudao.web.admin-api.prefix + /mcp/oauth2/token。
      */
     private String tokenEndpoint;
 
     /**
-     * OAuth token revoke endpoint。未配置时复用 tokenEndpoint。
+     * OAuth token revoke endpoint。未配置时使用 yudao.web.admin-api.prefix + /mcp/oauth2/revoke。
      */
     private String revocationEndpoint;
 
@@ -85,7 +85,7 @@ public class YudaoMcpServerProperties {
 
     /**
      * OAuth Dynamic Client Registration endpoint。未配置时使用
-     * yudao.web.admin-api.prefix + /system/oauth2/register。
+     * yudao.web.admin-api.prefix + /mcp/oauth2/register。
      */
     private String registrationEndpoint;
 

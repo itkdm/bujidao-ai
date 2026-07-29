@@ -2,6 +2,7 @@ package cn.iocoder.yudao.module.mcp.controller.admin.oauth2;
 
 import cn.hutool.core.util.StrUtil;
 import cn.iocoder.yudao.framework.tenant.core.aop.TenantIgnore;
+import cn.iocoder.yudao.module.mcp.framework.oauth2.config.McpOAuthProperties;
 import cn.iocoder.yudao.module.mcp.framework.oauth2.core.McpOAuthErrorResponse;
 import cn.iocoder.yudao.module.mcp.framework.oauth2.core.McpOAuthException;
 import cn.iocoder.yudao.module.mcp.framework.oauth2.core.McpOAuthResourceUriResolver;
@@ -12,6 +13,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.annotation.Resource;
 import jakarta.annotation.security.PermitAll;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -30,6 +32,7 @@ import java.util.Map;
 @Tag(name = "管理后台 - MCP OAuth Token")
 @RestController
 @RequestMapping("/mcp/oauth2")
+@ConditionalOnProperty(prefix = McpOAuthProperties.PREFIX, name = "enabled", havingValue = "true", matchIfMissing = true)
 public class McpOAuthTokenController {
 
     @Resource

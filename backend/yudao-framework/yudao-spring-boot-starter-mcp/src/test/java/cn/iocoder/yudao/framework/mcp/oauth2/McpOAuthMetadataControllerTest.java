@@ -44,7 +44,7 @@ class McpOAuthMetadataControllerTest {
                 .isEqualTo("https://auth.example.com/admin-api/system/oauth2/token");
         assertThat(metadata).doesNotContainKey("registration_endpoint");
         assertThat(metadata.get("token_endpoint_auth_methods_supported"))
-                .isEqualTo(List.of("none", "client_secret_basic"));
+                .isEqualTo(List.of("none"));
         assertThat(metadata.get("code_challenge_methods_supported")).isEqualTo(List.of("S256"));
     }
 
@@ -57,7 +57,7 @@ class McpOAuthMetadataControllerTest {
                 properties, emptyBeanProvider()).authorizationServerMetadata(request());
 
         assertThat(metadata.get("registration_endpoint"))
-                .isEqualTo("https://erp.example.com/admin-api/system/oauth2/register");
+                .isEqualTo("https://erp.example.com/admin-api/mcp/oauth2/register");
     }
 
     @Test
@@ -73,10 +73,11 @@ class McpOAuthMetadataControllerTest {
                 new YudaoMcpServerProperties(),
                 beanFactory.getBeanProvider(WebProperties.class)).authorizationServerMetadata(request());
 
-        assertThat(metadata.get("authorization_endpoint")).isEqualTo("https://ui.example.com/sso");
+        assertThat(metadata.get("authorization_endpoint")).isEqualTo("https://ui.example.com/mcp/sso");
         assertThat(metadata.get("token_endpoint"))
-                .isEqualTo("https://erp.example.com/console-api/system/oauth2/token/raw");
-        assertThat(metadata).doesNotContainKey("revocation_endpoint");
+                .isEqualTo("https://erp.example.com/console-api/mcp/oauth2/token");
+        assertThat(metadata.get("revocation_endpoint"))
+                .isEqualTo("https://erp.example.com/console-api/mcp/oauth2/revoke");
     }
 
     @Test
