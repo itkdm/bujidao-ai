@@ -7,9 +7,13 @@ import cn.iocoder.yudao.framework.acf.core.schema.CapabilitySchemaGenerator;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityRegistry;
 import cn.iocoder.yudao.module.erp.capability.dto.ErpCustomerCapabilityDTO;
 import cn.iocoder.yudao.module.erp.service.product.ErpProductService;
+import cn.iocoder.yudao.module.erp.service.purchase.ErpPurchaseOrderService;
 import cn.iocoder.yudao.module.erp.service.purchase.ErpSupplierService;
 import cn.iocoder.yudao.module.erp.service.sale.ErpCustomerService;
 import cn.iocoder.yudao.module.erp.service.sale.ErpSaleOrderService;
+import cn.iocoder.yudao.module.erp.service.statistics.ErpPurchaseStatisticsService;
+import cn.iocoder.yudao.module.erp.service.statistics.ErpSaleStatisticsService;
+import cn.iocoder.yudao.module.erp.service.stock.ErpStockRecordService;
 import cn.iocoder.yudao.module.erp.service.stock.ErpStockService;
 import cn.iocoder.yudao.module.erp.service.stock.ErpWarehouseService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -39,10 +43,18 @@ class ErpCapabilityRegistrationTest {
             "erp.customer.create",
             "erp.customer.search",
             "erp.product.search",
+            "erp.purchase.order.audit",
+            "erp.purchase.order.create",
+            "erp.purchase.order.get",
+            "erp.purchase.order.search",
             "erp.sale.order.audit",
             "erp.sale.order.create",
             "erp.sale.order.get",
+            "erp.sale.order.search",
+            "erp.statistics.purchase.summary",
+            "erp.statistics.sale.summary",
             "erp.stock.query",
+            "erp.stock.record.search",
             "erp.supplier.search",
             "erp.warehouse.search");
 
@@ -72,8 +84,14 @@ class ErpCapabilityRegistrationTest {
             assertThat(registry.get("erp.customer.create").isSideEffect()).isTrue();
             assertThat(registry.get("erp.sale.order.create").isSideEffect()).isTrue();
             assertThat(registry.get("erp.sale.order.audit").isSideEffect()).isTrue();
+            assertThat(registry.get("erp.purchase.order.create").isSideEffect()).isTrue();
+            assertThat(registry.get("erp.purchase.order.audit").isSideEffect()).isTrue();
+            assertThat(registry.get("erp.stock.record.search").isSideEffect()).isFalse();
+            assertThat(registry.get("erp.statistics.sale.summary").isSideEffect()).isFalse();
+            assertThat(registry.get("erp.statistics.purchase.summary").isSideEffect()).isFalse();
             assertThat(registry.get("erp.product.search").getRiskLevel()).isEqualTo(CapabilityRiskLevel.LOW);
             assertThat(registry.get("erp.sale.order.create").getRiskLevel()).isEqualTo(CapabilityRiskLevel.MEDIUM);
+            assertThat(registry.get("erp.purchase.order.create").getRiskLevel()).isEqualTo(CapabilityRiskLevel.MEDIUM);
         }
     }
 
@@ -84,6 +102,17 @@ class ErpCapabilityRegistrationTest {
 
             // 结果里带仓库名称，因此必须同时具备两个查询权限，避免绕过仓库权限读到仓库档案
             assertThat(definition.getPermissions()).containsExactly("erp:stock:query", "erp:warehouse:query");
+            assertThat(definition.getPermissionMode()).isEqualTo(CapabilityPermissionMode.ALL);
+        }
+    }
+
+    @Test
+    void shouldRequireStockRecordProductAndWarehousePermissionsForStockRecordQuery() {
+        try (AnnotationConfigApplicationContext context = createContext()) {
+            CapabilityDefinition definition = context.getBean(CapabilityRegistry.class).get("erp.stock.record.search");
+
+            assertThat(definition.getPermissions()).containsExactly(
+                    "erp:stock-record:query", "erp:product:query", "erp:warehouse:query");
             assertThat(definition.getPermissionMode()).isEqualTo(CapabilityPermissionMode.ALL);
         }
     }
@@ -190,6 +219,26 @@ class ErpCapabilityRegistrationTest {
         @Bean
         ErpSaleOrderService erpSaleOrderService() {
             return mock(ErpSaleOrderService.class);
+        }
+
+        @Bean
+        ErpPurchaseOrderService erpPurchaseOrderService() {
+            return mock(ErpPurchaseOrderService.class);
+        }
+
+        @Bean
+        ErpStockRecordService erpStockRecordService() {
+            return mock(ErpStockRecordService.class);
+        }
+
+        @Bean
+        ErpSaleStatisticsService erpSaleStatisticsService() {
+            return mock(ErpSaleStatisticsService.class);
+        }
+
+        @Bean
+        ErpPurchaseStatisticsService erpPurchaseStatisticsService() {
+            return mock(ErpPurchaseStatisticsService.class);
         }
 
     }

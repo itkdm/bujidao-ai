@@ -8,18 +8,18 @@ import java.math.BigDecimal;
 import java.util.List;
 
 /**
- * ERP 销售订单能力视图。
+ * ERP 采购订单能力视图。
  *
  * @author bujidao
  */
 @Data
 @Builder
-public class ErpSaleOrderCapabilityDTO {
+public class ErpPurchaseOrderCapabilityDTO {
 
-    @CapabilityField(description = "销售订单编号")
+    @CapabilityField(description = "采购订单编号")
     private Long id;
 
-    @CapabilityField(description = "销售订单号")
+    @CapabilityField(description = "采购订单号")
     private String no;
 
     @CapabilityField(description = "审核状态")
@@ -28,11 +28,11 @@ public class ErpSaleOrderCapabilityDTO {
     @CapabilityField(description = "审核状态名称")
     private String statusName;
 
-    @CapabilityField(description = "客户编号")
-    private Long customerId;
+    @CapabilityField(description = "供应商编号")
+    private Long supplierId;
 
-    @CapabilityField(description = "客户名称")
-    private String customerName;
+    @CapabilityField(description = "供应商名称")
+    private String supplierName;
 
     @CapabilityField(description = "下单时间")
     private String orderTime;
@@ -43,10 +43,16 @@ public class ErpSaleOrderCapabilityDTO {
     @CapabilityField(description = "最终合计价格，单位：元")
     private BigDecimal totalPrice;
 
+    @CapabilityField(description = "已入库数量")
+    private BigDecimal inCount;
+
+    @CapabilityField(description = "已退货数量")
+    private BigDecimal returnCount;
+
     @CapabilityField(description = "备注")
     private String remark;
 
-    @CapabilityField(description = "销售订单明细")
+    @CapabilityField(description = "采购订单明细")
     private List<Item> items;
 
     @Data
@@ -65,10 +71,10 @@ public class ErpSaleOrderCapabilityDTO {
         @CapabilityField(description = "单位名称")
         private String unitName;
 
-        @CapabilityField(description = "产品单价，单位：元")
+        @CapabilityField(description = "采购单价，单位：元")
         private BigDecimal productPrice;
 
-        @CapabilityField(description = "数量")
+        @CapabilityField(description = "采购数量")
         private BigDecimal count;
 
         @CapabilityField(description = "明细总价，单位：元")
@@ -76,6 +82,12 @@ public class ErpSaleOrderCapabilityDTO {
 
         @CapabilityField(description = "税率，百分比")
         private BigDecimal taxPercent;
+
+        @CapabilityField(description = "已入库数量")
+        private BigDecimal inCount;
+
+        @CapabilityField(description = "已退货数量")
+        private BigDecimal returnCount;
 
         @CapabilityField(description = "备注")
         private String remark;

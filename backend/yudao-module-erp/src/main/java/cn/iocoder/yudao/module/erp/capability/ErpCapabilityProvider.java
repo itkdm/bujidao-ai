@@ -15,12 +15,25 @@ import cn.iocoder.yudao.module.erp.capability.dto.ErpCustomerSearchReqDTO;
 import cn.iocoder.yudao.module.erp.capability.dto.ErpProductCapabilityDTO;
 import cn.iocoder.yudao.module.erp.capability.dto.ErpProductSearchDataDTO;
 import cn.iocoder.yudao.module.erp.capability.dto.ErpProductSearchReqDTO;
+import cn.iocoder.yudao.module.erp.capability.dto.ErpPurchaseOrderAuditReqDTO;
+import cn.iocoder.yudao.module.erp.capability.dto.ErpPurchaseOrderCapabilityDTO;
+import cn.iocoder.yudao.module.erp.capability.dto.ErpPurchaseOrderCreateReqDTO;
+import cn.iocoder.yudao.module.erp.capability.dto.ErpPurchaseOrderGetReqDTO;
+import cn.iocoder.yudao.module.erp.capability.dto.ErpPurchaseOrderSearchDataDTO;
+import cn.iocoder.yudao.module.erp.capability.dto.ErpPurchaseOrderSearchReqDTO;
 import cn.iocoder.yudao.module.erp.capability.dto.ErpSaleOrderAuditReqDTO;
 import cn.iocoder.yudao.module.erp.capability.dto.ErpSaleOrderCapabilityDTO;
 import cn.iocoder.yudao.module.erp.capability.dto.ErpSaleOrderCreateReqDTO;
 import cn.iocoder.yudao.module.erp.capability.dto.ErpSaleOrderGetReqDTO;
+import cn.iocoder.yudao.module.erp.capability.dto.ErpSaleOrderSearchDataDTO;
+import cn.iocoder.yudao.module.erp.capability.dto.ErpSaleOrderSearchReqDTO;
+import cn.iocoder.yudao.module.erp.capability.dto.ErpStatisticsSummaryDTO;
+import cn.iocoder.yudao.module.erp.capability.dto.ErpStatisticsSummaryReqDTO;
 import cn.iocoder.yudao.module.erp.capability.dto.ErpStockQueryDataDTO;
 import cn.iocoder.yudao.module.erp.capability.dto.ErpStockQueryReqDTO;
+import cn.iocoder.yudao.module.erp.capability.dto.ErpStockRecordCapabilityDTO;
+import cn.iocoder.yudao.module.erp.capability.dto.ErpStockRecordSearchDataDTO;
+import cn.iocoder.yudao.module.erp.capability.dto.ErpStockRecordSearchReqDTO;
 import cn.iocoder.yudao.module.erp.capability.dto.ErpSupplierCapabilityDTO;
 import cn.iocoder.yudao.module.erp.capability.dto.ErpSupplierSearchDataDTO;
 import cn.iocoder.yudao.module.erp.capability.dto.ErpSupplierSearchReqDTO;
@@ -29,24 +42,36 @@ import cn.iocoder.yudao.module.erp.capability.dto.ErpWarehouseSearchDataDTO;
 import cn.iocoder.yudao.module.erp.capability.dto.ErpWarehouseSearchReqDTO;
 import cn.iocoder.yudao.module.erp.controller.admin.product.vo.product.ErpProductPageReqVO;
 import cn.iocoder.yudao.module.erp.controller.admin.product.vo.product.ErpProductRespVO;
+import cn.iocoder.yudao.module.erp.controller.admin.purchase.vo.order.ErpPurchaseOrderPageReqVO;
+import cn.iocoder.yudao.module.erp.controller.admin.purchase.vo.order.ErpPurchaseOrderSaveReqVO;
 import cn.iocoder.yudao.module.erp.controller.admin.purchase.vo.supplier.ErpSupplierPageReqVO;
 import cn.iocoder.yudao.module.erp.controller.admin.sale.vo.customer.ErpCustomerSaveReqVO;
 import cn.iocoder.yudao.module.erp.controller.admin.sale.vo.customer.ErpCustomerPageReqVO;
+import cn.iocoder.yudao.module.erp.controller.admin.sale.vo.order.ErpSaleOrderPageReqVO;
 import cn.iocoder.yudao.module.erp.controller.admin.sale.vo.order.ErpSaleOrderSaveReqVO;
+import cn.iocoder.yudao.module.erp.controller.admin.stock.vo.record.ErpStockRecordPageReqVO;
 import cn.iocoder.yudao.module.erp.controller.admin.stock.vo.stock.ErpStockPageReqVO;
 import cn.iocoder.yudao.module.erp.controller.admin.stock.vo.warehouse.ErpWarehousePageReqVO;
 import cn.iocoder.yudao.module.erp.dal.dataobject.product.ErpProductDO;
+import cn.iocoder.yudao.module.erp.dal.dataobject.purchase.ErpPurchaseOrderDO;
+import cn.iocoder.yudao.module.erp.dal.dataobject.purchase.ErpPurchaseOrderItemDO;
 import cn.iocoder.yudao.module.erp.dal.dataobject.purchase.ErpSupplierDO;
 import cn.iocoder.yudao.module.erp.dal.dataobject.sale.ErpCustomerDO;
 import cn.iocoder.yudao.module.erp.dal.dataobject.sale.ErpSaleOrderDO;
 import cn.iocoder.yudao.module.erp.dal.dataobject.sale.ErpSaleOrderItemDO;
 import cn.iocoder.yudao.module.erp.dal.dataobject.stock.ErpStockDO;
+import cn.iocoder.yudao.module.erp.dal.dataobject.stock.ErpStockRecordDO;
 import cn.iocoder.yudao.module.erp.dal.dataobject.stock.ErpWarehouseDO;
 import cn.iocoder.yudao.module.erp.enums.ErpAuditStatus;
+import cn.iocoder.yudao.module.erp.enums.stock.ErpStockRecordBizTypeEnum;
 import cn.iocoder.yudao.module.erp.service.product.ErpProductService;
+import cn.iocoder.yudao.module.erp.service.purchase.ErpPurchaseOrderService;
 import cn.iocoder.yudao.module.erp.service.purchase.ErpSupplierService;
 import cn.iocoder.yudao.module.erp.service.sale.ErpCustomerService;
 import cn.iocoder.yudao.module.erp.service.sale.ErpSaleOrderService;
+import cn.iocoder.yudao.module.erp.service.statistics.ErpPurchaseStatisticsService;
+import cn.iocoder.yudao.module.erp.service.statistics.ErpSaleStatisticsService;
+import cn.iocoder.yudao.module.erp.service.stock.ErpStockRecordService;
 import cn.iocoder.yudao.module.erp.service.stock.ErpStockService;
 import cn.iocoder.yudao.module.erp.service.stock.ErpWarehouseService;
 import jakarta.annotation.Resource;
@@ -55,6 +80,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.function.Function;
+import java.util.function.BiFunction;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -88,7 +114,15 @@ public class ErpCapabilityProvider {
     @Resource
     private ErpSaleOrderService saleOrderService;
     @Resource
+    private ErpPurchaseOrderService purchaseOrderService;
+    @Resource
     private ErpSupplierService supplierService;
+    @Resource
+    private ErpStockRecordService stockRecordService;
+    @Resource
+    private ErpSaleStatisticsService saleStatisticsService;
+    @Resource
+    private ErpPurchaseStatisticsService purchaseStatisticsService;
 
     @AgentCapability(
             name = "erp.product.search",
@@ -271,6 +305,36 @@ public class ErpCapabilityProvider {
     }
 
     @AgentCapability(
+            name = "erp.sale.order.search",
+            title = "ERP 销售订单列表查询",
+            description = "按销售订单号、客户、商品、审核状态分页查询销售订单，用于跟进客户订单和核对订单状态。",
+            category = "ERP",
+            permissions = "erp:sale-order:query",
+            outputType = ErpSaleOrderSearchDataDTO.class)
+    public CapabilityResult searchSaleOrders(ErpSaleOrderSearchReqDTO reqDTO) {
+        ErpSaleOrderPageReqVO pageReqVO = new ErpSaleOrderPageReqVO();
+        pageReqVO.setNo(reqDTO.getNo());
+        pageReqVO.setCustomerId(reqDTO.getCustomerId());
+        pageReqVO.setProductId(reqDTO.getProductId());
+        pageReqVO.setStatus(reqDTO.getStatus());
+        pageReqVO.setPageNo(normalizePageNo(reqDTO.getPageNo()));
+        pageReqVO.setPageSize(normalizePageSize(reqDTO.getPageSize()));
+        PageResult<ErpSaleOrderDO> pageResult = saleOrderService.getSaleOrderPage(pageReqVO);
+
+        Map<Long, ErpCustomerDO> customerMap = customerService.getCustomerMap(
+                pageResult.getList().stream().map(ErpSaleOrderDO::getCustomerId).toList());
+        List<ErpSaleOrderCapabilityDTO> saleOrders = pageResult.getList().stream()
+                .map(saleOrder -> toSaleOrderView(saleOrder, customerName(customerMap.get(saleOrder.getCustomerId()))))
+                .toList();
+        ErpSaleOrderSearchDataDTO data = ErpSaleOrderSearchDataDTO.builder()
+                .total(pageResult.getTotal())
+                .returnedCount(saleOrders.size())
+                .list(saleOrders)
+                .build();
+        return CapabilityResult.success(data, "已返回销售订单列表");
+    }
+
+    @AgentCapability(
             name = "erp.sale.order.get",
             title = "ERP 销售订单查询",
             description = "按销售订单编号查询订单主体和明细，用于确认订单状态、商品、数量和金额。",
@@ -300,6 +364,92 @@ public class ErpCapabilityProvider {
     }
 
     @AgentCapability(
+            name = "erp.purchase.order.search",
+            title = "ERP 采购订单列表查询",
+            description = "按采购订单号、供应商、商品、审核状态分页查询采购订单，用于补货跟进和供应商订单核对。",
+            category = "ERP",
+            permissions = "erp:purchase-order:query",
+            outputType = ErpPurchaseOrderSearchDataDTO.class)
+    public CapabilityResult searchPurchaseOrders(ErpPurchaseOrderSearchReqDTO reqDTO) {
+        ErpPurchaseOrderPageReqVO pageReqVO = new ErpPurchaseOrderPageReqVO();
+        pageReqVO.setNo(reqDTO.getNo());
+        pageReqVO.setSupplierId(reqDTO.getSupplierId());
+        pageReqVO.setProductId(reqDTO.getProductId());
+        pageReqVO.setStatus(reqDTO.getStatus());
+        pageReqVO.setPageNo(normalizePageNo(reqDTO.getPageNo()));
+        pageReqVO.setPageSize(normalizePageSize(reqDTO.getPageSize()));
+        PageResult<ErpPurchaseOrderDO> pageResult = purchaseOrderService.getPurchaseOrderPage(pageReqVO);
+
+        Map<Long, ErpSupplierDO> supplierMap = supplierService.getSupplierMap(
+                pageResult.getList().stream().map(ErpPurchaseOrderDO::getSupplierId).toList());
+        List<ErpPurchaseOrderCapabilityDTO> purchaseOrders = pageResult.getList().stream()
+                .map(order -> toPurchaseOrderView(order, supplierName(supplierMap.get(order.getSupplierId()))))
+                .toList();
+        ErpPurchaseOrderSearchDataDTO data = ErpPurchaseOrderSearchDataDTO.builder()
+                .total(pageResult.getTotal())
+                .returnedCount(purchaseOrders.size())
+                .list(purchaseOrders)
+                .build();
+        return CapabilityResult.success(data, "已返回采购订单列表");
+    }
+
+    @AgentCapability(
+            name = "erp.purchase.order.create",
+            title = "ERP 采购订单创建",
+            description = "为指定供应商创建采购订单草稿，复用 ERP 原有商品、供应商、价格和税额校验计算逻辑。"
+                    + "创建后订单处于未审核状态，可继续调用 erp.purchase.order.audit 审核。",
+            category = "ERP",
+            permissions = "erp:purchase-order:create",
+            riskLevel = CapabilityRiskLevel.MEDIUM,
+            sideEffect = true,
+            outputType = ErpPurchaseOrderCapabilityDTO.class)
+    public CapabilityResult createPurchaseOrder(ErpPurchaseOrderCreateReqDTO reqDTO) {
+        ErpPurchaseOrderSaveReqVO createReqVO = new ErpPurchaseOrderSaveReqVO();
+        createReqVO.setSupplierId(reqDTO.getSupplierId());
+        createReqVO.setOrderTime(reqDTO.getOrderTime() == null ? LocalDateTime.now() : reqDTO.getOrderTime());
+        createReqVO.setDiscountPercent(nullToZero(reqDTO.getDiscountPercent()));
+        createReqVO.setDepositPrice(nullToZero(reqDTO.getDepositPrice()));
+        createReqVO.setRemark(reqDTO.getRemark());
+        createReqVO.setItems(buildPurchaseOrderItems(reqDTO.getItems()));
+        Long purchaseOrderId = purchaseOrderService.createPurchaseOrder(createReqVO);
+
+        ErpPurchaseOrderCapabilityDTO purchaseOrder = toPurchaseOrderView(
+                purchaseOrderService.getPurchaseOrder(purchaseOrderId));
+        return CapabilityResult.success(purchaseOrder, "已创建采购订单")
+                .withSuggestedNextAction(CapabilityNextAction.of("erp.purchase.order.audit", "审核该采购订单",
+                        Map.of("id", purchaseOrderId, "approved", true)));
+    }
+
+    @AgentCapability(
+            name = "erp.purchase.order.get",
+            title = "ERP 采购订单查询",
+            description = "按采购订单编号查询订单主体和明细，用于确认采购订单状态、商品、数量和金额。",
+            category = "ERP",
+            permissions = "erp:purchase-order:query",
+            outputType = ErpPurchaseOrderCapabilityDTO.class)
+    public CapabilityResult getPurchaseOrder(ErpPurchaseOrderGetReqDTO reqDTO) {
+        ErpPurchaseOrderDO purchaseOrder = purchaseOrderService.getPurchaseOrder(reqDTO.getId());
+        return CapabilityResult.success(toPurchaseOrderView(purchaseOrder), "已返回采购订单详情");
+    }
+
+    @AgentCapability(
+            name = "erp.purchase.order.audit",
+            title = "ERP 采购订单审核",
+            description = "审核或反审核采购订单。审核订单不会直接增加库存，真实库存变化仍由 ERP 采购入库流程负责。",
+            category = "ERP",
+            permissions = "erp:purchase-order:update-status",
+            riskLevel = CapabilityRiskLevel.MEDIUM,
+            sideEffect = true,
+            outputType = ErpPurchaseOrderCapabilityDTO.class)
+    public CapabilityResult auditPurchaseOrder(ErpPurchaseOrderAuditReqDTO reqDTO) {
+        Integer status = Boolean.TRUE.equals(reqDTO.getApproved())
+                ? ErpAuditStatus.APPROVE.getStatus() : ErpAuditStatus.PROCESS.getStatus();
+        purchaseOrderService.updatePurchaseOrderStatus(reqDTO.getId(), status);
+        return CapabilityResult.success(toPurchaseOrderView(purchaseOrderService.getPurchaseOrder(reqDTO.getId())),
+                Boolean.TRUE.equals(reqDTO.getApproved()) ? "已审核采购订单" : "已反审核采购订单");
+    }
+
+    @AgentCapability(
             name = "erp.supplier.search",
             title = "ERP 供应商查询",
             description = "按供应商名称关键词、手机号分页查询 ERP 供应商候选列表。"
@@ -324,6 +474,67 @@ public class ErpCapabilityProvider {
                 .list(suppliers)
                 .build();
         return CapabilityResult.success(data, "已返回供应商候选列表");
+    }
+
+    @AgentCapability(
+            name = "erp.stock.record.search",
+            title = "ERP 库存流水查询",
+            description = "按商品、仓库、业务类型、业务单号和时间范围分页查询库存流水，用于解释库存变化来源。",
+            category = "ERP",
+            permissions = {"erp:stock-record:query", "erp:product:query", "erp:warehouse:query"},
+            permissionMode = CapabilityPermissionMode.ALL,
+            outputType = ErpStockRecordSearchDataDTO.class)
+    public CapabilityResult searchStockRecords(ErpStockRecordSearchReqDTO reqDTO) {
+        ErpStockRecordPageReqVO pageReqVO = new ErpStockRecordPageReqVO();
+        pageReqVO.setProductId(reqDTO.getProductId());
+        pageReqVO.setWarehouseId(reqDTO.getWarehouseId());
+        pageReqVO.setBizType(reqDTO.getBizType());
+        pageReqVO.setBizNo(reqDTO.getBizNo());
+        pageReqVO.setCreateTime(toRange(reqDTO.getBeginTime(), reqDTO.getEndTime()));
+        pageReqVO.setPageNo(normalizePageNo(reqDTO.getPageNo()));
+        pageReqVO.setPageSize(normalizePageSize(reqDTO.getPageSize()));
+        PageResult<ErpStockRecordDO> pageResult = stockRecordService.getStockRecordPage(pageReqVO);
+
+        Map<Long, ErpProductRespVO> productMap = productService.getProductVOMap(
+                pageResult.getList().stream().map(ErpStockRecordDO::getProductId).distinct().toList());
+        Map<Long, ErpWarehouseDO> warehouseMap = warehouseService.getWarehouseMap(
+                pageResult.getList().stream().map(ErpStockRecordDO::getWarehouseId).distinct().toList());
+        List<ErpStockRecordCapabilityDTO> stockRecords = pageResult.getList().stream()
+                .map(record -> toStockRecordView(record, productMap.get(record.getProductId()),
+                        warehouseMap.get(record.getWarehouseId())))
+                .toList();
+        ErpStockRecordSearchDataDTO data = ErpStockRecordSearchDataDTO.builder()
+                .total(pageResult.getTotal())
+                .returnedCount(stockRecords.size())
+                .list(stockRecords)
+                .build();
+        return CapabilityResult.success(data, "已返回库存流水列表")
+                .withEvidence(CapabilityEvidence.of("stock_record", "库存流水来自 ERP 产品库存明细",
+                        Map.of("returnedCount", stockRecords.size())));
+    }
+
+    @AgentCapability(
+            name = "erp.statistics.sale.summary",
+            title = "ERP 销售金额统计",
+            description = "查询今日、昨日、本月、本年销售金额，并可按自定义时间段统计销售金额。",
+            category = "ERP",
+            permissions = "erp:statistics:query",
+            outputType = ErpStatisticsSummaryDTO.class)
+    public CapabilityResult summarizeSale(ErpStatisticsSummaryReqDTO reqDTO) {
+        return CapabilityResult.success(buildStatisticsSummary(reqDTO, saleStatisticsService::getSalePrice),
+                "已返回销售金额统计");
+    }
+
+    @AgentCapability(
+            name = "erp.statistics.purchase.summary",
+            title = "ERP 采购金额统计",
+            description = "查询今日、昨日、本月、本年采购金额，并可按自定义时间段统计采购金额。",
+            category = "ERP",
+            permissions = "erp:statistics:query",
+            outputType = ErpStatisticsSummaryDTO.class)
+    public CapabilityResult summarizePurchase(ErpStatisticsSummaryReqDTO reqDTO) {
+        return CapabilityResult.success(buildStatisticsSummary(reqDTO, purchaseStatisticsService::getPurchasePrice),
+                "已返回采购金额统计");
     }
 
     private ErpProductCapabilityDTO toProductView(ErpProductRespVO product) {
@@ -398,6 +609,10 @@ public class ErpCapabilityProvider {
     }
 
     private ErpSaleOrderCapabilityDTO toSaleOrderView(ErpSaleOrderDO saleOrder) {
+        return toSaleOrderView(saleOrder, null);
+    }
+
+    private ErpSaleOrderCapabilityDTO toSaleOrderView(ErpSaleOrderDO saleOrder, String customerName) {
         List<ErpSaleOrderItemDO> orderItems = saleOrderService.getSaleOrderItemListByOrderId(saleOrder.getId());
         Map<Long, ErpProductRespVO> productMap = productService.getProductVOMap(orderItems.stream()
                 .map(ErpSaleOrderItemDO::getProductId)
@@ -409,6 +624,7 @@ public class ErpCapabilityProvider {
                 .status(saleOrder.getStatus())
                 .statusName(auditStatusName(saleOrder.getStatus()))
                 .customerId(saleOrder.getCustomerId())
+                .customerName(customerName)
                 .orderTime(saleOrder.getOrderTime() == null ? null : saleOrder.getOrderTime().toString())
                 .totalCount(nullToZero(saleOrder.getTotalCount()))
                 .totalPrice(nullToZero(saleOrder.getTotalPrice()))
@@ -431,6 +647,137 @@ public class ErpCapabilityProvider {
                 .taxPercent(nullToZero(item.getTaxPercent()))
                 .remark(item.getRemark())
                 .build();
+    }
+
+    private List<ErpPurchaseOrderSaveReqVO.Item> buildPurchaseOrderItems(List<ErpPurchaseOrderCreateReqDTO.Item> items) {
+        List<Long> productIds = items.stream()
+                .map(ErpPurchaseOrderCreateReqDTO.Item::getProductId)
+                .distinct()
+                .toList();
+        Map<Long, ErpProductDO> productMap = productService.validProductList(productIds).stream()
+                .collect(Collectors.toMap(ErpProductDO::getId, Function.identity()));
+        return items.stream()
+                .map(item -> toPurchaseOrderItemReq(item, productMap.get(item.getProductId())))
+                .toList();
+    }
+
+    private ErpPurchaseOrderSaveReqVO.Item toPurchaseOrderItemReq(ErpPurchaseOrderCreateReqDTO.Item item,
+                                                                  ErpProductDO product) {
+        ErpPurchaseOrderSaveReqVO.Item itemReqVO = new ErpPurchaseOrderSaveReqVO.Item();
+        itemReqVO.setProductId(item.getProductId());
+        itemReqVO.setProductUnitId(product.getUnitId());
+        itemReqVO.setProductPrice(defaultValue(item.getProductPrice(), product.getPurchasePrice()));
+        itemReqVO.setCount(item.getCount());
+        itemReqVO.setTaxPercent(nullToZero(item.getTaxPercent()));
+        itemReqVO.setRemark(item.getRemark());
+        return itemReqVO;
+    }
+
+    private ErpPurchaseOrderCapabilityDTO toPurchaseOrderView(ErpPurchaseOrderDO purchaseOrder) {
+        return toPurchaseOrderView(purchaseOrder, null);
+    }
+
+    private ErpPurchaseOrderCapabilityDTO toPurchaseOrderView(ErpPurchaseOrderDO purchaseOrder, String supplierName) {
+        List<ErpPurchaseOrderItemDO> orderItems = purchaseOrderService
+                .getPurchaseOrderItemListByOrderId(purchaseOrder.getId());
+        Map<Long, ErpProductRespVO> productMap = productService.getProductVOMap(orderItems.stream()
+                .map(ErpPurchaseOrderItemDO::getProductId)
+                .distinct()
+                .toList());
+        return ErpPurchaseOrderCapabilityDTO.builder()
+                .id(purchaseOrder.getId())
+                .no(purchaseOrder.getNo())
+                .status(purchaseOrder.getStatus())
+                .statusName(auditStatusName(purchaseOrder.getStatus()))
+                .supplierId(purchaseOrder.getSupplierId())
+                .supplierName(supplierName)
+                .orderTime(purchaseOrder.getOrderTime() == null ? null : purchaseOrder.getOrderTime().toString())
+                .totalCount(nullToZero(purchaseOrder.getTotalCount()))
+                .totalPrice(nullToZero(purchaseOrder.getTotalPrice()))
+                .inCount(nullToZero(purchaseOrder.getInCount()))
+                .returnCount(nullToZero(purchaseOrder.getReturnCount()))
+                .remark(purchaseOrder.getRemark())
+                .items(orderItems.stream()
+                        .map(item -> toPurchaseOrderItemView(item, productMap.get(item.getProductId())))
+                        .toList())
+                .build();
+    }
+
+    private ErpPurchaseOrderCapabilityDTO.Item toPurchaseOrderItemView(ErpPurchaseOrderItemDO item,
+                                                                       ErpProductRespVO product) {
+        return ErpPurchaseOrderCapabilityDTO.Item.builder()
+                .id(item.getId())
+                .productId(item.getProductId())
+                .productName(product == null ? null : product.getName())
+                .unitName(product == null ? null : product.getUnitName())
+                .productPrice(nullToZero(item.getProductPrice()))
+                .count(nullToZero(item.getCount()))
+                .totalPrice(nullToZero(item.getTotalPrice()))
+                .taxPercent(nullToZero(item.getTaxPercent()))
+                .inCount(nullToZero(item.getInCount()))
+                .returnCount(nullToZero(item.getReturnCount()))
+                .remark(item.getRemark())
+                .build();
+    }
+
+    private ErpStockRecordCapabilityDTO toStockRecordView(ErpStockRecordDO record, ErpProductRespVO product,
+                                                          ErpWarehouseDO warehouse) {
+        return ErpStockRecordCapabilityDTO.builder()
+                .id(record.getId())
+                .productId(record.getProductId())
+                .productName(product == null ? null : product.getName())
+                .warehouseId(record.getWarehouseId())
+                .warehouseName(warehouseName(warehouse))
+                .count(nullToZero(record.getCount()))
+                .totalCount(nullToZero(record.getTotalCount()))
+                .bizType(record.getBizType())
+                .bizTypeName(stockRecordBizTypeName(record.getBizType()))
+                .bizNo(record.getBizNo())
+                .createTime(record.getCreateTime() == null ? null : record.getCreateTime().toString())
+                .build();
+    }
+
+    private ErpStatisticsSummaryDTO buildStatisticsSummary(ErpStatisticsSummaryReqDTO reqDTO,
+                                                           BiFunction<LocalDateTime, LocalDateTime, BigDecimal> loader) {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime today = now.toLocalDate().atStartOfDay();
+        LocalDateTime yesterday = today.minusDays(1);
+        LocalDateTime month = today.withDayOfMonth(1);
+        LocalDateTime year = today.withDayOfYear(1);
+        return ErpStatisticsSummaryDTO.builder()
+                .todayPrice(nullToZero(loader.apply(today, null)))
+                .yesterdayPrice(nullToZero(loader.apply(yesterday, today)))
+                .monthPrice(nullToZero(loader.apply(month, null)))
+                .yearPrice(nullToZero(loader.apply(year, null)))
+                .beginTime(reqDTO.getBeginTime() == null ? null : reqDTO.getBeginTime().toString())
+                .endTime(reqDTO.getEndTime() == null ? null : reqDTO.getEndTime().toString())
+                .customRangePrice(reqDTO.getBeginTime() == null ? null
+                        : nullToZero(loader.apply(reqDTO.getBeginTime(), reqDTO.getEndTime())))
+                .build();
+    }
+
+    private LocalDateTime[] toRange(LocalDateTime beginTime, LocalDateTime endTime) {
+        if (beginTime == null && endTime == null) {
+            return null;
+        }
+        return new LocalDateTime[]{beginTime, endTime};
+    }
+
+    private String customerName(ErpCustomerDO customer) {
+        return customer == null ? null : customer.getName();
+    }
+
+    private String supplierName(ErpSupplierDO supplier) {
+        return supplier == null ? null : supplier.getName();
+    }
+
+    private String stockRecordBizTypeName(Integer bizType) {
+        for (ErpStockRecordBizTypeEnum typeEnum : ErpStockRecordBizTypeEnum.values()) {
+            if (typeEnum.getType().equals(bizType)) {
+                return typeEnum.getName();
+            }
+        }
+        return null;
     }
 
     private String auditStatusName(Integer status) {
