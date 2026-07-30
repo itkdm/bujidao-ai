@@ -2,7 +2,7 @@
 
 这里存放 `bujidao-ai` 自己维护的数据库增量脚本、迁移说明和初始化补充数据。
 
-上游芋道自带 SQL 保留在 `backend/sql/` 目录中。本项目自己的对外增量 SQL 只放在根目录 `sql/`，避免外部公司升级时分不清正式脚本和本地联调脚本。
+上游芋道自带 SQL 保留在 `backend/sql/` 目录中。本项目自己的对外增量 SQL 只放在根目录 `sql/`，避免外部公司升级时分不清上游基线脚本和 `bujidao-ai` 正式增量脚本。
 
 ## 唯一对外入口
 
@@ -32,15 +32,17 @@
 
 正式 Remote MCP 认证默认使用 OAuth Dynamic Client Registration。Agent 客户端会按协议动态注册 public client，并写入上游已有的 `system_oauth2_client` 表。
 
-因此，本目录不提供固定 `client_id` 的生产 seed。固定客户端只适合本地联调或企业内部明确固定 redirect URI 的场景，不适合作为开源项目的默认增量 SQL。
+因此，本目录不提供固定 `client_id` 的初始化数据。固定客户端只适合企业明确指定 redirect URI、并主动选择预置客户端的场景，不适合作为开源项目的默认增量 SQL。
 
-本地联调、演示数据、一次性探针 SQL 如果仍有保留价值，应放在项目外部个人目录或本机备份目录中，不提交到 Git。
+开发验证、演示数据、一次性探针 SQL 不属于对外增量 SQL。若目标公司确实需要，应由接入方按自己的环境单独维护，不应混入本目录。
 
-## ERP 能力权限
+## 示例业务能力权限
 
-当前 ERP ACF 能力复用上游 ERP 已有权限标识，例如 `erp:product:query`、`erp:sale-order:create`、`erp:purchase-order:update-status` 等。
+本项目内置的 ERP ACF 能力只是示例业务能力，它复用上游 ERP 已有权限标识，例如 `erp:product:query`、`erp:sale-order:create`、`erp:purchase-order:update-status` 等。
 
-如果目标公司已经使用上游 ERP 模块，通常不需要额外导入 ERP 权限 seed；只需要把原本 Web 端应有的 ERP 菜单/按钮权限分配给对应用户角色。MCP tools/list 和 tools/call 会按当前登录用户的权限过滤和校验能力。
+如果目标公司没有使用 ERP 模块，不需要迁移这些 ERP 示例能力，也不需要导入 ERP 权限初始化数据。接入方应在自己的业务模块中新增 ACF 能力，并复用该业务原本 Web 端使用的菜单/按钮权限。MCP tools/list 和 tools/call 会按当前登录用户的权限过滤和校验能力。
+
+如果目标公司已经使用上游 ERP 模块，并希望复用本项目 ERP 示例能力，通常只需要把原本 Web 端应有的 ERP 菜单/按钮权限分配给对应用户角色。
 
 ## 重复执行与回滚
 

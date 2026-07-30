@@ -153,7 +153,7 @@ mvn package -DskipTests -pl yudao-server -am
 $repo = (Resolve-Path '.').Path
 $logs = Join-Path $repo 'runtime-logs'
 New-Item -ItemType Directory -Force -Path $logs | Out-Null
-$java = 'D:\jdk\jdk17\jdk-17.0.12\bin\java.exe'
+$java = Join-Path $env:JAVA_HOME 'bin\java.exe'
 $jar = Join-Path $repo 'backend\yudao-server\target\yudao-server.jar'
 Start-Process -WindowStyle Hidden -FilePath $java `
   -ArgumentList @('-jar',('"{0}"' -f $jar),'--spring.profiles.active=local') `
@@ -161,7 +161,7 @@ Start-Process -WindowStyle Hidden -FilePath $java `
   -RedirectStandardError (Join-Path $logs 'yudao-server.err.log')
 ```
 
-如果本机 JDK17 路径不同，先以 `backend/pom.xml` 的 Java 版本为准调整 `$java`，不要改 Maven 项目的 Java 基线。
+如果 `JAVA_HOME` 未指向 JDK17，先以 `backend/pom.xml` 的 Java 版本为准调整 `$java` 到本机 JDK17 路径，或设置 `JAVA_HOME`；不要改 Maven 项目的 Java 基线。
 
 前端开发服务默认使用 `80`，本地请求地址优先查看 `frontend/.env.local`。前端本地启动常用流程：
 
