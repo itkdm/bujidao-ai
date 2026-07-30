@@ -4,6 +4,7 @@ import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCall;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolDescriptor;
+import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolExportService;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import cn.iocoder.yudao.framework.common.biz.system.oauth2.OAuth2TokenCommonApi;
 import cn.iocoder.yudao.framework.common.biz.system.oauth2.dto.OAuth2AccessTokenCheckRespDTO;
@@ -62,6 +63,9 @@ class McpEndpointSecurityIntegrationTest {
               "protocolVersion":"2025-11-25","capabilities":{},
               "clientInfo":{"name":"security-test","version":"1.0.0"}}}
             """;
+    private static final String TOOLS_LIST_REQUEST = """
+            {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
+            """;
 
     @LocalServerPort
     private int port;
@@ -78,6 +82,37 @@ class McpEndpointSecurityIntegrationTest {
     @Test
     void shouldRejectAnonymousRequestThroughYudaoSecurityFilterChain() {
         ResponseEntity<String> response = postInitialize(new HttpHeaders());
+
+        assertThat(response.getStatusCode().value()).isEqualTo(401);
+    }
+
+    @Test
+    void shouldRejectAnonymousToolsListThroughYudaoSecurityFilterChain() {
+        ResponseEntity<String> response = postToolsList(new HttpHeaders());
+
+        assertThat(response.getStatusCode().value()).isEqualTo(401);
+    }
+
+    @Test
+    void shouldRejectInvalidBearerToolsListThroughYudaoSecurityFilterChain() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth("invalid-token");
+
+        ResponseEntity<String> response = postToolsList(headers);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(401);
+    }
+
+    @Test
+    void shouldRejectAccessTokenQueryParameterForToolsListThroughYudaoSecurityFilterChain() {
+        ResponseEntity<String> response = postToolsList(new HttpHeaders(), "?access_token=abc");
+
+        assertThat(response.getStatusCode().value()).isEqualTo(401);
+    }
+
+    @Test
+    void shouldRejectConfiguredTokenQueryParameterForToolsListBeforeSecurityFilterChain() {
+        ResponseEntity<String> response = postToolsList(new HttpHeaders(), "?token=abc");
 
         assertThat(response.getStatusCode().value()).isEqualTo(401);
     }
@@ -111,6 +146,17 @@ class McpEndpointSecurityIntegrationTest {
         assertThat(captor.getValue().getContext().getAttributes())
                 .containsEntry("oauthClientId", "workbuddy-mcp");
         assertThat(invokedTenantId).hasValue(2001L);
+    }
+
+    @Test
+    void shouldListVisibleToolsForAuthenticatedBearerToken() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth("valid-token");
+
+        ResponseEntity<String> response = postToolsList(headers);
+
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(response.getBody()).contains("\"tools\"", "\"name\":\"demo.echo\"");
     }
 
     @Test
@@ -155,6 +201,17 @@ class McpEndpointSecurityIntegrationTest {
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setAccept(List.of(MediaType.APPLICATION_JSON, MediaType.TEXT_EVENT_STREAM));
         return restTemplate.postForEntity(endpoint(), new HttpEntity<>(INITIALIZE_REQUEST, headers), String.class);
+    }
+
+    private ResponseEntity<String> postToolsList(HttpHeaders headers) {
+        return postToolsList(headers, "");
+    }
+
+    private ResponseEntity<String> postToolsList(HttpHeaders headers, String queryString) {
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setAccept(List.of(MediaType.APPLICATION_JSON, MediaType.TEXT_EVENT_STREAM));
+        return restTemplate.postForEntity(endpoint() + queryString,
+                new HttpEntity<>(TOOLS_LIST_REQUEST, headers), String.class);
     }
 
     private String endpoint() {
@@ -231,14 +288,17 @@ class McpEndpointSecurityIntegrationTest {
         @Bean
         CapabilityToolCatalog capabilityToolCatalog() {
             CapabilityToolCatalog catalog = mock(CapabilityToolCatalog.class);
-            CapabilityToolDescriptor descriptor = mock(CapabilityToolDescriptor.class);
-            when(descriptor.getCapabilityName()).thenReturn("demo.echo");
-            when(descriptor.getTitle()).thenReturn("Echo");
-            when(descriptor.getDescription()).thenReturn("Echo input");
-            when(descriptor.getInputSchema()).thenReturn(Map.of("type", "object"));
-            when(descriptor.getOutputSchema()).thenReturn(Map.of("type", "string"));
+            CapabilityToolDescriptor descriptor = demoEchoDescriptor();
             when(catalog.listDeclared()).thenReturn(List.of(descriptor));
             return catalog;
+        }
+
+        @Bean
+        CapabilityToolExportService capabilityToolExportService() {
+            CapabilityToolExportService exportService = mock(CapabilityToolExportService.class);
+            CapabilityToolDescriptor descriptor = demoEchoDescriptor();
+            when(exportService.export(any())).thenReturn(List.of(descriptor));
+            return exportService;
         }
 
         @Bean
@@ -254,6 +314,16 @@ class McpEndpointSecurityIntegrationTest {
         @Bean
         AtomicReference<Long> invokedTenantId() {
             return new AtomicReference<>();
+        }
+
+        private static CapabilityToolDescriptor demoEchoDescriptor() {
+            CapabilityToolDescriptor descriptor = mock(CapabilityToolDescriptor.class);
+            when(descriptor.getCapabilityName()).thenReturn("demo.echo");
+            when(descriptor.getTitle()).thenReturn("Echo");
+            when(descriptor.getDescription()).thenReturn("Echo input");
+            when(descriptor.getInputSchema()).thenReturn(Map.of("type", "object"));
+            when(descriptor.getOutputSchema()).thenReturn(Map.of("type", "string"));
+            return descriptor;
         }
 
     }

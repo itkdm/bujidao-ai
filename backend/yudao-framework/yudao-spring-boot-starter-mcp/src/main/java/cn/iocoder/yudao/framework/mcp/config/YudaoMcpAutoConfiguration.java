@@ -46,6 +46,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 import java.util.List;
@@ -135,7 +136,7 @@ public class YudaoMcpAutoConfiguration {
                 .addFilterAfter(tenantContextFilter, McpScopeAuthorizationFilter.class);
         AcfMcpToolsListFilter acfToolsListFilter = toolsListFilter.getIfAvailable();
         if (acfToolsListFilter != null) {
-            http.addFilterAfter(acfToolsListFilter, McpTenantContextFilter.class);
+            http.addFilterAfter(acfToolsListFilter, AuthorizationFilter.class);
         }
         return http.build();
     }

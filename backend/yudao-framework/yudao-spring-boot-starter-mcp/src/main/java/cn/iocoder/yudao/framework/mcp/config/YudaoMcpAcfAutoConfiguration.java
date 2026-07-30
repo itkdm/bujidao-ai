@@ -21,6 +21,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 
 /**
@@ -39,6 +40,9 @@ import org.springframework.context.annotation.Bean;
 @ConditionalOnBean({CapabilityToolCatalog.class, CapabilityToolInvoker.class})
 @EnableConfigurationProperties(YudaoMcpAcfProperties.class)
 public class YudaoMcpAcfAutoConfiguration {
+
+    public static final String ACF_MCP_TOOLS_LIST_FILTER_REGISTRATION_NAME =
+            "bujidaoAcfMcpToolsListFilterRegistration";
 
     @Bean
     @ConditionalOnMissingBean(CapabilityToolContractSupport.class)
@@ -95,6 +99,15 @@ public class YudaoMcpAcfAutoConfiguration {
                                                        ObjectProvider<AcfMcpConfirmationTool> confirmationTool) {
         return new AcfMcpToolsListFilter(toolExportService, toolMapper, objectMapper,
                 confirmationTool.getIfAvailable());
+    }
+
+    @Bean(name = ACF_MCP_TOOLS_LIST_FILTER_REGISTRATION_NAME)
+    @ConditionalOnMissingBean(name = ACF_MCP_TOOLS_LIST_FILTER_REGISTRATION_NAME)
+    public FilterRegistrationBean<AcfMcpToolsListFilter> acfMcpToolsListFilterRegistration(
+            AcfMcpToolsListFilter filter) {
+        FilterRegistrationBean<AcfMcpToolsListFilter> registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
     }
 
 }
