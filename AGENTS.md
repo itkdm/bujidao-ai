@@ -4,13 +4,11 @@
 
 本文件用于给 AI 编程 Agent 提供在 `bujidao-ai` 仓库中工作的项目上下文、工程约束和安全规则。
 
-`README.md` 面向普通用户和开源访问者，保持简洁；`AGENTS.md` 面向 AI 编程 Agent，记录构建命令、目录边界、架构方向、验证方式和协作规范。
-
 ## 项目概览
 
 `bujidao-ai` 是基于芋道源码 / ruoyi-vue-pro 的 AI 扩展项目。
 
-本项目不是把芋道源码改名后重新发布，也不是从零实现一套新的后台框架。项目目标是在兼容芋道企业级后台基础能力的前提下，逐步补充面向真实业务场景的 AI 能力，例如 RAG、Agent 运行时、MCP 集成、ACF 风格的能力治理、工具调用、执行追踪和 AI 管理后台。
+项目目标是在兼容芋道企业级后台基础能力的前提下，逐步补充面向真实业务场景的 AI 能力，例如 RAG、Agent 运行时、MCP 集成、ACF 风格的能力治理、工具调用、执行追踪和 AI 管理后台。
 
 ## 目录说明
 
@@ -18,8 +16,6 @@
 - `frontend/`: Vue 管理后台前端，通过 `git subtree` 从 `yudaocode/yudao-ui-admin-vue3` 引入。
 - `docs/`: 本地开发参考、设计说明和上游同步说明，仅在本地维护，不提交到 Git。
 - `sql/`: `bujidao-ai` 自己维护的增量 SQL、迁移说明和补充数据。
-
-根目录的本文件适用于整个仓库。未来如果某个子目录新增了自己的 `AGENTS.md`，在该子目录内工作时应优先遵循更近的说明文件。
 
 ## 上游关系
 
@@ -131,13 +127,9 @@ Get-NetTCPConnection -LocalPort 48080,80 -State Listen -ErrorAction SilentlyCont
 Get-CimInstance Win32_Process -Filter "ProcessId=<pid>" | Select-Object ProcessId,CommandLine
 ```
 
-详细本地开发流程见 `docs/local-dev.md`。
-
-后端默认端口是 `48080`。默认本地启动直接使用仓库内的 `backend/yudao-server/src/main/resources/application-local.yaml`，不要再默认追加 `--spring.config.additional-location=runtime-config/`。当前开发分支的本机 MySQL、Redis 密码、MCP 开关等联调配置就保存在这份 tracked YAML 的工作区版本中，并通过 `skip-worktree` 隔离提交。
 
 因此：
 
-- 不要在普通本地启动、重打包、问题排查时使用 `runtime-config` 覆盖配置。
 - 不要在“恢复上游侵入修改”时把 `application-local.yaml` 恢复到 `origin/*` 或上游安全默认值；这会丢掉本地可运行配置。
 - 如果误恢复了，先用 `git restore --source HEAD --worktree -- backend/yudao-server/src/main/resources/application-local.yaml` 恢复当前分支本地配置，再重新打包启动。
 
