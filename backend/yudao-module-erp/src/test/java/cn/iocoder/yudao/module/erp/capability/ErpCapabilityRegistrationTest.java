@@ -152,15 +152,13 @@ class ErpCapabilityRegistrationTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void shouldMarkContactFieldsAsSensitiveAndOmitFinancialFields() {
+    void shouldExposeContactFieldsAndOmitFinancialFields() {
         Map<String, Object> schema = new CapabilitySchemaGenerator().generate(ErpCustomerCapabilityDTO.class);
 
         Map<String, Object> properties = (Map<String, Object>) schema.get("properties");
         assertThat(properties).containsKeys("id", "name", "contact", "mobile", "telephone", "status");
-        // 财务敏感字段不进入能力视图，Agent 无法读取
+        // 财务档案字段不进入列表能力视图；后续如需完整档案，应新增详情能力。
         assertThat(properties).doesNotContainKeys("taxNo", "taxPercent", "bankName", "bankAccount", "bankAddress");
-        assertThat((Map<String, Object>) properties.get("mobile")).containsEntry("x-sensitive", true);
-        assertThat((Map<String, Object>) properties.get("telephone")).containsEntry("x-sensitive", true);
     }
 
     private AnnotationConfigApplicationContext createContext() {

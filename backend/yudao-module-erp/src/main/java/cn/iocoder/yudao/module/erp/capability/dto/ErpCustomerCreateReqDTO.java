@@ -23,11 +23,11 @@ public class ErpCustomerCreateReqDTO {
     private String contact;
 
     @Size(max = 32)
-    @CapabilityField(description = "手机号码", sensitive = true, example = "13800000000")
+    @CapabilityField(description = "手机号码", example = "13800000000")
     private String mobile;
 
     @Size(max = 32)
-    @CapabilityField(description = "联系电话", sensitive = true, example = "021-88888888")
+    @CapabilityField(description = "联系电话", example = "021-88888888")
     private String telephone;
 
     @Size(max = 255)
