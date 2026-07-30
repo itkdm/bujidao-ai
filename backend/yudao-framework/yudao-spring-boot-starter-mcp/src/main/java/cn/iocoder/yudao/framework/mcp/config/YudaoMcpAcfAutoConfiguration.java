@@ -1,6 +1,7 @@
 package cn.iocoder.yudao.framework.mcp.config;
 
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog;
+import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolContractSupport;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolExportService;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import cn.iocoder.yudao.framework.mcp.acf.AcfMcpToolMapper;
@@ -36,9 +37,15 @@ import org.springframework.context.annotation.Bean;
 public class YudaoMcpAcfAutoConfiguration {
 
     @Bean
+    @ConditionalOnMissingBean(CapabilityToolContractSupport.class)
+    public CapabilityToolContractSupport capabilityToolContractSupport() {
+        return new CapabilityToolContractSupport();
+    }
+
+    @Bean
     @ConditionalOnMissingBean
-    public AcfMcpToolMapper acfMcpToolMapper() {
-        return new AcfMcpToolMapper();
+    public AcfMcpToolMapper acfMcpToolMapper(CapabilityToolContractSupport toolContractSupport) {
+        return new AcfMcpToolMapper(toolContractSupport);
     }
 
     @Bean
@@ -51,8 +58,10 @@ public class YudaoMcpAcfAutoConfiguration {
     @ConditionalOnMissingBean
     public AcfMcpToolCallHandler acfMcpToolCallHandler(CapabilityToolInvoker capabilityToolInvoker,
                                                        McpJsonMapper jsonMapper,
-                                                       AcfMcpStructuredContentNormalizer structuredContentNormalizer) {
-        return new AcfMcpToolCallHandler(capabilityToolInvoker, jsonMapper, structuredContentNormalizer);
+                                                       AcfMcpStructuredContentNormalizer structuredContentNormalizer,
+                                                       CapabilityToolContractSupport toolContractSupport) {
+        return new AcfMcpToolCallHandler(capabilityToolInvoker, jsonMapper, structuredContentNormalizer,
+                toolContractSupport);
     }
 
     @Bean

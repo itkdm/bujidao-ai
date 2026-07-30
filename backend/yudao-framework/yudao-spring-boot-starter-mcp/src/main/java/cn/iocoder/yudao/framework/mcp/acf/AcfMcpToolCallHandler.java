@@ -6,7 +6,9 @@ import cn.iocoder.yudao.framework.acf.core.model.CapabilityContext;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityConfirmationChallenge;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCall;
+import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolContractSupport;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolDescriptor;
+import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvocationInput;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import cn.iocoder.yudao.framework.mcp.security.McpTransportContextKeys;
 import cn.iocoder.yudao.framework.mcp.tool.McpSchemaAdapter;
@@ -36,16 +38,25 @@ public class AcfMcpToolCallHandler {
     private final CapabilityToolInvoker capabilityToolInvoker;
     private final McpJsonMapper jsonMapper;
     private final AcfMcpStructuredContentNormalizer structuredContentNormalizer;
+    private final CapabilityToolContractSupport toolContractSupport;
 
     public AcfMcpToolCallHandler(CapabilityToolInvoker capabilityToolInvoker, McpJsonMapper jsonMapper) {
-        this(capabilityToolInvoker, jsonMapper, new AcfMcpStructuredContentNormalizer());
+        this(capabilityToolInvoker, jsonMapper, new AcfMcpStructuredContentNormalizer(),
+                new CapabilityToolContractSupport());
     }
 
     public AcfMcpToolCallHandler(CapabilityToolInvoker capabilityToolInvoker, McpJsonMapper jsonMapper,
                                  AcfMcpStructuredContentNormalizer structuredContentNormalizer) {
+        this(capabilityToolInvoker, jsonMapper, structuredContentNormalizer, new CapabilityToolContractSupport());
+    }
+
+    public AcfMcpToolCallHandler(CapabilityToolInvoker capabilityToolInvoker, McpJsonMapper jsonMapper,
+                                 AcfMcpStructuredContentNormalizer structuredContentNormalizer,
+                                 CapabilityToolContractSupport toolContractSupport) {
         this.capabilityToolInvoker = capabilityToolInvoker;
         this.jsonMapper = jsonMapper;
         this.structuredContentNormalizer = structuredContentNormalizer;
+        this.toolContractSupport = toolContractSupport;
     }
 
     public McpSchema.CallToolResult handle(McpTransportContext transportContext,
@@ -59,15 +70,22 @@ public class AcfMcpToolCallHandler {
                     false, null, null);
         }
         try {
-            CapabilityContext context = createContext(transportContext, control.clientRequestId());
+            CapabilityToolInvocationInput invocationInput = toolContractSupport.resolveInvocationInput(
+                    request.arguments());
+            CapabilityContext context = createContext(transportContext,
+                    firstPresent(invocationInput.getClientRequestId(), control.clientRequestId()));
             CapabilityToolCall call = CapabilityToolCall.builder()
                     .capabilityName(descriptor.getCapabilityName())
-                    .arguments(adaptArguments(descriptor, request.arguments()))
+                    .arguments(adaptArguments(descriptor, invocationInput.getBusinessArguments()))
                     .context(context)
-                    .idempotencyKey(control.idempotencyKey())
-                    .confirmationToken(control.confirmationToken())
+                    .idempotencyKey(firstPresent(invocationInput.getIdempotencyKey(), control.idempotencyKey()))
+                    .confirmationToken(firstPresent(invocationInput.getConfirmationToken(),
+                            control.confirmationToken()))
                     .build();
             return invokeWithTenantContext(descriptor, call, context.getTenantId());
+        } catch (IllegalArgumentException exception) {
+            return errorResult(CapabilityStatus.FAILURE, "BAD_REQUEST", exception.getMessage(),
+                    false, null, null);
         } catch (RuntimeException exception) {
             LOGGER.warn("Unexpected MCP tool invocation failure: capability={}, exceptionType={}",
                     descriptor.getCapabilityName(), exception.getClass().getName());
@@ -122,6 +140,10 @@ public class AcfMcpToolCallHandler {
         }
         Object value = context.get(key);
         return type.isInstance(value) ? type.cast(value) : null;
+    }
+
+    private static String firstPresent(String primary, String fallback) {
+        return primary == null || primary.isBlank() ? fallback : primary;
     }
 
     private static Object adaptArguments(CapabilityToolDescriptor descriptor, Map<String, Object> arguments) {

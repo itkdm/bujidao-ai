@@ -1,6 +1,7 @@
 package cn.iocoder.yudao.framework.mcp.acf;
 
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog;
+import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolContractSupport;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolDescriptor;
 import cn.iocoder.yudao.framework.acf.core.enums.CapabilityRiskLevel;
 import io.modelcontextprotocol.server.McpStatelessServerFeatures;
@@ -58,6 +59,13 @@ class AcfMcpToolSpecificationProviderTest {
 
         McpSchema.Tool tool = createFactory().createToolSpecifications().get(0).tool();
         assertThat(tool.annotations().readOnlyHint()).isFalse();
+        Map<?, ?> properties = (Map<?, ?>) tool.inputSchema().get("properties");
+        assertThat(properties.keySet().stream().map(String::valueOf).toList())
+                .contains(CapabilityToolContractSupport.CLIENT_REQUEST_ID,
+                        CapabilityToolContractSupport.IDEMPOTENCY_KEY,
+                        CapabilityToolContractSupport.CONFIRMATION_TOKEN);
+        assertThat(((List<?>) tool.inputSchema().get("required")).stream().map(String::valueOf).toList())
+                .contains(CapabilityToolContractSupport.IDEMPOTENCY_KEY);
         assertThat(tool.meta()).containsEntry(AcfMcpToolProtocolMetadata.IDEMPOTENCY_REQUIRED, true)
                 .containsEntry(AcfMcpToolProtocolMetadata.CONFIRMATION_REQUIRED, true);
     }

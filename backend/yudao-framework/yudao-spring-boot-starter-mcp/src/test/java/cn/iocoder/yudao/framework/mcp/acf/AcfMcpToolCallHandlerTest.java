@@ -5,6 +5,7 @@ import cn.iocoder.yudao.framework.acf.core.enums.CapabilityRiskLevel;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityConfirmationChallenge;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCall;
+import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolContractSupport;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolDescriptor;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import cn.iocoder.yudao.framework.mcp.security.McpTransportContextKeys;
@@ -38,10 +39,11 @@ class AcfMcpToolCallHandlerTest {
             return CapabilityResult.success("demo.echo", Map.of("message", "hello"));
         });
         McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("demo.echo",
-                Map.of("message", "hello"), Map.of(
-                AcfMcpToolProtocolMetadata.IDEMPOTENCY_KEY, "idem-001",
-                AcfMcpToolProtocolMetadata.CONFIRMATION_TOKEN, "confirm-001",
-                AcfMcpToolProtocolMetadata.CLIENT_REQUEST_ID, "request-001"));
+                Map.of("message", "hello",
+                        CapabilityToolContractSupport.IDEMPOTENCY_KEY, "idem-001",
+                        CapabilityToolContractSupport.CONFIRMATION_TOKEN, "confirm-001",
+                        CapabilityToolContractSupport.CLIENT_REQUEST_ID, "request-001"),
+                Map.of());
 
         McpTransportContext transportContext = McpTransportContext.create(Map.of(
                 McpTransportContextKeys.USER_ID, 1L,
@@ -75,6 +77,30 @@ class AcfMcpToolCallHandlerTest {
     }
 
     @Test
+    void shouldFallbackToMetadataControlFieldsForCompatibleClients() {
+        CapabilityToolInvoker invoker = mock(CapabilityToolInvoker.class);
+        CapabilityToolDescriptor descriptor = descriptor(Map.of("type", "object"), Map.of("type", "object"));
+        ArgumentCaptor<CapabilityToolCall> callCaptor = ArgumentCaptor.forClass(CapabilityToolCall.class);
+        when(invoker.invoke(callCaptor.capture()))
+                .thenReturn(CapabilityResult.success("demo.echo", Map.of("message", "hello")));
+        McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("demo.echo",
+                Map.of("message", "hello"), Map.of(
+                AcfMcpToolProtocolMetadata.IDEMPOTENCY_KEY, "idem-meta",
+                AcfMcpToolProtocolMetadata.CONFIRMATION_TOKEN, "confirm-meta",
+                AcfMcpToolProtocolMetadata.CLIENT_REQUEST_ID, "request-meta"));
+
+        McpSchema.CallToolResult result = createHandler(invoker)
+                .handle(McpTransportContext.EMPTY, descriptor, request);
+
+        assertThat(result.isError()).isFalse();
+        CapabilityToolCall call = callCaptor.getValue();
+        assertThat(call.getArguments()).isEqualTo(Map.of("message", "hello"));
+        assertThat(call.getContext().getClientRequestId()).isEqualTo("request-meta");
+        assertThat(call.getIdempotencyKey()).isEqualTo("idem-meta");
+        assertThat(call.getConfirmationToken()).isEqualTo("confirm-meta");
+    }
+
+    @Test
     void shouldUnwrapScalarInputAndWrapScalarOutput() {
         CapabilityToolInvoker invoker = mock(CapabilityToolInvoker.class);
         CapabilityToolDescriptor descriptor = descriptor(Map.of("type", "string"), Map.of("type", "integer"));
@@ -82,13 +108,15 @@ class AcfMcpToolCallHandlerTest {
         when(invoker.invoke(callCaptor.capture()))
                 .thenReturn(CapabilityResult.success("demo.length", 5, "Length calculated"));
         McpSchema.CallToolRequest request = McpSchema.CallToolRequest.builder("demo.length")
-                .arguments(Map.of(McpSchemaAdapter.INPUT_VALUE_PROPERTY, "hello"))
+                .arguments(Map.of(McpSchemaAdapter.INPUT_VALUE_PROPERTY, "hello",
+                        CapabilityToolContractSupport.IDEMPOTENCY_KEY, "idem-scalar"))
                 .build();
 
         McpSchema.CallToolResult result = createHandler(invoker)
                 .handle(McpTransportContext.EMPTY, descriptor, request);
 
         assertThat(callCaptor.getValue().getArguments()).isEqualTo("hello");
+        assertThat(callCaptor.getValue().getIdempotencyKey()).isEqualTo("idem-scalar");
         assertThat(result.content().get(0).toString()).contains("{\"result\":5}");
         assertThat(result.content().get(1).toString()).contains("Length calculated");
         assertThat(result.structuredContent()).isEqualTo(Map.of(McpSchemaAdapter.OUTPUT_RESULT_PROPERTY, 5));
