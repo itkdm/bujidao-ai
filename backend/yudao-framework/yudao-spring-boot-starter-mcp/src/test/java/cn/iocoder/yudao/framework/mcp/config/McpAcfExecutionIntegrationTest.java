@@ -43,7 +43,6 @@ import static org.mockito.Mockito.when;
 @SpringBootTest(classes = McpAcfExecutionIntegrationTest.TestApplication.class,
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {"yudao.mcp.server.enabled=true",
-                "yudao.mcp.acf.exposed-capabilities=test.mcp.echo",
                 "yudao.web.admin-ui.url=http://localhost"})
 class McpAcfExecutionIntegrationTest {
 

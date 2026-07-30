@@ -47,7 +47,6 @@ import static org.mockito.Mockito.when;
 @SpringBootTest(classes = McpServerInitializeIntegrationTest.TestApplication.class,
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {"yudao.mcp.server.enabled=true",
-                "yudao.mcp.acf.exposed-capabilities=demo.echo",
                 "yudao.web.admin-ui.url=http://localhost"})
 class McpServerInitializeIntegrationTest {
 
@@ -120,7 +119,7 @@ class McpServerInitializeIntegrationTest {
     }
 
     @Test
-    void shouldListAllowlistedAcfTools() throws Exception {
+    void shouldListDeclaredAcfTools() throws Exception {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setAccept(java.util.List.of(MediaType.APPLICATION_JSON, MediaType.TEXT_EVENT_STREAM));
@@ -254,7 +253,7 @@ class McpServerInitializeIntegrationTest {
             when(descriptor.getInputSchema()).thenReturn(Map.of("type", "object", "properties",
                     Map.of("message", Map.of("type", "string"))));
             when(descriptor.getOutputSchema()).thenReturn(Map.of("type", "string"));
-            when(catalog.getDeclared("demo.echo")).thenReturn(descriptor);
+            when(catalog.listDeclared()).thenReturn(java.util.List.of(descriptor));
             return catalog;
         }
 

@@ -569,7 +569,8 @@ class CapabilityRuntimeExecutorTest {
         }
 
         @AgentCapability(name = "test.runtime.reject", title = "运行时失败结果能力",
-                description = "验证标准失败结果收口", permissions = "test:runtime:invoke")
+                description = "验证标准失败结果收口", permissions = "test:runtime:invoke",
+                outputType = Void.class)
         public CapabilityResult failureResult() {
             invocationCount++;
             return CapabilityResult.failure("BUSINESS_REJECTED", "business rejected", false);

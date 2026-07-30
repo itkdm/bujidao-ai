@@ -1,6 +1,7 @@
 package cn.iocoder.yudao.framework.acf.core.service;
 
 import cn.iocoder.yudao.framework.acf.core.annotation.AgentCapability;
+import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityDefinition;
 import cn.iocoder.yudao.framework.acf.core.schema.CapabilitySchemaGenerator;
 import cn.iocoder.yudao.framework.acf.core.standard.AcfCapabilityNamingConvention;
@@ -138,6 +139,7 @@ public class CapabilityRegistry implements SmartInitializingSingleton {
 
         Type argumentType = method.getParameterCount() == 0 ? Void.class : method.getGenericParameterTypes()[0];
         Type returnType = method.getGenericReturnType();
+        Type outputType = resolveOutputType(annotation, method, returnType);
         CapabilityDefinition definition = CapabilityDefinition.builder()
                 .name(annotation.name())
                 .title(annotation.title())
@@ -152,8 +154,9 @@ public class CapabilityRegistry implements SmartInitializingSingleton {
                 .timeoutMs(annotation.timeoutMs())
                 .argumentType(argumentType)
                 .returnType(returnType)
+                .outputType(outputType)
                 .inputSchema(schemaGenerator.generate(argumentType))
-                .outputSchema(schemaGenerator.generate(returnType))
+                .outputSchema(schemaGenerator.generate(outputType))
                 .build();
         CapabilityRegistration registration = new CapabilityRegistration(definition, beanName, bean, invocableMethod);
 
@@ -219,6 +222,31 @@ public class CapabilityRegistry implements SmartInitializingSingleton {
         if (method.getParameterCount() > 1) {
             throw invalid(method, "supports zero or one argument: " + annotation.name());
         }
+        validateOutputType(annotation, method);
+    }
+
+    private Type resolveOutputType(AgentCapability annotation, Method method, Type returnType) {
+        Class<?> declaredOutputType = annotation.outputType();
+        if (returnsCapabilityResult(returnType)) {
+            if (declaredOutputType == Object.class) {
+                throw invalid(method, "outputType is required when method returns CapabilityResult: "
+                        + annotation.name());
+            }
+            return declaredOutputType;
+        }
+        return returnType;
+    }
+
+    private void validateOutputType(AgentCapability annotation, Method method) {
+        if (!returnsCapabilityResult(method.getGenericReturnType())
+                && annotation.outputType() != Object.class) {
+            throw invalid(method, "outputType is only supported when method returns CapabilityResult: "
+                    + annotation.name());
+        }
+    }
+
+    private boolean returnsCapabilityResult(Type returnType) {
+        return returnType == CapabilityResult.class;
     }
 
     private IllegalStateException invalid(Method method, String reason) {

@@ -35,10 +35,17 @@ public class AcfMcpToolCallHandler {
 
     private final CapabilityToolInvoker capabilityToolInvoker;
     private final McpJsonMapper jsonMapper;
+    private final AcfMcpStructuredContentNormalizer structuredContentNormalizer;
 
     public AcfMcpToolCallHandler(CapabilityToolInvoker capabilityToolInvoker, McpJsonMapper jsonMapper) {
+        this(capabilityToolInvoker, jsonMapper, new AcfMcpStructuredContentNormalizer());
+    }
+
+    public AcfMcpToolCallHandler(CapabilityToolInvoker capabilityToolInvoker, McpJsonMapper jsonMapper,
+                                 AcfMcpStructuredContentNormalizer structuredContentNormalizer) {
         this.capabilityToolInvoker = capabilityToolInvoker;
         this.jsonMapper = jsonMapper;
+        this.structuredContentNormalizer = structuredContentNormalizer;
     }
 
     public McpSchema.CallToolResult handle(McpTransportContext transportContext,
@@ -138,7 +145,8 @@ public class AcfMcpToolCallHandler {
                     defaultMessage(result.getMessage(), "Capability invocation failed"),
                     result.isRetryable(), result.getTraceId(), challenge);
         }
-        Object structuredContent = adaptStructuredContent(descriptor, result.getData());
+        Object structuredContent = structuredContentNormalizer.normalize(
+                adaptStructuredContent(descriptor, result.getData()));
         McpSchema.CallToolResult.Builder builder = McpSchema.CallToolResult.builder()
                 .addTextContent(serializeStructuredContent(structuredContent))
                 .structuredContent(structuredContent)

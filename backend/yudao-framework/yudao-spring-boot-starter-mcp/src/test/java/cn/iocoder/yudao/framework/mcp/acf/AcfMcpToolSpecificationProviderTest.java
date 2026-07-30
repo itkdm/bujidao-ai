@@ -3,7 +3,6 @@ package cn.iocoder.yudao.framework.mcp.acf;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolDescriptor;
 import cn.iocoder.yudao.framework.acf.core.enums.CapabilityRiskLevel;
-import cn.iocoder.yudao.framework.mcp.config.YudaoMcpAcfProperties;
 import io.modelcontextprotocol.server.McpStatelessServerFeatures;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.junit.jupiter.api.Test;
@@ -12,34 +11,33 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class AcfMcpToolSpecificationProviderTest {
 
     private final CapabilityToolCatalog catalog = mock(CapabilityToolCatalog.class);
-    private final YudaoMcpAcfProperties properties = new YudaoMcpAcfProperties();
+    private final AcfMcpToolMapper toolMapper = new AcfMcpToolMapper();
     private final AcfMcpToolCallHandler toolCallHandler = mock(AcfMcpToolCallHandler.class);
 
     @Test
-    void shouldExposeNothingWithoutExplicitWhitelist() {
+    void shouldExposeNothingWhenNoCapabilityDeclared() {
+        when(catalog.listDeclared()).thenReturn(List.of());
+
         assertThat(createFactory().createToolSpecifications()).isEmpty();
     }
 
     @Test
-    void shouldMapWhitelistedCapabilitiesInConfiguredOrder() {
-        properties.setExposedCapabilities(List.of("demo.second", "demo.first"));
+    void shouldMapAllDeclaredCapabilitiesInRegistryOrder() {
         CapabilityToolDescriptor first = descriptor("demo.first", false, false);
         CapabilityToolDescriptor second = descriptor("demo.second", false, false);
-        when(catalog.getDeclared("demo.first")).thenReturn(first);
-        when(catalog.getDeclared("demo.second")).thenReturn(second);
+        when(catalog.listDeclared()).thenReturn(List.of(first, second));
 
         List<McpStatelessServerFeatures.SyncToolSpecification> specifications =
                 createFactory().createToolSpecifications();
 
         assertThat(specifications).extracting(specification -> specification.tool().name())
-                .containsExactly("demo.second", "demo.first");
+                .containsExactly("demo.first", "demo.second");
         McpSchema.Tool tool = specifications.get(0).tool();
         assertThat(tool.title()).isEqualTo("Demo Tool");
         assertThat(tool.inputSchema()).containsEntry("type", "object");
@@ -54,55 +52,18 @@ class AcfMcpToolSpecificationProviderTest {
     }
 
     @Test
-    void shouldRejectBlankAndDuplicateCapabilityNames() {
-        properties.setExposedCapabilities(List.of("demo.first", " demo.first "));
-        CapabilityToolDescriptor descriptor = descriptor("demo.first", false, false);
-        when(catalog.getDeclared("demo.first")).thenReturn(descriptor);
-
-        assertThatThrownBy(() -> createFactory().createToolSpecifications())
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("Duplicate MCP exposed capability");
-
-        properties.setExposedCapabilities(List.of(" "));
-        assertThatThrownBy(() -> createFactory().createToolSpecifications())
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("must not be blank");
-    }
-
-    @Test
-    void shouldFailWhenWhitelistedCapabilityDoesNotExist() {
-        properties.setExposedCapabilities(List.of("missing.capability"));
-        when(catalog.getDeclared("missing.capability"))
-                .thenThrow(new IllegalArgumentException("Capability not found"));
-
-        assertThatThrownBy(() -> createFactory().createToolSpecifications())
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Capability not found");
-    }
-
-    @Test
-    void shouldRejectSensitiveCapabilitiesUnlessExplicitlyAllowed() {
-        properties.setExposedCapabilities(List.of("demo.write"));
+    void shouldRegisterSideEffectCapabilitiesDeclaredByCode() {
         CapabilityToolDescriptor descriptor = descriptor("demo.write", true, true);
-        when(catalog.getDeclared("demo.write")).thenReturn(descriptor);
+        when(catalog.listDeclared()).thenReturn(List.of(descriptor));
 
-        assertThatThrownBy(() -> createFactory().createToolSpecifications())
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("side-effect capability is not allowed");
-
-        properties.setAllowSideEffects(true);
-        assertThatThrownBy(() -> createFactory().createToolSpecifications())
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("confirmation-required capability is not allowed");
-
-        properties.setAllowConfirmationRequired(true);
         McpSchema.Tool tool = createFactory().createToolSpecifications().get(0).tool();
         assertThat(tool.annotations().readOnlyHint()).isFalse();
-        assertThat(tool.annotations().destructiveHint()).isNull();
+        assertThat(tool.meta()).containsEntry(AcfMcpToolProtocolMetadata.IDEMPOTENCY_REQUIRED, true)
+                .containsEntry(AcfMcpToolProtocolMetadata.CONFIRMATION_REQUIRED, true);
     }
 
     private AcfMcpToolSpecificationProvider createFactory() {
-        return new AcfMcpToolSpecificationProvider(catalog, properties, toolCallHandler);
+        return new AcfMcpToolSpecificationProvider(catalog, toolMapper, toolCallHandler);
     }
 
     private static CapabilityToolDescriptor descriptor(String name, boolean sideEffect,

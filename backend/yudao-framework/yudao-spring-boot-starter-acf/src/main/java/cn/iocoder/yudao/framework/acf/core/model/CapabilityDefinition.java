@@ -33,6 +33,7 @@ public final class CapabilityDefinition {
     private final int timeoutMs;
     private final Type argumentType;
     private final Type returnType;
+    private final Type outputType;
     private final Map<String, Object> inputSchema;
     private final Map<String, Object> outputSchema;
 
@@ -41,8 +42,8 @@ public final class CapabilityDefinition {
                                  List<String> permissions, CapabilityPermissionMode permissionMode,
                                  CapabilityRiskLevel riskLevel, boolean sideEffect,
                                  boolean confirmationRequired, String version, int timeoutMs,
-                                 Type argumentType, Type returnType, Map<String, Object> inputSchema,
-                                 Map<String, Object> outputSchema) {
+                                 Type argumentType, Type returnType, Type outputType,
+                                 Map<String, Object> inputSchema, Map<String, Object> outputSchema) {
         this.name = name;
         this.title = title;
         this.description = description;
@@ -56,6 +57,7 @@ public final class CapabilityDefinition {
         this.timeoutMs = timeoutMs;
         this.argumentType = argumentType;
         this.returnType = returnType;
+        this.outputType = outputType;
         this.inputSchema = immutableMap(inputSchema);
         this.outputSchema = immutableMap(outputSchema);
     }

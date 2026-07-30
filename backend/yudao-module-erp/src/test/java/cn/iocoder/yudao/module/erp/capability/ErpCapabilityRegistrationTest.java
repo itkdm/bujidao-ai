@@ -9,6 +9,7 @@ import cn.iocoder.yudao.module.erp.capability.dto.ErpCustomerCapabilityDTO;
 import cn.iocoder.yudao.module.erp.service.product.ErpProductService;
 import cn.iocoder.yudao.module.erp.service.purchase.ErpSupplierService;
 import cn.iocoder.yudao.module.erp.service.sale.ErpCustomerService;
+import cn.iocoder.yudao.module.erp.service.sale.ErpSaleOrderService;
 import cn.iocoder.yudao.module.erp.service.stock.ErpStockService;
 import cn.iocoder.yudao.module.erp.service.stock.ErpWarehouseService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -33,10 +34,14 @@ import static org.mockito.Mockito.mock;
  */
 class ErpCapabilityRegistrationTest {
 
-    /** 与 yudao-server 的 yudao.mcp.tools.exposed-capabilities 白名单保持一致 */
-    private static final List<String> EXPOSED_CAPABILITIES = List.of(
+    /** ERP 模块通过代码声明的 ACF 能力；MCP tools/list 会在运行时按用户权限动态过滤。 */
+    private static final List<String> ERP_CAPABILITIES = List.of(
+            "erp.customer.create",
             "erp.customer.search",
             "erp.product.search",
+            "erp.sale.order.audit",
+            "erp.sale.order.create",
+            "erp.sale.order.get",
             "erp.stock.query",
             "erp.supplier.search",
             "erp.warehouse.search");
@@ -47,23 +52,28 @@ class ErpCapabilityRegistrationTest {
             CapabilityRegistry registry = context.getBean(CapabilityRegistry.class);
 
             List<String> names = registry.list().stream().map(CapabilityDefinition::getName).toList();
-            assertThat(names).containsExactlyElementsOf(EXPOSED_CAPABILITIES);
+            assertThat(names).containsExactlyElementsOf(ERP_CAPABILITIES);
         }
     }
 
     @Test
-    void shouldDeclareReadOnlyLowRiskCapabilities() {
+    void shouldDeclareCapabilityGovernanceMetadata() {
         try (AnnotationConfigApplicationContext context = createContext()) {
             CapabilityRegistry registry = context.getBean(CapabilityRegistry.class);
 
             for (CapabilityDefinition definition : registry.list()) {
-                assertThat(definition.isSideEffect()).as("%s 应为只读能力", definition.getName()).isFalse();
                 assertThat(definition.isConfirmationRequired())
                         .as("%s 不应要求人工确认", definition.getName()).isFalse();
-                assertThat(definition.getRiskLevel()).isEqualTo(CapabilityRiskLevel.LOW);
                 assertThat(definition.getCategory()).isEqualTo("ERP");
                 assertThat(definition.getPermissions()).isNotEmpty();
             }
+            assertThat(registry.get("erp.product.search").isSideEffect()).isFalse();
+            assertThat(registry.get("erp.customer.search").isSideEffect()).isFalse();
+            assertThat(registry.get("erp.customer.create").isSideEffect()).isTrue();
+            assertThat(registry.get("erp.sale.order.create").isSideEffect()).isTrue();
+            assertThat(registry.get("erp.sale.order.audit").isSideEffect()).isTrue();
+            assertThat(registry.get("erp.product.search").getRiskLevel()).isEqualTo(CapabilityRiskLevel.LOW);
+            assertThat(registry.get("erp.sale.order.create").getRiskLevel()).isEqualTo(CapabilityRiskLevel.MEDIUM);
         }
     }
 
@@ -92,6 +102,22 @@ class ErpCapabilityRegistrationTest {
             assertThat(pageSize).containsEntry("type", "integer")
                     .containsEntry("minimum", 1L)
                     .containsEntry("maximum", 50L);
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldGenerateOutputSchemaFromCapabilityResultDataType() {
+        try (AnnotationConfigApplicationContext context = createContext()) {
+            CapabilityDefinition definition = context.getBean(CapabilityRegistry.class).get("erp.sale.order.get");
+
+            Map<String, Object> schema = definition.getOutputSchema();
+            Map<String, Object> properties = (Map<String, Object>) schema.get("properties");
+
+            assertThat(schema).containsEntry("type", "object");
+            assertThat(properties).containsKeys("id", "no", "orderTime", "items");
+            assertThat((Map<String, Object>) properties.get("orderTime")).containsEntry("type", "string");
+            assertThat(properties).doesNotContainKeys("data", "message", "errorCode");
         }
     }
 
@@ -159,6 +185,11 @@ class ErpCapabilityRegistrationTest {
         @Bean
         ErpSupplierService erpSupplierService() {
             return mock(ErpSupplierService.class);
+        }
+
+        @Bean
+        ErpSaleOrderService erpSaleOrderService() {
+            return mock(ErpSaleOrderService.class);
         }
 
     }

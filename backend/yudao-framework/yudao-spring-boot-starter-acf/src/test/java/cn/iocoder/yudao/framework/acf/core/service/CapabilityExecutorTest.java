@@ -267,7 +267,8 @@ class CapabilityExecutorTest {
         }
 
         @AgentCapability(name = "test.product.standard.result", title = "标准商品结果",
-                description = "验证标准结果不会被重复包装", permissions = "product:query")
+                description = "验证标准结果不会被重复包装", permissions = "product:query",
+                outputType = ProductResponse.class)
         public CapabilityResult standardResult(ProductRequest request) {
             return CapabilityResult.success(new ProductResponse(request.keyword(), request.limit()), "product found")
                     .withEvidence(CapabilityEvidence.of("product_lookup", "商品查询完成", Map.of()))

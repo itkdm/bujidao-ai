@@ -2,6 +2,7 @@ package cn.iocoder.yudao.framework.mcp.config;
 
 import cn.iocoder.yudao.framework.common.enums.WebFilterOrderEnum;
 import cn.iocoder.yudao.framework.mcp.oauth2.McpOAuthMetadataController;
+import cn.iocoder.yudao.framework.mcp.acf.AcfMcpToolsListFilter;
 import cn.iocoder.yudao.framework.mcp.security.McpAuthenticatedTransportContextExtractor;
 import cn.iocoder.yudao.framework.mcp.security.McpAuthenticationEntryPoint;
 import cn.iocoder.yudao.framework.mcp.security.McpQueryTokenRejectingFilter;
@@ -116,7 +117,8 @@ public class YudaoMcpAutoConfiguration {
                                                       TokenAuthenticationFilter tokenAuthenticationFilter,
                                                       McpStrictAccessTokenFilter strictAccessTokenFilter,
                                                       McpScopeAuthorizationFilter scopeAuthorizationFilter,
-                                                      McpTenantContextFilter tenantContextFilter)
+                                                      McpTenantContextFilter tenantContextFilter,
+                                                      ObjectProvider<AcfMcpToolsListFilter> toolsListFilter)
             throws Exception {
         // 过滤器顺序：认证 -> scope 判定 -> 租户上下文收口，避免为无权限请求绑定租户上下文
         http.securityMatcher(properties.getEndpoint())
@@ -131,6 +133,10 @@ public class YudaoMcpAutoConfiguration {
                 .addFilterAfter(strictAccessTokenFilter, TokenAuthenticationFilter.class)
                 .addFilterAfter(scopeAuthorizationFilter, McpStrictAccessTokenFilter.class)
                 .addFilterAfter(tenantContextFilter, McpScopeAuthorizationFilter.class);
+        AcfMcpToolsListFilter acfToolsListFilter = toolsListFilter.getIfAvailable();
+        if (acfToolsListFilter != null) {
+            http.addFilterAfter(acfToolsListFilter, McpTenantContextFilter.class);
+        }
         return http.build();
     }
 

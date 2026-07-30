@@ -95,6 +95,26 @@ class AcfMcpToolCallHandlerTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void shouldNormalizeStructuredContentToJsonNativeValues() {
+        CapabilityToolInvoker invoker = mock(CapabilityToolInvoker.class);
+        CapabilityToolDescriptor descriptor = descriptor(Map.of("type", "object"), Map.of(
+                "type", "object",
+                "properties", Map.of("orderTime", Map.of("type", "string", "format", "date-time"))));
+        LocalDateTime orderTime = LocalDateTime.of(2026, 7, 30, 9, 15, 30);
+        when(invoker.invoke(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(CapabilityResult.success("demo.order", new TimeOutput(orderTime), "Order returned"));
+
+        McpSchema.CallToolResult result = createHandler(invoker).handle(McpTransportContext.EMPTY, descriptor,
+                McpSchema.CallToolRequest.builder("demo.order").arguments(Map.of()).build());
+
+        assertThat(result.isError()).isFalse();
+        Map<String, Object> structuredContent = (Map<String, Object>) result.structuredContent();
+        assertThat(structuredContent).containsEntry("orderTime", "2026-07-30T09:15:30");
+        assertThat(result.content().get(0).toString()).contains("\"orderTime\":\"2026-07-30T09:15:30\"");
+    }
+
+    @Test
     void shouldReturnAcfPublicFailureAsMcpError() {
         CapabilityToolInvoker invoker = mock(CapabilityToolInvoker.class);
         CapabilityToolDescriptor descriptor = descriptor(Map.of("type", "object"), Map.of("type", "object"));
@@ -195,7 +215,11 @@ class AcfMcpToolCallHandlerTest {
     }
 
     private static AcfMcpToolCallHandler createHandler(CapabilityToolInvoker invoker) {
-        return new AcfMcpToolCallHandler(invoker, new JacksonMcpJsonMapper(new ObjectMapper()));
+        return new AcfMcpToolCallHandler(invoker, new JacksonMcpJsonMapper(new ObjectMapper()),
+                new AcfMcpStructuredContentNormalizer());
+    }
+
+    record TimeOutput(LocalDateTime orderTime) {
     }
 
 }

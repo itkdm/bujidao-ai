@@ -51,4 +51,13 @@ public @interface AgentCapability {
     /** 最大执行时间，单位毫秒 */
     int timeoutMs() default 30_000;
 
+    /**
+     * 能力成功结果的数据类型。
+     *
+     * <p>普通能力方法默认根据方法返回值推断输出 Schema。若方法返回 {@code CapabilityResult}，
+     * 则框架无法从包装类型推断 {@code data} 的真实结构，必须显式声明该字段；无结构化输出时使用
+     * {@link Void}。</p>
+     */
+    Class<?> outputType() default Object.class;
+
 }

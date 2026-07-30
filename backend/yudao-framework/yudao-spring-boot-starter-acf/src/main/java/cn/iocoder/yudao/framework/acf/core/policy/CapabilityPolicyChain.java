@@ -95,6 +95,7 @@ public class CapabilityPolicyChain {
         requireUnchanged(policy, "category", current.getCategory(), effective.getCategory());
         requireUnchanged(policy, "argumentType", current.getArgumentType(), effective.getArgumentType());
         requireUnchanged(policy, "returnType", current.getReturnType(), effective.getReturnType());
+        requireUnchanged(policy, "outputType", current.getOutputType(), effective.getOutputType());
         requireUnchanged(policy, "permissions", current.getPermissions(), effective.getPermissions());
         requireUnchanged(policy, "permissionMode", current.getPermissionMode(), effective.getPermissionMode());
         requireUnchanged(policy, "inputSchema", current.getInputSchema(), effective.getInputSchema());

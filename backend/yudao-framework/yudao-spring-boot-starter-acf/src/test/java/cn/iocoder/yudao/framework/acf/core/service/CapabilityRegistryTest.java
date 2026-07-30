@@ -5,6 +5,7 @@ import cn.iocoder.yudao.framework.acf.core.annotation.CapabilityField;
 import cn.iocoder.yudao.framework.acf.core.enums.CapabilityPermissionMode;
 import cn.iocoder.yudao.framework.acf.core.enums.CapabilityRiskLevel;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityDefinition;
+import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import cn.iocoder.yudao.framework.acf.core.schema.CapabilitySchemaGenerator;
 import jakarta.validation.constraints.NotBlank;
 import org.junit.jupiter.api.Test;
@@ -71,6 +72,26 @@ class CapabilityRegistryTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void shouldUseDeclaredOutputTypeForCapabilityResultData() {
+        try (AnnotationConfigApplicationContext context =
+                     new AnnotationConfigApplicationContext(WrappedResultConfig.class)) {
+            CapabilityRegistry registry = createRegistry(context);
+
+            CapabilityDefinition definition = registry.get("test.product.wrapped");
+            Map<String, Object> properties = (Map<String, Object>) definition.getOutputSchema().get("properties");
+
+            assertEquals(CapabilityResult.class, definition.getReturnType());
+            assertEquals(ProductSearchResponse.class, definition.getOutputType());
+            assertEquals("object", definition.getOutputSchema().get("type"));
+            assertTrue(properties.containsKey("id"));
+            assertFalse(properties.containsKey("status"));
+            assertFalse(properties.containsKey("data"));
+            assertFalse(properties.containsKey("message"));
+        }
+    }
+
+    @Test
     void shouldRejectDuplicateCapabilityNames() {
         try (AnnotationConfigApplicationContext context =
                      new AnnotationConfigApplicationContext(DuplicateConfig.class)) {
@@ -93,6 +114,10 @@ class CapabilityRegistryTest {
         assertInvalid(BlankVersionConfig.class, "version is required");
         assertInvalid(InvalidTimeoutConfig.class, "timeoutMs must be greater than zero");
         assertInvalid(MultipleArgumentsConfig.class, "supports zero or one argument");
+        assertInvalid(MissingCapabilityResultOutputTypeConfig.class,
+                "outputType is required when method returns CapabilityResult");
+        assertInvalid(InvalidExplicitOutputTypeConfig.class,
+                "outputType is only supported when method returns CapabilityResult");
     }
 
     @Test
@@ -165,6 +190,21 @@ class CapabilityRegistryTest {
 
     static class ProductSearchResponse {
         private Long id;
+    }
+
+    static class WrappedResultConfig {
+        @Bean
+        WrappedResultCapability wrappedResultCapability() {
+            return new WrappedResultCapability();
+        }
+    }
+
+    static class WrappedResultCapability {
+        @AgentCapability(name = "test.product.wrapped", title = "包装结果", description = "验证输出类型声明",
+                permissions = "product:query", outputType = ProductSearchResponse.class)
+        public CapabilityResult wrapped(ProductSearchRequest request) {
+            return CapabilityResult.success(new ProductSearchResponse(), "ok");
+        }
     }
 
     static class DuplicateConfig {
@@ -298,6 +338,37 @@ class CapabilityRegistryTest {
         @AgentCapability(name = "test.product.multiplearguments", title = "多参数", description = "多参数",
                 permissions = "product:query")
         public void invoke(String first, String second) {
+        }
+    }
+
+    static class MissingCapabilityResultOutputTypeConfig {
+        @Bean
+        MissingCapabilityResultOutputTypeCapability missingCapabilityResultOutputTypeCapability() {
+            return new MissingCapabilityResultOutputTypeCapability();
+        }
+    }
+
+    static class MissingCapabilityResultOutputTypeCapability {
+        @AgentCapability(name = "test.product.missingoutputtype", title = "缺少输出类型",
+                description = "缺少输出类型", permissions = "product:query")
+        public CapabilityResult invoke() {
+            return CapabilityResult.success("test.product.missingoutputtype", "ok", "ok");
+        }
+    }
+
+    static class InvalidExplicitOutputTypeConfig {
+        @Bean
+        InvalidExplicitOutputTypeCapability invalidExplicitOutputTypeCapability() {
+            return new InvalidExplicitOutputTypeCapability();
+        }
+    }
+
+    static class InvalidExplicitOutputTypeCapability {
+        @AgentCapability(name = "test.product.invalidoutputtype", title = "非法输出类型",
+                description = "非法输出类型", permissions = "product:query",
+                outputType = ProductSearchResponse.class)
+        public ProductSearchResponse invoke() {
+            return new ProductSearchResponse();
         }
     }
 

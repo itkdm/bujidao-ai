@@ -54,7 +54,6 @@ import static org.mockito.Mockito.when;
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {"spring.application.name=mcp-security-test",
                 "yudao.mcp.server.enabled=true",
-                "yudao.mcp.acf.exposed-capabilities=demo.echo",
                 "yudao.web.admin-ui.url=http://localhost"})
 class McpEndpointSecurityIntegrationTest {
 
@@ -238,7 +237,7 @@ class McpEndpointSecurityIntegrationTest {
             when(descriptor.getDescription()).thenReturn("Echo input");
             when(descriptor.getInputSchema()).thenReturn(Map.of("type", "object"));
             when(descriptor.getOutputSchema()).thenReturn(Map.of("type", "string"));
-            when(catalog.getDeclared("demo.echo")).thenReturn(descriptor);
+            when(catalog.listDeclared()).thenReturn(List.of(descriptor));
             return catalog;
         }
 
