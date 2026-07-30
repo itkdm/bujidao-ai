@@ -103,6 +103,7 @@ public class YudaoMcpAcfAutoConfiguration {
 
     @Bean(name = ACF_MCP_TOOLS_LIST_FILTER_REGISTRATION_NAME)
     @ConditionalOnMissingBean(name = ACF_MCP_TOOLS_LIST_FILTER_REGISTRATION_NAME)
+    @ConditionalOnBean(AcfMcpToolsListFilter.class)
     public FilterRegistrationBean<AcfMcpToolsListFilter> acfMcpToolsListFilterRegistration(
             AcfMcpToolsListFilter filter) {
         FilterRegistrationBean<AcfMcpToolsListFilter> registration = new FilterRegistrationBean<>(filter);
