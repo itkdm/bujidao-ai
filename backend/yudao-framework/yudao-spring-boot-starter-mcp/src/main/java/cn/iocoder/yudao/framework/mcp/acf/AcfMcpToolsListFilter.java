@@ -1,12 +1,7 @@
 package cn.iocoder.yudao.framework.mcp.acf;
 
-import cn.iocoder.yudao.framework.acf.core.enums.CapabilityConsumerType;
-import cn.iocoder.yudao.framework.acf.core.model.CapabilityContext;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityVisibilityQuery;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolExportService;
-import cn.iocoder.yudao.framework.mcp.security.McpTransportContextKeys;
-import cn.iocoder.yudao.framework.security.core.LoginUser;
-import cn.iocoder.yudao.framework.security.core.util.SecurityFrameworkUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.spec.McpSchema;
@@ -26,8 +21,8 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 按当前 MCP 调用身份动态返回 tools/list。
@@ -41,20 +36,28 @@ import java.util.Map;
 public class AcfMcpToolsListFilter extends OncePerRequestFilter {
 
     private static final String JSON_RPC_VERSION = "2.0";
-    private static final String SOURCE = "MCP";
     private static final String TEXT_EVENT_STREAM = "text/event-stream";
     private static final String ACCEPT = "Accept";
 
     private final CapabilityToolExportService toolExportService;
     private final AcfMcpToolMapper toolMapper;
     private final ObjectMapper objectMapper;
+    private final AcfMcpConfirmationTool confirmationTool;
 
     public AcfMcpToolsListFilter(CapabilityToolExportService toolExportService,
                                  AcfMcpToolMapper toolMapper,
                                  ObjectMapper objectMapper) {
+        this(toolExportService, toolMapper, objectMapper, null);
+    }
+
+    public AcfMcpToolsListFilter(CapabilityToolExportService toolExportService,
+                                 AcfMcpToolMapper toolMapper,
+                                 ObjectMapper objectMapper,
+                                 AcfMcpConfirmationTool confirmationTool) {
         this.toolExportService = toolExportService;
         this.toolMapper = toolMapper;
         this.objectMapper = objectMapper;
+        this.confirmationTool = confirmationTool;
     }
 
     @Override
@@ -90,29 +93,15 @@ public class AcfMcpToolsListFilter extends OncePerRequestFilter {
 
     private List<McpSchema.Tool> listVisibleTools() {
         CapabilityVisibilityQuery query = CapabilityVisibilityQuery.builder()
-                .context(createContext())
+                .context(AcfMcpContextSupport.fromLoginUser())
                 .build();
-        return toolExportService.export(query).stream()
+        List<McpSchema.Tool> tools = new ArrayList<>(toolExportService.export(query).stream()
                 .map(toolMapper::toTool)
-                .toList();
-    }
-
-    private static CapabilityContext createContext() {
-        LoginUser loginUser = SecurityFrameworkUtils.getLoginUser();
-        if (loginUser == null || loginUser.getId() == null) {
-            return CapabilityContext.empty();
+                .toList());
+        if (confirmationTool != null) {
+            tools.add(confirmationTool.tool());
         }
-        Long tenantId = loginUser.getVisitTenantId() != null
-                ? loginUser.getVisitTenantId() : loginUser.getTenantId();
-        String clientId = loginUser.getContext(McpTransportContextKeys.CLIENT_ID, String.class);
-        return CapabilityContext.builder()
-                .userId(loginUser.getId())
-                .tenantId(tenantId)
-                .source(SOURCE)
-                .consumerType(CapabilityConsumerType.MCP)
-                .consumerId("user:" + loginUser.getId())
-                .attributes(clientId == null ? Map.of() : Map.of("oauthClientId", clientId))
-                .build();
+        return tools;
     }
 
     private void writeJsonRpcResponse(HttpServletRequest request, HttpServletResponse response,

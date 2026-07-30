@@ -8,6 +8,7 @@ import cn.iocoder.yudao.framework.acf.core.model.CapabilityConfirmationChallenge
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityConfirmationCheck;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityContext;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityDefinition;
+import cn.iocoder.yudao.framework.acf.core.model.CapabilityIdempotencyCheck;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityInvokeCommand;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityVisibilityQuery;
@@ -97,11 +98,13 @@ class YudaoAcfAutoConfigurationTest {
             assertThat(context).hasSingleBean(CapabilityRateLimitGuard.class);
             assertThat(context).hasSingleBean(CapabilityRuntimeGuardChain.class);
             assertThat(context).hasSingleBean(CapabilityRuntimeMetricsRecorder.class);
+            assertThat(context).hasSingleBean(YudaoAcfProperties.class);
+            assertThat(context.getBean(YudaoAcfProperties.class).getConfirmation().isEnabled()).isFalse();
             assertThat(context).hasSingleBean(CapabilityExecutor.class);
             assertThat(context).doesNotHaveBean(CapabilityConfirmationService.class);
             assertThat(context).doesNotHaveBean(CapabilityIdempotencyService.class);
             assertThat(context).doesNotHaveBean(CapabilityAuditService.class);
-            assertThat(CapabilityExecutor.class.getConstructors()).hasSize(1);
+            assertThat(CapabilityExecutor.class.getConstructors()).hasSize(2);
         });
     }
 
@@ -198,7 +201,8 @@ class YudaoAcfAutoConfigurationTest {
 
     @Test
     void shouldUseBusinessConfirmationServiceWhenProvided() {
-        contextRunner.withUserConfiguration(ConfirmedCapabilityConfig.class, ConfirmationServiceConfig.class)
+        contextRunner.withPropertyValues("yudao.acf.confirmation.enabled=true")
+                .withUserConfiguration(ConfirmedCapabilityConfig.class, ConfirmationServiceConfig.class)
                 .run(context -> {
                     CapabilityResult result = context.getBean(CapabilityExecutor.class)
                             .invoke(CapabilityInvokeCommand.builder()
@@ -210,6 +214,40 @@ class YudaoAcfAutoConfigurationTest {
 
                     assertThat(result.getStatus()).isEqualTo(CapabilityStatus.CONFIRM_REQUIRED);
                     assertThat(result.getData()).isInstanceOf(CapabilityConfirmationChallenge.class);
+                });
+    }
+
+    @Test
+    void shouldBypassConfirmationByDefault() {
+        contextRunner.withUserConfiguration(ConfirmedCapabilityConfig.class, ConfirmationServiceConfig.class,
+                        IdempotencyServiceConfig.class)
+                .run(context -> {
+                    CapabilityResult result = context.getBean(CapabilityExecutor.class)
+                            .invoke(CapabilityInvokeCommand.builder()
+                                    .name("test.auto.order.update")
+                                    .arguments("confirmed")
+                                    .context(CapabilityContext.builder().userId(1L).build())
+                                    .idempotencyKey("idem-auto-001")
+                                    .build());
+
+                    assertThat(result.isSuccess()).isTrue();
+                    assertThat(result.getData()).isEqualTo("confirmed");
+                });
+    }
+
+    @Test
+    void shouldKeepIdempotencyRequiredWhenConfirmationIsDisabled() {
+        contextRunner.withUserConfiguration(ConfirmedCapabilityConfig.class, ConfirmationServiceConfig.class)
+                .run(context -> {
+                    CapabilityResult result = context.getBean(CapabilityExecutor.class)
+                            .invoke(CapabilityInvokeCommand.builder()
+                                    .name("test.auto.order.update")
+                                    .arguments("confirmed")
+                                    .context(CapabilityContext.builder().userId(1L).build())
+                                    .idempotencyKey("idem-auto-001")
+                                    .build());
+
+                    assertThat(result.getErrorCode()).isEqualTo(CapabilityExecutor.ERROR_IDEMPOTENCY_UNAVAILABLE);
                 });
     }
 
@@ -380,6 +418,42 @@ class YudaoAcfAutoConfigurationTest {
                                                                          String idempotencyKey,
                                                                          String requestDigest) {
                     return CapabilityConfirmationCheck.valid("acf-confirm-auto");
+                }
+            };
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class IdempotencyServiceConfig {
+
+        @Bean
+        CapabilityIdempotencyService capabilityIdempotencyService() {
+            return new CapabilityIdempotencyService() {
+                @Override
+                public CapabilityIdempotencyCheck acquire(CapabilityDefinition definition, CapabilityContext context,
+                        String idempotencyKey,
+                        String requestDigest) {
+                    return CapabilityIdempotencyCheck.acquired();
+                }
+
+                @Override
+                public void complete(CapabilityDefinition definition, CapabilityContext context,
+                                     String idempotencyKey, String requestDigest, CapabilityResult result) {
+                }
+
+                @Override
+                public void markUncertain(CapabilityDefinition definition, CapabilityContext context,
+                                          String idempotencyKey, String requestDigest, CapabilityResult result) {
+                }
+
+                @Override
+                public void fail(CapabilityDefinition definition, CapabilityContext context,
+                                 String idempotencyKey, String requestDigest, CapabilityResult result) {
+                }
+
+                @Override
+                public void release(CapabilityDefinition definition, CapabilityContext context,
+                                    String idempotencyKey, String requestDigest) {
                 }
             };
         }

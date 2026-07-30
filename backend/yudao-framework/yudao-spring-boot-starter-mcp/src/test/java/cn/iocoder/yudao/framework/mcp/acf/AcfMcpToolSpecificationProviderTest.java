@@ -4,6 +4,7 @@ import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolContractSupport;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolDescriptor;
 import cn.iocoder.yudao.framework.acf.core.enums.CapabilityRiskLevel;
+import cn.iocoder.yudao.framework.acf.core.service.CapabilityConfirmationService;
 import io.modelcontextprotocol.server.McpStatelessServerFeatures;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.junit.jupiter.api.Test;
@@ -68,6 +69,26 @@ class AcfMcpToolSpecificationProviderTest {
                 .contains(CapabilityToolContractSupport.IDEMPOTENCY_KEY);
         assertThat(tool.meta()).containsEntry(AcfMcpToolProtocolMetadata.IDEMPOTENCY_REQUIRED, true)
                 .containsEntry(AcfMcpToolProtocolMetadata.CONFIRMATION_REQUIRED, true);
+    }
+
+    @Test
+    void shouldAppendConfirmationToolWhenConfirmationServiceExists() {
+        CapabilityToolDescriptor descriptor = descriptor("demo.write", true, true);
+        when(catalog.listDeclared()).thenReturn(List.of(descriptor));
+        AcfMcpConfirmationTool confirmationTool = new AcfMcpConfirmationTool(
+                mock(CapabilityConfirmationService.class));
+
+        List<McpStatelessServerFeatures.SyncToolSpecification> specifications =
+                new AcfMcpToolSpecificationProvider(catalog, toolMapper, toolCallHandler, confirmationTool)
+                        .createToolSpecifications();
+
+        assertThat(specifications).extracting(specification -> specification.tool().name())
+                .containsExactly("demo.write", AcfMcpConfirmationTool.NAME);
+        McpSchema.Tool tool = specifications.get(1).tool();
+        assertThat(tool.inputSchema()).containsEntry("type", "object");
+        assertThat(((List<?>) tool.inputSchema().get("required")).stream().map(String::valueOf).toList())
+                .contains("challengeId");
+        assertThat(tool.annotations().readOnlyHint()).isFalse();
     }
 
     private AcfMcpToolSpecificationProvider createFactory() {

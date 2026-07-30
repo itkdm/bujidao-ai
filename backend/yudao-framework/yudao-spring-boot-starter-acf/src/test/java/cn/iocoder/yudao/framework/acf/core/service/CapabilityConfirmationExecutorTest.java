@@ -62,6 +62,20 @@ class CapabilityConfirmationExecutorTest {
     }
 
     @Test
+    void shouldBypassConfirmationWhenConfirmationIsDisabled() {
+        CapturingConfirmationService confirmationService = new CapturingConfirmationService();
+
+        CapabilityResult result = executor(confirmationService, false)
+                .invoke(command("test.order.confirmed.update", "approved", null));
+
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.getData()).isEqualTo("approved");
+        assertThat(confirmationService.createChallengeCount).isZero();
+        assertThat(confirmationService.confirmationToken).isNull();
+        assertThat(capability.confirmedInvocationCount).isOne();
+    }
+
+    @Test
     void shouldRequireIdempotencyKeyBeforeCreatingConfirmationChallenge() {
         CapturingConfirmationService confirmationService = new CapturingConfirmationService();
         CapabilityInvokeCommand command = CapabilityInvokeCommand.builder()
@@ -150,10 +164,14 @@ class CapabilityConfirmationExecutorTest {
     }
 
     private CapabilityExecutor executor(CapabilityConfirmationService confirmationService) {
+        return executor(confirmationService, true);
+    }
+
+    private CapabilityExecutor executor(CapabilityConfirmationService confirmationService, boolean confirmationEnabled) {
         return CapabilityExecutorTestFixture.create(registry,
                 new DefaultCapabilityGovernanceService(new CapabilityPolicyChain(List.of())),
                 confirmationService, new PassThroughIdempotencyService(), null,
-                new DefaultCapabilityExceptionClassifier(), objectMapper, validator);
+                new DefaultCapabilityExceptionClassifier(), confirmationEnabled, objectMapper, validator);
     }
 
     private CapabilityInvokeCommand command(String name, String value, String confirmationToken) {

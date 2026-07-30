@@ -43,11 +43,23 @@ public final class CapabilityExecutorTestFixture {
                                             CapabilityAuditService auditService,
                                             CapabilityExceptionClassifier exceptionClassifier,
                                             ObjectMapper objectMapper, Validator validator) {
+        return create(registry, governanceService, confirmationService, idempotencyService, auditService,
+                exceptionClassifier, true, objectMapper, validator);
+    }
+
+    public static CapabilityExecutor create(CapabilityRegistry registry,
+                                            CapabilityGovernanceService governanceService,
+                                            CapabilityConfirmationService confirmationService,
+                                            CapabilityIdempotencyService idempotencyService,
+                                            CapabilityAuditService auditService,
+                                            CapabilityExceptionClassifier exceptionClassifier,
+                                            boolean confirmationEnabled,
+                                            ObjectMapper objectMapper, Validator validator) {
         return new CapabilityExecutor(registry, governanceService, confirmationService, idempotencyService,
                 auditService, exceptionClassifier, new DefaultCapabilityRuntimePolicyService(),
                 new CapabilityRuntimeGuardChain(List.of()), new ImmediateInvocationExecutor(),
                 CapabilityRuntimeMetricsRecorder.noop(), new CapabilityRequestDigestGenerator(objectMapper),
-                objectMapper, validator);
+                confirmationEnabled, objectMapper, validator);
     }
 
     private static final class ImmediateInvocationExecutor implements CapabilityInvocationExecutor {

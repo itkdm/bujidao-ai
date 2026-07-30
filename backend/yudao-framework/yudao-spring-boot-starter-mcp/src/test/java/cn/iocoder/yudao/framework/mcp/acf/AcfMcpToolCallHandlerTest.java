@@ -225,6 +225,9 @@ class AcfMcpToolCallHandlerTest {
                 descriptor, McpSchema.CallToolRequest.builder("demo.echo").arguments(Map.of()).build());
 
         assertThat(result.isError()).isTrue();
+        assertThat(result.content().get(0).toString()).contains("acf.confirm")
+                .contains("challenge-001")
+                .doesNotContain("internal-digest");
         assertThat(result.meta()).containsEntry(AcfMcpToolProtocolMetadata.STATUS, "CONFIRM_REQUIRED")
                 .containsEntry(AcfMcpToolProtocolMetadata.TRACE_ID, "trace-confirm");
         Map<?, ?> challengeMetadata = (Map<?, ?>) result.meta()

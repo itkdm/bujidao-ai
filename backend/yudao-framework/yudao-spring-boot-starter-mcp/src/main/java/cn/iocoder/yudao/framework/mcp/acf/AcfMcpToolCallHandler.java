@@ -1,6 +1,5 @@
 package cn.iocoder.yudao.framework.mcp.acf;
 
-import cn.iocoder.yudao.framework.acf.core.enums.CapabilityConsumerType;
 import cn.iocoder.yudao.framework.acf.core.enums.CapabilityStatus;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityContext;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityConfirmationChallenge;
@@ -10,7 +9,6 @@ import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolContractSupport;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolDescriptor;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvocationInput;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
-import cn.iocoder.yudao.framework.mcp.security.McpTransportContextKeys;
 import cn.iocoder.yudao.framework.mcp.tool.McpSchemaAdapter;
 import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
 import io.modelcontextprotocol.common.McpTransportContext;
@@ -31,7 +29,6 @@ import java.util.Map;
 public class AcfMcpToolCallHandler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AcfMcpToolCallHandler.class);
-    private static final String SOURCE = "MCP";
     private static final String INTERNAL_ERROR_CODE = "INTERNAL_ERROR";
     private static final String INTERNAL_ERROR_MESSAGE = "Capability invocation failed";
 
@@ -72,7 +69,7 @@ public class AcfMcpToolCallHandler {
         try {
             CapabilityToolInvocationInput invocationInput = toolContractSupport.resolveInvocationInput(
                     request.arguments());
-            CapabilityContext context = createContext(transportContext,
+            CapabilityContext context = AcfMcpContextSupport.fromTransport(transportContext,
                     firstPresent(invocationInput.getClientRequestId(), control.clientRequestId()));
             CapabilityToolCall call = CapabilityToolCall.builder()
                     .capabilityName(descriptor.getCapabilityName())
@@ -114,34 +111,6 @@ public class AcfMcpToolCallHandler {
         }
     }
 
-    private static CapabilityContext createContext(McpTransportContext transportContext, String clientRequestId) {
-        return CapabilityContext.builder()
-                .userId(contextValue(transportContext, McpTransportContextKeys.USER_ID, Long.class))
-                .tenantId(contextValue(transportContext, McpTransportContextKeys.TENANT_ID, Long.class))
-                .source(SOURCE)
-                .consumerType(CapabilityConsumerType.MCP)
-                .consumerId(contextValue(transportContext, McpTransportContextKeys.CONSUMER_ID, String.class))
-                .clientRequestId(clientRequestId)
-                .attributes(contextAttributes(transportContext))
-                .build();
-    }
-
-    private static Map<String, Object> contextAttributes(McpTransportContext transportContext) {
-        String clientId = contextValue(transportContext, McpTransportContextKeys.CLIENT_ID, String.class);
-        if (clientId == null || clientId.isBlank()) {
-            return Map.of();
-        }
-        return Map.of("oauthClientId", clientId);
-    }
-
-    private static <T> T contextValue(McpTransportContext context, String key, Class<T> type) {
-        if (context == null) {
-            return null;
-        }
-        Object value = context.get(key);
-        return type.isInstance(value) ? type.cast(value) : null;
-    }
-
     private static String firstPresent(String primary, String fallback) {
         return primary == null || primary.isBlank() ? fallback : primary;
     }
@@ -164,7 +133,8 @@ public class AcfMcpToolCallHandler {
             CapabilityConfirmationChallenge challenge = result.getData() instanceof CapabilityConfirmationChallenge item
                     ? item : null;
             return errorResult(result.getStatus(), result.getErrorCode(),
-                    defaultMessage(result.getMessage(), "Capability invocation failed"),
+                    challenge == null ? defaultMessage(result.getMessage(), "Capability invocation failed")
+                            : confirmationRequiredMessage(challenge),
                     result.isRetryable(), result.getTraceId(), challenge);
         }
         Object structuredContent = structuredContentNormalizer.normalize(
@@ -226,6 +196,13 @@ public class AcfMcpToolCallHandler {
         AcfMcpToolProtocolMetadata.putIfPresent(metadata, "expiresAt",
                 challenge.getExpiresAt() == null ? null : challenge.getExpiresAt().toString());
         return metadata;
+    }
+
+    private static String confirmationRequiredMessage(CapabilityConfirmationChallenge challenge) {
+        return "Capability requires confirmation before execution. "
+                + "Call tool acf.confirm with challengeId=" + challenge.getChallengeId()
+                + ", then retry the original tool with the same idempotencyKey and the returned confirmationToken."
+                + (challenge.getExpiresAt() == null ? "" : " Challenge expires at " + challenge.getExpiresAt() + ".");
     }
 
     private static Object adaptStructuredContent(CapabilityToolDescriptor descriptor, Object data) {

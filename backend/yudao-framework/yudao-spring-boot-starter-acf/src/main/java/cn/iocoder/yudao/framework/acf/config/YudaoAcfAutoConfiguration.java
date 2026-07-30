@@ -38,6 +38,7 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.jackson.JacksonAutoConfiguration;
 import org.springframework.boot.autoconfigure.validation.ValidationAutoConfiguration;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 
@@ -47,6 +48,7 @@ import org.springframework.context.annotation.Bean;
  * @author bujidao
  */
 @AutoConfiguration(after = {JacksonAutoConfiguration.class, ValidationAutoConfiguration.class})
+@EnableConfigurationProperties(YudaoAcfProperties.class)
 public class YudaoAcfAutoConfiguration {
 
     public static final String CONCURRENCY_GUARD_BEAN_NAME = "capabilityConcurrencyGuard";
@@ -188,11 +190,12 @@ public class YudaoAcfAutoConfiguration {
                                                   CapabilityInvocationExecutor invocationExecutor,
                                                   CapabilityRuntimeMetricsRecorder metricsRecorder,
                                                   CapabilityRequestDigestGenerator requestDigestGenerator,
+                                                  YudaoAcfProperties properties,
                                                   ObjectMapper objectMapper, Validator validator) {
         return new CapabilityExecutor(capabilityRegistry, governanceService, confirmationService.getIfAvailable(),
                 idempotencyService.getIfAvailable(), auditService.getIfAvailable(), exceptionClassifier,
                 runtimePolicyService, runtimeGuardChain, invocationExecutor, metricsRecorder,
-                requestDigestGenerator, objectMapper, validator);
+                requestDigestGenerator, properties.getConfirmation().isEnabled(), objectMapper, validator);
     }
 
 }

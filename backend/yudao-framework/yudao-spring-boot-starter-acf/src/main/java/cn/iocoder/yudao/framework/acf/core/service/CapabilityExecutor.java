@@ -88,6 +88,7 @@ public class CapabilityExecutor {
     private final CapabilityInvocationExecutor invocationExecutor;
     private final CapabilityRuntimeMetricsRecorder metricsRecorder;
     private final CapabilityRequestDigestGenerator requestDigestGenerator;
+    private final boolean confirmationEnabled;
     private final ObjectMapper objectMapper;
     private final Validator validator;
 
@@ -102,6 +103,23 @@ public class CapabilityExecutor {
                               CapabilityRuntimeMetricsRecorder metricsRecorder,
                               CapabilityRequestDigestGenerator requestDigestGenerator,
                               ObjectMapper objectMapper, Validator validator) {
+        this(capabilityRegistry, governanceService, confirmationService, idempotencyService, auditService,
+                exceptionClassifier, runtimePolicyService, runtimeGuardChain, invocationExecutor, metricsRecorder,
+                requestDigestGenerator, true, objectMapper, validator);
+    }
+
+    public CapabilityExecutor(CapabilityRegistry capabilityRegistry, CapabilityGovernanceService governanceService,
+                              CapabilityConfirmationService confirmationService,
+                              CapabilityIdempotencyService idempotencyService,
+                              CapabilityAuditService auditService,
+                              CapabilityExceptionClassifier exceptionClassifier,
+                              CapabilityRuntimePolicyService runtimePolicyService,
+                              CapabilityRuntimeGuardChain runtimeGuardChain,
+                              CapabilityInvocationExecutor invocationExecutor,
+                              CapabilityRuntimeMetricsRecorder metricsRecorder,
+                              CapabilityRequestDigestGenerator requestDigestGenerator,
+                              boolean confirmationEnabled,
+                              ObjectMapper objectMapper, Validator validator) {
         this.capabilityRegistry = capabilityRegistry;
         this.governanceService = governanceService;
         this.confirmationService = confirmationService;
@@ -113,6 +131,7 @@ public class CapabilityExecutor {
         this.invocationExecutor = Objects.requireNonNull(invocationExecutor, "invocationExecutor");
         this.metricsRecorder = Objects.requireNonNull(metricsRecorder, "metricsRecorder");
         this.requestDigestGenerator = requestDigestGenerator;
+        this.confirmationEnabled = confirmationEnabled;
         this.objectMapper = objectMapper;
         this.validator = validator;
     }
@@ -257,7 +276,7 @@ public class CapabilityExecutor {
             }
             return confirmationChallengeResult;
         }
-        if (!effectiveDefinition.isConfirmationRequired()) {
+        if (!isEffectiveConfirmationRequired(effectiveDefinition)) {
             audit.confirmationStatus(CapabilityConfirmationStatus.NOT_REQUIRED);
             audit.success(CapabilityAuditStage.CONFIRMATION, "confirmation not required", stepStartedAt);
         }
@@ -299,7 +318,7 @@ public class CapabilityExecutor {
             return finishBeforeTarget(effectiveDefinition, context, idempotencyKey, requestDigest,
                     confirmationResult, idempotencyAcquired, audit);
         }
-        if (effectiveDefinition.isConfirmationRequired()) {
+        if (isEffectiveConfirmationRequired(effectiveDefinition)) {
             audit.confirmationStatus(CapabilityConfirmationStatus.TOKEN_VALID);
             audit.success(CapabilityAuditStage.CONFIRMATION, "confirmation token accepted", stepStartedAt);
         }
@@ -529,7 +548,11 @@ public class CapabilityExecutor {
     }
 
     private boolean requiresIdempotency(CapabilityDefinition definition) {
-        return definition.isSideEffect() || definition.isConfirmationRequired();
+        return definition.isSideEffect() || isEffectiveConfirmationRequired(definition);
+    }
+
+    private boolean isEffectiveConfirmationRequired(CapabilityDefinition definition) {
+        return confirmationEnabled && definition.isConfirmationRequired();
     }
 
     private CapabilityResult createConfirmationChallengeIfNecessary(CapabilityDefinition definition,
@@ -537,7 +560,7 @@ public class CapabilityExecutor {
                                                                     String confirmationToken,
                                                                     String idempotencyKey,
                                                                     String requestDigest) {
-        if (!definition.isConfirmationRequired()) {
+        if (!isEffectiveConfirmationRequired(definition)) {
             return null;
         }
         if (!StringUtils.hasText(idempotencyKey)) {
@@ -565,7 +588,7 @@ public class CapabilityExecutor {
     private CapabilityResult verifyConfirmation(CapabilityDefinition definition, CapabilityContext context,
                                                 String confirmationToken, String idempotencyKey,
                                                 String requestDigest) {
-        if (!definition.isConfirmationRequired()) {
+        if (!isEffectiveConfirmationRequired(definition)) {
             return null;
         }
         try {

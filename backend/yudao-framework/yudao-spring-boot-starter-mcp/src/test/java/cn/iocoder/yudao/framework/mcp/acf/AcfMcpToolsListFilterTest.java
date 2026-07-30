@@ -2,6 +2,7 @@ package cn.iocoder.yudao.framework.mcp.acf;
 
 import cn.iocoder.yudao.framework.acf.core.enums.CapabilityRiskLevel;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityVisibilityQuery;
+import cn.iocoder.yudao.framework.acf.core.service.CapabilityConfirmationService;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolDescriptor;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolExportService;
 import cn.iocoder.yudao.framework.mcp.security.McpTransportContextKeys;
@@ -94,6 +95,31 @@ class AcfMcpToolsListFilterTest {
         filter.doFilter(request, response, chain);
 
         assertThat(response.getStatus()).isEqualTo(200);
+    }
+
+    @Test
+    void shouldAppendConfirmationToolWhenConfigured() throws ServletException, IOException {
+        AcfMcpToolsListFilter filter = new AcfMcpToolsListFilter(
+                toolExportService, new AcfMcpToolMapper(), objectMapper,
+                new AcfMcpConfirmationTool(mock(CapabilityConfirmationService.class)));
+        CapabilityToolDescriptor descriptor = descriptor("erp.product.search");
+        when(toolExportService.export(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(List.of(descriptor));
+
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/mcp");
+        request.setContentType("application/json;charset=UTF-8");
+        request.addHeader("Accept", "application/json");
+        request.setContent("""
+                {"jsonrpc":"2.0","id":9,"method":"tools/list","params":{}}
+                """.getBytes(StandardCharsets.UTF_8));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        JsonNode tools = objectMapper.readTree(response.getContentAsString(StandardCharsets.UTF_8))
+                .path("result").path("tools");
+        assertThat(tools).hasSize(2);
+        assertThat(tools.get(1).path("name").asText()).isEqualTo(AcfMcpConfirmationTool.NAME);
     }
 
     private static CapabilityToolDescriptor descriptor(String name) {

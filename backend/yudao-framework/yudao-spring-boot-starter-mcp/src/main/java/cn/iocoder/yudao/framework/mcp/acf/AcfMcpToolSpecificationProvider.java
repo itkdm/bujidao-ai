@@ -5,6 +5,7 @@ import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolDescriptor;
 import cn.iocoder.yudao.framework.mcp.tool.McpToolSpecificationProvider;
 import io.modelcontextprotocol.server.McpStatelessServerFeatures;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -20,20 +21,34 @@ public class AcfMcpToolSpecificationProvider implements McpToolSpecificationProv
     private final CapabilityToolCatalog capabilityToolCatalog;
     private final AcfMcpToolMapper toolMapper;
     private final AcfMcpToolCallHandler toolCallHandler;
+    private final AcfMcpConfirmationTool confirmationTool;
 
     public AcfMcpToolSpecificationProvider(CapabilityToolCatalog capabilityToolCatalog,
                                            AcfMcpToolMapper toolMapper,
                                            AcfMcpToolCallHandler toolCallHandler) {
+        this(capabilityToolCatalog, toolMapper, toolCallHandler, null);
+    }
+
+    public AcfMcpToolSpecificationProvider(CapabilityToolCatalog capabilityToolCatalog,
+                                           AcfMcpToolMapper toolMapper,
+                                           AcfMcpToolCallHandler toolCallHandler,
+                                           AcfMcpConfirmationTool confirmationTool) {
         this.capabilityToolCatalog = capabilityToolCatalog;
         this.toolMapper = toolMapper;
         this.toolCallHandler = toolCallHandler;
+        this.confirmationTool = confirmationTool;
     }
 
     @Override
     public List<McpStatelessServerFeatures.SyncToolSpecification> createToolSpecifications() {
-        return capabilityToolCatalog.listDeclared().stream()
-                .map(this::createToolSpecification)
-                .toList();
+        List<McpStatelessServerFeatures.SyncToolSpecification> specifications = new ArrayList<>(
+                capabilityToolCatalog.listDeclared().stream()
+                        .map(this::createToolSpecification)
+                        .toList());
+        if (confirmationTool != null) {
+            specifications.add(createConfirmationToolSpecification());
+        }
+        return specifications;
     }
 
     private McpStatelessServerFeatures.SyncToolSpecification createToolSpecification(
@@ -41,6 +56,13 @@ public class AcfMcpToolSpecificationProvider implements McpToolSpecificationProv
         return McpStatelessServerFeatures.SyncToolSpecification.builder()
                 .tool(toolMapper.toTool(descriptor))
                 .callHandler((transportContext, request) -> toolCallHandler.handle(transportContext, descriptor, request))
+                .build();
+    }
+
+    private McpStatelessServerFeatures.SyncToolSpecification createConfirmationToolSpecification() {
+        return McpStatelessServerFeatures.SyncToolSpecification.builder()
+                .tool(confirmationTool.tool())
+                .callHandler(confirmationTool::handle)
                 .build();
     }
 
