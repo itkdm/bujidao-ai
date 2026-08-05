@@ -41,6 +41,16 @@ RAG、Agent Runtime、知识库、长期记忆和更完整的 Agent 管理后台
 - 支持 `resources/list`、`resources/templates/list` 空列表兼容，便于通用 MCP 客户端连接。
 - 默认不对 ACF 输出做脱敏，保持与 Web 端权限语义一致；如目标公司需要，可按能力或字段显式开启脱敏。
 
+## 效果截图
+
+WorkBuddy 通过 MCP 调用 `bujidao-ai` 的 ERP 示例能力，先完成客户、商品和库存的前置核验：
+
+![WorkBuddy MCP 前置核验](assets/readme/workbuddy-mcp-precheck.jpg)
+
+指定客户后，继续创建未审核的销售订单草稿：
+
+![WorkBuddy MCP 创建销售订单草稿](assets/readme/workbuddy-mcp-order-created.jpg)
+
 ## 项目结构
 
 - `backend/`: Java 后端工程，基于 ruoyi-vue-pro 后端。
