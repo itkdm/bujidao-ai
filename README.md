@@ -15,6 +15,10 @@
 
 </div>
 
+![bujidao-ai 整体架构](./assets/readme/architecture.png)
+
+---
+
 ---
 
 ## 一眼看懂
