@@ -1,0 +1,22 @@
+#!/bin/sh
+# commit-msg hook: reject commit messages containing CJK (Chinese) characters.
+# Install via: tools/install-hooks.ps1  (or copy to .git/hooks/commit-msg)
+
+commit_msg_file="$1"
+
+# Normalize CRLF -> LF so the regex matches reliably on Windows.
+msg=$(tr -d '\r' < "$commit_msg_file")
+
+# Match common CJK Unicode ranges:
+#  \u4E00-\u9FFF   CJK Unified Ideographs
+#  \u3400-\u4DBF   CJK Extension A
+#  \uF900-\uFAFF   CJK Compatibility Ideographs
+#  \u3000-\u303F   CJK Symbols and Punctuation (Chinese full-width punctuation)
+#  \uFF00-\uFFEF   Halfwidth and Fullwidth Forms (full-width punctuation)
+if printf '%s' "$msg" | grep -qP '[\x{4E00}-\x{9FFF}\x{3400}-\x{4DBF}\x{F900}-\x{FAFF}\x{3000}-\x{303F}\x{FF00}-\x{FFEF}]'; then
+  echo "ERROR: commit message contains Chinese (CJK) characters, which are not allowed." >&2
+  echo "Please write the commit message in English." >&2
+  exit 1
+fi
+
+exit 0
