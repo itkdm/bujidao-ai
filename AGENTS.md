@@ -44,6 +44,8 @@ upstream-frontend  https://github.com/yudaocode/yudao-ui-admin-vue3.git
 
 ## 架构方向
 
+扩展的总原则见仓库根目录 `EXTENSION_PRINCIPLE.md`，本文件与它不一致时以它为准。
+
 优先采用“增量 AI 扩展”的方式，尽量保持与芋道上游架构兼容。
 
 新增后端 AI 能力时：
