@@ -7,12 +7,14 @@ import cn.hutool.core.util.StrUtil;
 import cn.iocoder.yudao.framework.common.pojo.PageParam;
 import cn.iocoder.yudao.framework.common.pojo.SortingField;
 import cn.iocoder.yudao.framework.mybatis.core.enums.DbTypeEnum;
+import cn.iocoder.yudao.framework.mybatis.core.query.MPJLambdaWrapperX;
 import com.baomidou.mybatisplus.annotation.DbType;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.OrderItem;
 import com.baomidou.mybatisplus.core.toolkit.StringPool;
+import com.baomidou.mybatisplus.core.toolkit.support.SFunction;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.InnerInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -24,6 +26,8 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 /**
  * MyBatis 工具类
@@ -32,7 +36,7 @@ public class MyBatisUtils {
 
     private static final String MYSQL_ESCAPE_CHARACTER = "`";
 
-    private static final Pattern SAFE_COLUMN_NAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_]+(\\.[a-zA-Z0-9_]+)*$");
+    private static final Pattern SAFE_COLUMN_NAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_]++(?:\\.[a-zA-Z0-9_]++)*+$");
 
     private static final String FIND_IN_SET_VALUE_PLACEHOLDER = "#{value}";
 
@@ -57,6 +61,26 @@ public class MyBatisUtils {
             }
         }
         return page;
+    }
+
+    /**
+     * 构建指定偏移量的分页对象
+     *
+     * @param offset 偏移量，负数按 0 处理，不要求是每页条数的整数倍
+     * @param size 每页条数
+     * @param searchCount 是否查询总数
+     * @param <T> 记录类型
+     * @return 分页对象
+     */
+    public static <T> Page<T> buildPage(long offset, long size, boolean searchCount) {
+        return new Page<T>(1, size, searchCount) {
+
+            @Override
+            public long offset() {
+                return Math.max(offset, 0);
+            }
+
+        };
     }
 
     @SuppressWarnings("PatternVariableCanBeUsed")
@@ -95,6 +119,11 @@ public class MyBatisUtils {
             throw new IllegalArgumentException("Unsupported wrapper type: " + wrapper.getClass().getName());
         }
 
+    }
+
+    public static <T, S> void addOrder(MPJLambdaWrapperX<T> wrapper, SFunction<S, ?> column,
+                                       SortingField sortingField) {
+        wrapper.orderBy(true, isAscOrder(sortingField.getOrder()), column);
     }
 
     public static boolean isAscOrder(String order) {
@@ -179,6 +208,28 @@ public class MyBatisUtils {
         return findInSet(columnName, paramIndex);
     }
 
+    /**
+     * 跨数据库的 find_in_set 实现，适用于同一字段匹配多个参数的场景
+     *
+     * 每个参数生成一个 find_in_set 条件，并使用 OR 连接。
+     *
+     * @param columnName 字段名称
+     * @param values 参数集合
+     * @return sql
+     */
+    public static String findInSet(String columnName, Collection<?> values) {
+        return findInSet(JdbcUtils.getDbType(), columnName, values);
+    }
+
+    static String findInSet(DbType dbType, String columnName, Collection<?> values) {
+        if (CollUtil.isEmpty(values)) {
+            throw new IllegalArgumentException("Values cannot be empty");
+        }
+        return IntStream.range(0, values.size())
+                .mapToObj(index -> findInSet(dbType, columnName, index))
+                .collect(Collectors.joining(" OR "));
+    }
+
     private static String findInSet(String columnName, int paramIndex) {
         DbType dbType = JdbcUtils.getDbType();
         return findInSet(dbType, columnName, paramIndex);
@@ -196,7 +247,13 @@ public class MyBatisUtils {
                 .replace(FIND_IN_SET_VALUE_PLACEHOLDER, "{" + paramIndex + "}");
     }
 
-    private static boolean isSafeColumnName(String columnName) {
+    /**
+     * 判断表名或列名是否只包含字母、数字、下划线及层级分隔点
+     *
+     * @param columnName 表名或列名，可带表别名前缀
+     * @return 是否满足安全标识符格式
+     */
+    static boolean isSafeColumnName(String columnName) {
         return StrUtil.isNotEmpty(columnName) && SAFE_COLUMN_NAME_PATTERN.matcher(columnName).matches();
     }
 

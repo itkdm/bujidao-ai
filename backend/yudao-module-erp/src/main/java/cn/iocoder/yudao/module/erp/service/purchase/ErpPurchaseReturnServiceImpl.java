@@ -186,7 +186,7 @@ public class ErpPurchaseReturnServiceImpl implements ErpPurchaseReturnService {
     @Override
     public void updatePurchaseReturnRefundPrice(Long id, BigDecimal refundPrice) {
         ErpPurchaseReturnDO purchaseReturn = purchaseReturnMapper.selectById(id);
-        if (purchaseReturn.getRefundPrice().equals(refundPrice)) {
+        if (purchaseReturn.getRefundPrice().compareTo(refundPrice) == 0) {
             return;
         }
         if (refundPrice.compareTo(purchaseReturn.getTotalPrice()) > 0) {
@@ -299,6 +299,11 @@ public class ErpPurchaseReturnServiceImpl implements ErpPurchaseReturnService {
             return Collections.emptyList();
         }
         return purchaseReturnItemMapper.selectListByReturnIds(returnIds);
+    }
+
+    @Override
+    public Long getPurchaseReturnItemCountByProductId(Long productId) {
+        return purchaseReturnItemMapper.selectCount(ErpPurchaseReturnItemDO::getProductId, productId);
     }
 
 }

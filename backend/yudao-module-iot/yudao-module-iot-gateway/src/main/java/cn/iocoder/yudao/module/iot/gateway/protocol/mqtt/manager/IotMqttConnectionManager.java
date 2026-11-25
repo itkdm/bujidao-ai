@@ -86,7 +86,13 @@ public class IotMqttConnectionManager {
                     deviceId, getEndpointAddress(oldEndpoint));
             // 先清理映射，再关闭连接（避免旧连接处理器干扰）
             connectionMap.remove(oldEndpoint);
-            oldEndpoint.close();
+            try {
+                if (oldEndpoint.isConnected()) {
+                    oldEndpoint.close();
+                }
+            } catch (Exception ignored) {
+                // 连接可能已关闭，忽略异常
+            }
         }
 
         // 注册新连接
@@ -107,7 +113,8 @@ public class IotMqttConnectionManager {
             return;
         }
         Long deviceId = connectionInfo.getDeviceId();
-        deviceEndpointMap.remove(deviceId);
+        // 仅当 deviceEndpointMap 中的 endpoint 是当前 endpoint 时才移除，避免误删新连接
+        deviceEndpointMap.remove(deviceId, endpoint);
         log.info("[unregisterConnection][注销设备连接，设备 ID: {}，连接: {}]", deviceId, getEndpointAddress(endpoint));
     }
 
@@ -135,14 +142,17 @@ public class IotMqttConnectionManager {
     }
 
     /**
-     * 发送消息到设备
+     * 发送消息到设备（标准下行、透传下行共用）
+     * <p>
+     * 不等待写出完成：返回 true 只表示 publish 已提交（设备在线、没有同步异常），不代表已写出或设备已收到；
+     * 之后的写出失败（例如连接已关闭）只记日志
      *
      * @param deviceId 设备 ID
      * @param topic    主题
      * @param payload  消息内容
      * @param qos      服务质量
      * @param retain   是否保留消息
-     * @return 是否发送成功
+     * @return 是否已提交发送
      */
     public boolean sendToDevice(Long deviceId, String topic, byte[] payload, int qos, boolean retain) {
         MqttEndpoint endpoint = deviceEndpointMap.get(deviceId);
@@ -152,7 +162,9 @@ public class IotMqttConnectionManager {
         }
 
         try {
-            endpoint.publish(topic, Buffer.buffer(payload), MqttQoS.valueOf(qos), false, retain);
+            endpoint.publish(topic, Buffer.buffer(payload), MqttQoS.valueOf(qos), false, retain)
+                    .onFailure(e -> log.warn("[sendToDevice][发送消息失败，设备 ID: {}，主题: {}，错误: {}]",
+                            deviceId, topic, e.getMessage()));
             log.debug("[sendToDevice][发送消息成功，设备 ID: {}，主题: {}，QoS: {}]", deviceId, topic, qos);
             return true;
         } catch (Exception e) {

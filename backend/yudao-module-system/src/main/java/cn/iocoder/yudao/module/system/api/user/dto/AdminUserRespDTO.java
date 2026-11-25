@@ -18,6 +18,10 @@ public class AdminUserRespDTO {
      */
     private Long id;
     /**
+     * 用户账号
+     */
+    private String username;
+    /**
      * 用户昵称
      */
     private String nickname;
@@ -40,6 +44,14 @@ public class AdminUserRespDTO {
      * 手机号码
      */
     private String mobile;
+    /**
+     * 用户邮箱
+     */
+    private String email;
+    /**
+     * 用户性别
+     */
+    private Integer sex;
     /**
      * 用户头像
      */

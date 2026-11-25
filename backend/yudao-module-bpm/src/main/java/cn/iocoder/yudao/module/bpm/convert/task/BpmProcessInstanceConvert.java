@@ -221,6 +221,7 @@ public interface BpmProcessInstanceConvert {
         for (BpmApprovalDetailRespVO.ActivityNode activityNode : activityNodes) {
             CollUtil.addAll(userIds, convertSet(activityNode.getTasks(), BpmApprovalDetailRespVO.ActivityNodeTask::getAssignee));
             CollUtil.addAll(userIds, convertSet(activityNode.getTasks(), BpmApprovalDetailRespVO.ActivityNodeTask::getOwner));
+            CollUtil.addAll(userIds, convertSet(activityNode.getTasks(), BpmApprovalDetailRespVO.ActivityNodeTask::getRevisionAssignee));
             CollUtil.addAll(userIds, activityNode.getCandidateUserIds());
         }
         if (todoTask != null) {
@@ -272,6 +273,7 @@ public interface BpmProcessInstanceConvert {
                 approveNode.getTasks().forEach(task -> {
                     task.setAssigneeUser(buildUser(task.getAssignee(), userMap, deptMap));
                     task.setOwnerUser(buildUser(task.getOwner(), userMap, deptMap));
+                    task.setRevisionAssigneeUser(buildUser(task.getRevisionAssignee(), userMap, deptMap));
                 });
             }
             approveNode.setCandidateUsers(convertList(approveNode.getCandidateUserIds(), userId -> buildUser(userId, userMap, deptMap)));
@@ -325,8 +327,11 @@ public interface BpmProcessInstanceConvert {
             approveTask.setName(item.getName());
             approveTask.setId(item.getId());
             approveTask.setSignPicUrl((String) taskLocalVariables.get(BpmnVariableConstants.TASK_SIGN_PIC_URL));
+            // 处理人：优先 assignee；向前加签后被跳过等场景，assignee 为空，使用 owner。用户不存在时，展示为空
+            AdminUserRespDTO assigneeUser = userMap.get(NumberUtils.parseLong(
+                    StrUtil.blankToDefault(item.getAssignee(), item.getOwner())));
             approveTask.setDescription(StrUtil.format("{} / {} / {} / {} / {}",
-                    userMap.get(Long.valueOf(item.getAssignee())).getNickname(),
+                    assigneeUser != null ? assigneeUser.getNickname() : "",
                     item.getName(),
                     DateUtil.formatDateTime(item.getEndTime()),
                     BpmTaskStatusEnum.valueOf((Integer) taskLocalVariables.get(BpmnVariableConstants.TASK_VARIABLE_STATUS)).getName(),

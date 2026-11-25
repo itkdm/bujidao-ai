@@ -4,6 +4,7 @@ import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.module.ai.controller.admin.write.vo.AiWriteGenerateReqVO;
+import cn.iocoder.yudao.module.ai.controller.admin.write.vo.AiWriteGenerateRespVO;
 import cn.iocoder.yudao.module.ai.controller.admin.write.vo.AiWritePageReqVO;
 import cn.iocoder.yudao.module.ai.controller.admin.write.vo.AiWriteRespVO;
 import cn.iocoder.yudao.module.ai.dal.dataobject.write.AiWriteDO;
@@ -21,7 +22,7 @@ import reactor.core.publisher.Flux;
 import static cn.iocoder.yudao.framework.common.pojo.CommonResult.success;
 import static cn.iocoder.yudao.framework.security.core.util.SecurityFrameworkUtils.getLoginUserId;
 
-@Tag(name = "管理后台 - AI 写作")
+@Tag(name = "管理后台 - AI 写作翻译")
 @RestController
 @RequestMapping("/ai/write")
 public class AiWriteController {
@@ -31,11 +32,12 @@ public class AiWriteController {
 
     @PostMapping(value = "/generate-stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @Operation(summary = "写作生成（流式）", description = "流式返回，响应较快")
-    public Flux<CommonResult<String>> generateWriteContent(@RequestBody @Valid AiWriteGenerateReqVO generateReqVO) {
+    public Flux<CommonResult<AiWriteGenerateRespVO>> generateWriteContent(
+            @RequestBody @Valid AiWriteGenerateReqVO generateReqVO) {
         return writeService.generateWriteContent(generateReqVO, getLoginUserId());
     }
 
-    // ================ 写作管理 ================
+    // ================ 写作翻译管理 ================
 
     @DeleteMapping("/delete")
     @Operation(summary = "删除写作")
@@ -44,6 +46,15 @@ public class AiWriteController {
     public CommonResult<Boolean> deleteWrite(@RequestParam("id") Long id) {
         writeService.deleteWrite(id);
         return success(true);
+    }
+
+    @GetMapping("/get")
+    @Operation(summary = "获得写作")
+    @Parameter(name = "id", description = "编号", required = true, example = "1024")
+    @PreAuthorize("@ss.hasPermission('ai:write:query')")
+    public CommonResult<AiWriteRespVO> getWrite(@RequestParam("id") Long id) {
+        AiWriteDO write = writeService.getWrite(id);
+        return success(BeanUtils.toBean(write, AiWriteRespVO.class));
     }
 
     @GetMapping("/page")

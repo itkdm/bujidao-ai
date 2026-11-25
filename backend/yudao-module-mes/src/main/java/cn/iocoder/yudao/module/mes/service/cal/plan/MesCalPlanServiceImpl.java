@@ -8,6 +8,7 @@ import cn.iocoder.yudao.module.mes.controller.admin.cal.plan.vo.MesCalPlanSaveRe
 import cn.iocoder.yudao.module.mes.dal.dataobject.cal.plan.MesCalPlanDO;
 import cn.iocoder.yudao.module.mes.dal.mysql.cal.plan.MesCalPlanMapper;
 import cn.iocoder.yudao.module.mes.enums.cal.MesCalPlanStatusEnum;
+import cn.iocoder.yudao.module.mes.enums.cal.MesCalShiftMethodEnum;
 import cn.iocoder.yudao.module.mes.enums.cal.MesCalShiftTypeEnum;
 import cn.iocoder.yudao.module.mes.service.cal.team.MesCalTeamShiftService;
 import cn.hutool.core.util.ObjUtil;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
+import java.time.LocalDate;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -76,10 +78,20 @@ public class MesCalPlanServiceImpl implements MesCalPlanService {
         // 1.3 校验编码唯一
         validatePlanCodeUnique(updateReqVO.getId(), updateReqVO.getCode());
 
-        // 2. 更新
+        // 2.1 倒班字段联动清理：单白班不倒班，倒班方式非按天时不需要倒班天数
         updateReqVO.setStatus(null); // 不允许通过 update 修改状态，状态变更走专用接口
+        boolean clearShiftMethod = MesCalShiftTypeEnum.SINGLE.getType().equals(updateReqVO.getShiftType());
+        boolean clearShiftCount = clearShiftMethod || updateReqVO.getShiftMethod() == null
+                || !MesCalShiftMethodEnum.DAY.getMethod().equals(updateReqVO.getShiftMethod());
+        if (clearShiftMethod) {
+            updateReqVO.setShiftMethod(null);
+        }
+        if (clearShiftCount) {
+            updateReqVO.setShiftCount(null);
+        }
+        // 2.2 更新
         MesCalPlanDO updateObj = BeanUtils.toBean(updateReqVO, MesCalPlanDO.class);
-        planMapper.updateById(updateObj);
+        planMapper.updateWithShiftFieldCleanup(updateObj, clearShiftMethod, clearShiftCount);
     }
 
     @Override
@@ -132,6 +144,11 @@ public class MesCalPlanServiceImpl implements MesCalPlanService {
     }
 
     @Override
+    public List<MesCalPlanDO> getPlanListByStatusAndDay(Integer status, LocalDate day) {
+        return planMapper.selectListByStatusAndDay(status, day);
+    }
+
+    @Override
     public MesCalPlanDO validatePlanPrepare(Long planId) {
         MesCalPlanDO plan = validatePlanExists(planId);
         if (ObjUtil.notEqual(MesCalPlanStatusEnum.PREPARE.getStatus(), plan.getStatus())) {
@@ -160,11 +177,13 @@ public class MesCalPlanServiceImpl implements MesCalPlanService {
 
     /**
      * 确认排班计划时，校验班组数量是否与轮班方式匹配
+     *
+     * 排班只会使用轮班方式所需数量的班组，多出的班组不会参与轮休或替班，因此要求数量一致，避免被静默忽略 https://t.zsxq.com/XdcRW
      */
     private void validateTeamCountForConfirm(Long planId, Integer shiftType) {
         Long teamCount = planTeamService.getPlanTeamCountByPlanId(planId);
         MesCalShiftTypeEnum shiftTypeEnum = MesCalShiftTypeEnum.valueOf(shiftType);
-        if (teamCount < shiftTypeEnum.getRequiredTeamCount()) {
+        if (teamCount == null || teamCount != shiftTypeEnum.getRequiredTeamCount()) {
             throw exception(CAL_PLAN_TEAM_COUNT_NOT_MATCH);
         }
     }

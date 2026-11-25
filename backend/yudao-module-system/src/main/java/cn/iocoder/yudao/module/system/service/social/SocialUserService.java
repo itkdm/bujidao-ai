@@ -4,7 +4,7 @@ import cn.iocoder.yudao.framework.common.exception.ServiceException;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.module.system.api.social.dto.SocialUserBindReqDTO;
 import cn.iocoder.yudao.module.system.api.social.dto.SocialUserRespDTO;
-import cn.iocoder.yudao.module.system.controller.admin.socail.vo.user.SocialUserPageReqVO;
+import cn.iocoder.yudao.module.system.controller.admin.social.vo.user.SocialUserPageReqVO;
 import cn.iocoder.yudao.module.system.dal.dataobject.social.SocialUserDO;
 import cn.iocoder.yudao.module.system.enums.social.SocialTypeEnum;
 
@@ -64,9 +64,10 @@ public interface SocialUserService {
      * @param socialType 社交平台的类型
      * @param code 授权码
      * @param state state
+     * @param redirectUri 发起授权时的回调地址，换取令牌时需与其一致；为空时使用配置中的回调地址
      * @return 社交用户
      */
-    SocialUserRespDTO getSocialUserByCode(Integer userType, Integer socialType, String code, String state);
+    SocialUserRespDTO getSocialUserByCode(Integer userType, Integer socialType, String code, String state, String redirectUri);
 
     // ==================== 社交用户 CRUD ====================
 

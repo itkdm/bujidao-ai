@@ -6,7 +6,7 @@ import { computed, ref } from 'vue';
 
 import { useVbenModal } from '@vben/common-ui';
 
-import { message#if ($table.templateType == 11), Tabs#end } from 'ant-design-vue';
+import { message#if ($table.templateType == 10 || $table.templateType == 12), Tabs#end } from 'ant-design-vue';
 
 import { useVbenForm } from '#/adapter/form';
 import { create${simpleClassName}, get${simpleClassName}, update${simpleClassName} } from '#/api/${table.moduleName}/${table.businessName}';
@@ -49,7 +49,7 @@ const [Form, formApi] = useVbenForm({
       class: 'w-full',
     },
     formItemClass: 'col-span-2',
-    labelWidth: 80,
+    labelWidth: 120,
   },
   layout: 'horizontal',
   schema: useFormSchema(),
@@ -69,15 +69,11 @@ const [Modal, modalApi] = useVbenModal({
         #foreach ($subTable in $subTables)
           #set ($index = $foreach.count - 1)
           #set ($subClassNameVar = $subClassNameVars.get($index))
-          #if ($subTable.subJoinMany) ## 一对多
-            ## TODO 列表值校验？
-          #else
             const ${subClassNameVar}Valid = await ${subClassNameVar}FormRef.value?.validate();
             if (!${subClassNameVar}Valid) {
               subTabsName.value = '${subClassNameVar}';
               return;
             }
-          #end
         #end
       #end
 #end
@@ -115,7 +111,7 @@ const [Modal, modalApi] = useVbenModal({
       return;
     }
     // 加载数据
-    const data = modalApi.getData<${apiName}.${simpleClassName}>();
+    const data = modalApi.getData() as ${apiName}.${simpleClassName};
     if (!data || !data.id) {
 #if (${table.templateType} == 2)## 树表特有
       // 设置上级
@@ -126,6 +122,13 @@ const [Modal, modalApi] = useVbenModal({
     modalApi.lock();
     try {
       formData.value = await get${simpleClassName}(data.id);
+#foreach ($column in $codegenHelper.getCollectionFormColumns($columns))
+#if ($codegenHelper.isLongCollection($column))## Long 集合：转换为字符串，与字符串的字典值一致，避免精度丢失
+      formData.value.${column.javaField} = (formData.value.${column.javaField} ?? []).map(String); // 多选字段：历史数据可能为 null
+#else
+      formData.value.${column.javaField} ??= []; // 多选字段：历史数据可能为 null
+#end
+#end
       // 设置到 values
       await formApi.setValues(formData.value);
     } finally {

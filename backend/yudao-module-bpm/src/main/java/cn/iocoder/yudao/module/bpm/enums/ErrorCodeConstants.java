@@ -13,6 +13,7 @@ public interface ErrorCodeConstants {
 
     // ========== OA 流程模块 1-009-001-000 ==========
     ErrorCode OA_LEAVE_NOT_EXISTS = new ErrorCode(1_009_001_001, "请假申请不存在");
+    ErrorCode OA_LEAVE_UPDATE_NOT_ALLOWED = new ErrorCode(1_009_001_002, "请假申请不能修改，原因：不在审批中");
 
     // ========== 流程模型 1-009-002-000 ==========
     ErrorCode MODEL_KEY_EXISTS = new ErrorCode(1_009_002_000, "已经存在流程标识为【{}】的流程");
@@ -25,6 +26,11 @@ public interface ErrorCodeConstants {
     ErrorCode MODEL_DEPLOY_FAIL_BPMN_USER_TASK_NAME_NOT_EXISTS = new ErrorCode(1_009_002_006, "部署流程失败，原因：BPMN 流程图中，用户任务({})的名字不存在");
     ErrorCode MODEL_UPDATE_FAIL_NOT_MANAGER = new ErrorCode(1_009_002_007, "操作流程失败，原因：你不是该流程({})的管理员");
     ErrorCode MODEL_DEPLOY_FAIL_FIRST_USER_TASK_CANDIDATE_STRATEGY_ERROR = new ErrorCode(1_009_002_008, "部署流程失败，原因：首个任务({})的审批人不能是【审批人自选】");
+    ErrorCode MODEL_IMPORT_FAIL_INVALID = new ErrorCode(1_009_002_009, "导入流程失败，流程模型文件为空或 JSON 格式不正确");
+    ErrorCode MODEL_SAVE_FAIL_TIMEOUT_JUMP_NODE_INVALID = new ErrorCode(1_009_002_010, "保存流程失败，原因：审批节点({})的超时自动跳转节点无效，" +
+            "只能跳转到其它人工审批的审批节点（审批人不能是自选），并且两者都不能位于并行分支、包容分支内");
+    ErrorCode MODEL_DEPLOY_FAIL_TIMEOUT_JUMP_NOT_SIMPLE = new ErrorCode(1_009_002_011, "部署流程失败，原因：审批节点({})的超时执行动作【自动跳转】仅支持仿钉钉设计器");
+    ErrorCode MODEL_DEPLOY_FAIL_TIMEOUT_JUMP_NOT_MATCH = new ErrorCode(1_009_002_012, "部署流程失败，原因：审批节点({})的超时自动跳转配置与流程图不一致，请在仿钉钉设计器中重新保存");
 
     // ========== 流程定义 1-009-003-000 ==========
     ErrorCode PROCESS_DEFINITION_KEY_NOT_MATCH = new ErrorCode(1_009_003_000, "流程定义的标识期望是({})，当前是({})，请修改 BPMN 流程图");
@@ -43,6 +49,7 @@ public interface ErrorCodeConstants {
     ErrorCode PROCESS_INSTANCE_HTTP_CALL_ERROR = new ErrorCode(1_009_004_006, "流程 Http 请求调用失败");
     ErrorCode PROCESS_INSTANCE_APPROVE_USER_SELECT_ASSIGNEES_NOT_CONFIG = new ErrorCode(1_009_004_007, "下一个任务({})的审批人未配置");
     ErrorCode PROCESS_INSTANCE_CANCEL_CHILD_FAIL_NOT_ALLOW = new ErrorCode(1_009_004_008, "子流程取消失败，子流程不允许取消");
+    ErrorCode PROCESS_INSTANCE_START_FORM_FIELD_REQUIRED = new ErrorCode(1_009_004_009, "发起流程失败，表单字段（{}）为必填项，不能为空");
 
     // ========== 流程任务 1-009-005-000 ==========
     ErrorCode TASK_OPERATE_FAIL_ASSIGN_NOT_SELF = new ErrorCode(1_009_005_001, "操作失败，原因：该任务的审批人不是你");
@@ -64,6 +71,13 @@ public interface ErrorCodeConstants {
     ErrorCode TASK_WITHDRAW_FAIL_TASK_NOT_EXISTS = new ErrorCode(1_009_005_018, "撤回失败，未查询到用户已办任务！");
     ErrorCode TASK_WITHDRAW_FAIL_NOT_ALLOW = new ErrorCode(1_009_005_019, "撤回失败，此流程不允许撤回操作！");
     ErrorCode TASK_WITHDRAW_FAIL_NEXT_TASK_NOT_ALLOW = new ErrorCode(1_009_005_020, "撤回失败，下一节点不满足撤回条件！");
+    ErrorCode TASK_SIGN_DELETE_FAIL_NOT_SELF = new ErrorCode(1_009_005_021, "任务减签失败，原因：你不是该任务的加签人");
+    ErrorCode TASK_OPERATE_FAIL_APPROVING = new ErrorCode(1_009_005_022, "操作失败，原因：该任务已审批通过，等待加签任务审批完成");
+    ErrorCode TASK_SIGN_CREATE_TYPE_NOT_EXISTS = new ErrorCode(1_009_005_023, "任务加签失败，加签类型({})不存在");
+    ErrorCode TASK_WAIT_REVISION = new ErrorCode(1_009_005_024, "操作失败，原因：该任务已退回，等待修改人修改后重新提交");
+    ErrorCode TASK_RESUBMIT_NOT_ALLOWED = new ErrorCode(1_009_005_025, "重新提交失败，原因：修改已失效或你不是该任务的修改人，请刷新后重试");
+    ErrorCode TASK_RESUBMIT_FIELD_NOT_WRITABLE = new ErrorCode(1_009_005_026, "重新提交失败，原因：表单字段({})不允许修改");
+    ErrorCode TASK_REVISION_EXPIRED = new ErrorCode(1_009_005_027, "操作失败，原因：该任务的退回修改已变化，请刷新后重试");
 
     // ========== 动态表单模块 1-009-010-000 ==========
     ErrorCode FORM_NOT_EXISTS = new ErrorCode(1_009_010_000, "动态表单不存在");

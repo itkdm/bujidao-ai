@@ -1,8 +1,11 @@
 package cn.iocoder.yudao.module.infra.service.file;
 
+import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.date.LocalDateTimeUtil;
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.lang.Assert;
+import cn.hutool.core.util.ArrayUtil;
+import cn.hutool.core.util.ObjectUtil;
 import cn.hutool.core.util.RandomUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.crypto.digest.DigestUtil;
@@ -20,13 +23,21 @@ import cn.iocoder.yudao.module.infra.framework.file.core.utils.FileTypeUtils;
 import com.google.common.annotations.VisibleForTesting;
 import jakarta.annotation.Resource;
 import lombok.SneakyThrows;
+import org.apache.tika.mime.MimeTypes;
 import org.springframework.stereotype.Service;
 
+import java.io.BufferedInputStream;
+import java.io.File;
+import java.io.InputStream;
+import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 import static cn.hutool.core.date.DatePattern.PURE_DATE_PATTERN;
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
-import static cn.iocoder.yudao.module.infra.enums.ErrorCodeConstants.FILE_NOT_EXISTS;
+import static cn.iocoder.yudao.framework.common.util.collection.CollectionUtils.convertList;
+import static cn.iocoder.yudao.module.infra.enums.ErrorCodeConstants.*;
 
 /**
  * 文件 Service 实现类
@@ -35,6 +46,37 @@ import static cn.iocoder.yudao.module.infra.enums.ErrorCodeConstants.FILE_NOT_EX
  */
 @Service
 public class FileServiceImpl implements FileService {
+
+    /**
+     * 允许上传的文件类型，可按业务需要调整
+     */
+    private static final Set<String> ALLOWED_FILE_TYPES = Set.of(
+            // 图片
+            "image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp",
+            "image/vnd.microsoft.icon", "image/tiff", "image/avif", "image/heic", "image/heif", "image/svg+xml",
+            // 文档
+            "application/pdf", "text/plain", "text/csv", "text/markdown", "text/html", "application/xhtml+xml",
+            "application/xml", "application/json", "application/epub+zip", "message/rfc822", "application/vnd.ms-outlook",
+            "application/msword", "application/vnd.ms-excel", "application/vnd.ms-powerpoint",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            // 压缩包
+            "application/zip", "application/x-rar-compressed", "application/x-7z-compressed", "application/gzip",
+            // 音视频
+            "audio/mpeg", "audio/vnd.wave", "audio/vorbis", "audio/ogg", "audio/opus", "audio/mp4", "audio/webm",
+            "audio/x-aac", "audio/x-flac", "audio/amr", "audio/x-ms-wma",
+            "video/mp4", "video/quicktime", "video/x-msvideo", "video/webm", "video/x-ms-wmv", "video/x-flv",
+            "application/x-matroska", "video/x-matroska"
+    );
+
+    /**
+     * 允许上传的二进制文件后缀，例如说 IoT OTA 固件的 .bin
+     *
+     * 为什么不直接放行 application/octet-stream？它也是所有未知后缀、未知内容的识别结果，放行后等于不限制类型。
+     * 所以只放行这里的后缀，并且上传内容也必须识别为 application/octet-stream（不能是可执行文件、脚本、HTML 等）
+     */
+    private static final Set<String> ALLOWED_BINARY_EXTENSIONS = Set.of("bin");
 
     /**
      * 上传文件的前缀，是否包含日期（yyyyMMdd）
@@ -74,21 +116,17 @@ public class FileServiceImpl implements FileService {
         // 1.1 处理 name 的合法性，禁止携带目录路径
         name = FilePathUtils.validateFileName(name);
 
-        // 1.2.1 处理 type 为空的情况
-        if (StrUtil.isEmpty(type)) {
-            type = FileTypeUtils.getMineType(content, name);
+        // 1.2.1 校验文件内容和类型，不信任客户端传入的 type
+        if (ArrayUtil.isEmpty(content)) {
+            throw exception(FILE_IS_EMPTY);
         }
+        type = FileTypeUtils.getMineType(content, name);
+        validateContentType(type, name);
         // 1.2.2 处理 name 为空的情况
         if (StrUtil.isEmpty(name)) {
             name = DigestUtil.sha256Hex(content);
         }
-        if (StrUtil.isEmpty(FileUtil.extName(name))) {
-            // 如果 name 没有后缀 type，则补充后缀
-            String extension = FileTypeUtils.getExtension(type);
-            if (StrUtil.isNotEmpty(extension)) {
-                name = name + extension;
-            }
-        }
+        name = appendExtension(name, type);
 
         // 2.1 生成上传的 path，需要保证唯一
         String path = generateUploadPath(name, directory);
@@ -102,6 +140,90 @@ public class FileServiceImpl implements FileService {
                 .setName(name).setPath(path).setUrl(url)
                 .setType(type).setSize((long) content.length));
         return url;
+    }
+
+    @Override
+    @SneakyThrows
+    public String createFile(InputStream content, long size, String name, String directory, String type) {
+        // 1.1 处理 name 的合法性，禁止携带目录路径
+        name = FilePathUtils.validateFileName(name);
+        if (size <= 0) {
+            throw exception(FILE_IS_EMPTY);
+        }
+        File tempFile = null;
+        try {
+            // 1.2 name 为空时按内容摘要命名：先边读边写到临时文件计算摘要，再从临时文件上传，不把整个文件读入内存
+            if (StrUtil.isEmpty(name)) {
+                tempFile = FileUtil.createTempFile();
+                FileUtil.writeFromStream(content, tempFile, false);
+                name = DigestUtil.sha256Hex(tempFile);
+                size = tempFile.length();
+            }
+            try (InputStream tempInput = tempFile != null ? FileUtil.getInputStream(tempFile) : null) {
+                // 支持 mark / reset，类型探测只读取文件头部，读取后重置，上传时不丢失头部内容
+                InputStream input = new BufferedInputStream(tempInput != null ? tempInput : content);
+                return doCreateFile(input, size, name, directory);
+            }
+        } finally {
+            FileUtil.del(tempFile);
+        }
+    }
+
+    private String doCreateFile(InputStream content, long size, String name, String directory) throws Exception {
+        // 1.1 校验文件内容非空和实际类型，不信任客户端传入的 type
+        content.mark(1);
+        if (content.read() < 0) {
+            throw exception(FILE_IS_EMPTY);
+        }
+        content.reset();
+        String type = FileTypeUtils.getMineType(content, name);
+        validateContentType(type, name);
+        // 1.2 如果 name 没有后缀，则按类型补充后缀
+        name = appendExtension(name, type);
+
+        // 2.1 生成上传的 path，需要保证唯一
+        String path = generateUploadPath(name, directory);
+        // 2.2 边读边写到文件存储器
+        FileClient client = fileConfigService.getMasterFileClient();
+        Assert.notNull(client, "客户端(master) 不能为空");
+        String url = client.upload(content, size, path, type);
+
+        // 3. 保存到数据库
+        fileMapper.insert(new FileDO().setConfigId(client.getId())
+                .setName(name).setPath(path).setUrl(url)
+                .setType(type).setSize(size));
+        return url;
+    }
+
+    /**
+     * 校验文件的实际类型：必须在允许上传的类型内，且图片、二进制文件的后缀与实际类型一致
+     *
+     * @param type 文件内容探测的类型
+     * @param name 文件名
+     */
+    private void validateContentType(String type, String name) {
+        String nameType = StrUtil.isNotEmpty(FileUtil.extName(name)) ? validateFileType(name) : null;
+        if (!isAllowedFileType(type, name)
+                // 图片、二进制文件（例如说 .bin 固件）：内容识别的类型，必须与后缀一致
+                || ((FileTypeUtils.isImage(nameType) || isAllowedBinaryFile(nameType, name))
+                    && ObjectUtil.notEqual(type, nameType))) {
+            throw exception(FILE_TYPE_NOT_ALLOWED);
+        }
+    }
+
+    /**
+     * 如果 name 没有后缀，则按文件类型补充后缀
+     *
+     * @param name 文件名
+     * @param type 文件类型
+     * @return 文件名
+     */
+    private static String appendExtension(String name, String type) {
+        if (StrUtil.isNotEmpty(FileUtil.extName(name))) {
+            return name;
+        }
+        String extension = FileTypeUtils.getExtension(type);
+        return StrUtil.isNotEmpty(extension) ? name + extension : name;
     }
 
     @VisibleForTesting
@@ -148,8 +270,10 @@ public class FileServiceImpl implements FileService {
     @Override
     @SneakyThrows
     public FilePresignedUrlRespVO presignPutUrl(String name, String directory) {
-        // 1. 生成上传的 path，需要保证唯一
+        // 1.1 生成上传的 path，需要保证唯一
         String path = generateUploadPath(name, directory);
+        // 1.2 前端直传无法读取文件内容，此处仅校验文件名类型
+        validateFileType(name);
 
         // 2. 获取文件预签名地址
         FileClient fileClient = fileConfigService.getMasterFileClient();
@@ -166,17 +290,52 @@ public class FileServiceImpl implements FileService {
     }
 
     @Override
+    public List<String> presignGetUrlList(List<String> urls, Integer expirationSeconds) {
+        if (CollUtil.isEmpty(urls)) {
+            return Collections.emptyList();
+        }
+        FileClient fileClient = fileConfigService.getMasterFileClient();
+        return convertList(urls, url -> fileClient.presignGetUrl(url, expirationSeconds));
+    }
+
+    @Override
     public Long createFile(FileCreateReqVO createReqVO) {
         // 1.1 校验参数的合法性
         FilePathUtils.validatePath(createReqVO.getPath());
         createReqVO.setName(FilePathUtils.validateFileName(createReqVO.getName()));
-        // 1.2 处理 URL 的合法性，移除 URL 中的查询参数（例如签名参数），保证 URL 的唯一性
+        // 1.2 校验原文件名和存储路径的类型，前端直传不校验文件内容
+        String type = validateFileType(createReqVO.getName());
+        if (ObjectUtil.notEqual(type, validateFileType(FileUtil.getName(createReqVO.getPath())))) {
+            throw exception(FILE_TYPE_NOT_ALLOWED);
+        }
+        createReqVO.setType(type);
+        // 1.3 处理 URL 的合法性，移除 URL 中的查询参数（例如签名参数），保证 URL 的唯一性
         createReqVO.setUrl(HttpUtils.removeUrlQuery(createReqVO.getUrl())); // 目的：移除私有桶情况下，URL 的签名参数
 
         // 2. 保存到数据库
         FileDO file = BeanUtils.toBean(createReqVO, FileDO.class);
         fileMapper.insert(file);
         return file.getId();
+    }
+
+    private String validateFileType(String name) {
+        String type = FileTypeUtils.getMineType(name);
+        if (!isAllowedFileType(type, name)) {
+            throw exception(FILE_TYPE_NOT_ALLOWED);
+        }
+        return type;
+    }
+
+    private static boolean isAllowedFileType(String type, String name) {
+        return ALLOWED_FILE_TYPES.contains(type) || isAllowedBinaryFile(type, name);
+    }
+
+    private static boolean isAllowedBinaryFile(String type, String name) {
+        if (ObjectUtil.notEqual(type, MimeTypes.OCTET_STREAM)) {
+            return false;
+        }
+        String extension = FileUtil.extName(name);
+        return StrUtil.isNotEmpty(extension) && ALLOWED_BINARY_EXTENSIONS.contains(extension.toLowerCase(Locale.ROOT));
     }
 
     @Override
@@ -236,6 +395,18 @@ public class FileServiceImpl implements FileService {
         Assert.notNull(client, "客户端({}) 不能为空", configId);
         // 2.2 获取文件内容
         return client.getContent(path);
+    }
+
+    @Override
+    public InputStream getFileStream(Long configId, String path) throws Exception {
+        // 1. 校验路径合法性
+        FilePathUtils.validatePath(path);
+
+        // 2.1 获取客户端
+        FileClient client = fileConfigService.getFileClient(configId);
+        Assert.notNull(client, "客户端({}) 不能为空", configId);
+        // 2.2 打开文件流，由调用方关闭
+        return client.getStream(path);
     }
 
     @Override

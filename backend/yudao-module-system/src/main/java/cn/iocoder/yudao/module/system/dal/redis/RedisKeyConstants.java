@@ -10,6 +10,14 @@ import cn.iocoder.yudao.module.system.dal.dataobject.oauth2.OAuth2AccessTokenDO;
 public interface RedisKeyConstants {
 
     /**
+     * 扫码登录的临时记录
+     * <p>
+     * KEY 格式：auth_qrcode:{qrcodeId}，有租户上下文时追加 :{tenantId}
+     * VALUE 数据类型：Hash，status、userId、secretHash；固定 180 秒过期
+     */
+    String AUTH_QRCODE = "auth_qrcode:%s";
+
+    /**
      * 指定部门的所有子部门编号数组的缓存
      * <p>
      * KEY 格式：dept_children_ids:{id}
@@ -98,6 +106,28 @@ public interface RedisKeyConstants {
      * VALUE 数据格式：String 模版信息
      */
     String SMS_TEMPLATE = "sms_template";
+
+    /**
+     * 短信验证码校验次数的缓存
+     * <p>
+     * KEY 格式：sms_code_validate_count:{id}
+     * VALUE 数据类型：String 已预占的校验次数
+     */
+    String SMS_CODE_VALIDATE_COUNT = "sms_code_validate_count:%d";
+    /**
+     * 短信验证码 IP 每日发送数量的缓存
+     * <p>
+     * KEY 格式：sms_code_send_ip_count:{date}:{ip}
+     * VALUE 数据类型：String 当日发送数量
+     */
+    String SMS_CODE_SEND_IP_COUNT = "sms_code_send_ip_count:%s:%s";
+    /**
+     * 短信验证码 IP 每小时发送数量的缓存
+     * <p>
+     * KEY 格式：sms_code_send_ip_hour_count:{yyyyMMddHH}:{ip}
+     * VALUE 数据类型：String 当前小时发送数量
+     */
+    String SMS_CODE_SEND_IP_HOUR_COUNT = "sms_code_send_ip_hour_count:%s:%s";
 
     /**
      * 小程序订阅模版的缓存

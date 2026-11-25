@@ -13,11 +13,13 @@ import cn.iocoder.yudao.module.infra.dal.dataobject.codegen.CodegenTableDO;
 import cn.iocoder.yudao.module.infra.enums.codegen.CodegenVOTypeEnum;
 import cn.iocoder.yudao.module.infra.framework.codegen.config.CodegenProperties;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.mockito.InjectMocks;
 import org.mockito.Spy;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -26,6 +28,8 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 /**
  * {@link CodegenEngine} 的单元测试抽象基类
@@ -83,6 +87,9 @@ public abstract class CodegenEngineAbstractTest extends BaseMockitoUnitTest {
             if (column.getListOperationResult() == null) {
                 column.setListOperationResult(false);
             }
+            if (column.getDictType() == null) {
+                column.setDictType(""); // 与 infra_codegen_column 表 dict_type 字段的默认值一致
+            }
         });
         return list;
     }
@@ -122,7 +129,65 @@ public abstract class CodegenEngineAbstractTest extends BaseMockitoUnitTest {
             return null;
         }
         content = content.replace("\r\n", "\n").replace('\r', '\n');
-        return content.replaceAll("\\n+\\z", "");
+        // 从尾部扫描一次末尾换行，只 substring 一次，避免正则回溯
+        int end = content.length();
+        while (end > 0 && content.charAt(end - 1) == '\n') {
+            end--;
+        }
+        return content.substring(0, end);
+    }
+
+    // ==================== normalizeLineEndings 单测 ====================
+
+    @Test
+    void testNormalizeLineEndings_nullAndEmpty() {
+        assertNull(normalizeLineEndings(null));
+        assertEquals("", normalizeLineEndings(""));
+    }
+
+    @Test
+    void testNormalizeLineEndings_crlf() {
+        assertEquals("a\nb", normalizeLineEndings("a\r\nb\r\n\r\n"));
+        assertEquals("a\nb", normalizeLineEndings("a\rb\r"));
+        assertEquals("a\n\nb", normalizeLineEndings("a\r\n\rb\n\r\n"));
+    }
+
+    @Test
+    void testNormalizeLineEndings_innerNewlinesKept() {
+        // 连续换行后还有正文，只去掉末尾的换行
+        assertEquals("a\n\n\nb", normalizeLineEndings("a\n\n\nb\n\n"));
+        assertEquals("\n\na", normalizeLineEndings("\n\na\n"));
+    }
+
+    @Test
+    void testNormalizeLineEndings_onlyNewlines() {
+        assertEquals("", normalizeLineEndings("\n"));
+        assertEquals("", normalizeLineEndings("\n\r\n\r"));
+    }
+
+    @Test
+    void testNormalizeLineEndings_noTrailingNewline() {
+        assertEquals("abc", normalizeLineEndings("abc"));
+        assertEquals("a\nb", normalizeLineEndings("a\nb"));
+    }
+
+    @Test
+    void testNormalizeLineEndings_blankKept() {
+        // 只去掉换行，其它空白保持原样
+        assertEquals("  \t", normalizeLineEndings("  \t"));
+        assertEquals("a  ", normalizeLineEndings("a  \n\n"));
+        assertEquals("a\n  ", normalizeLineEndings("a\n  "));
+    }
+
+    @Test
+    void testNormalizeLineEndings_longInput() {
+        String inner = "\n".repeat(200_000);
+        String content = "x" + inner + "y" + "\r\n".repeat(200_000);
+        String result = assertTimeoutPreemptively(Duration.ofSeconds(5), () -> normalizeLineEndings(content));
+        assertEquals("x" + inner + "y", result);
+
+        String onlyNewlines = "\r\n".repeat(500_000);
+        assertEquals("", assertTimeoutPreemptively(Duration.ofSeconds(5), () -> normalizeLineEndings(onlyNewlines)));
     }
 
     // ==================== 调试专用 ====================
@@ -157,13 +222,17 @@ public abstract class CodegenEngineAbstractTest extends BaseMockitoUnitTest {
             String lastFilePath = StrUtil.subAfter(filePath, '/', true);
             String ext = StrUtil.subAfter(lastFilePath, '.', true);
             String name = StrUtil.subBefore(lastFilePath, '.', true);
-            String contentPath = ext + '/' + name;
-            // 同名文件（如 index.vue 同时出现在 列表/form/detail）会撞名，撞名时前缀补上级目录区分；仍撞则加序号兜底，避免快照互相覆盖
+            String parentPath = StrUtil.subBefore(filePath, '/' + lastFilePath, true);
+            String parentDir = StrUtil.subAfter(parentPath, '/', true);
+            // index.vue 按页面语义稳定归档，避免结果迭代顺序导致列表页和表单页的快照路径互换
+            String contentPath = "index".equals(name) && ("form".equals(parentDir) || "detail".equals(parentDir))
+                    ? ext + '/' + parentDir + '/' + name : ext + '/' + name;
+            // ERP 多个子表的 form/index.vue 仍可能撞名，继续补充祖父目录区分
             if (usedContentPaths.contains(contentPath)) {
-                String parentDir = StrUtil.subAfter(StrUtil.subBefore(filePath, '/' + lastFilePath, true), '/', true);
-                contentPath = ext + '/' + parentDir + '/' + name;
+                String grandParentDir = StrUtil.subAfter(StrUtil.subBefore(parentPath, '/' + parentDir, true), '/', true);
+                contentPath = ext + '/' + grandParentDir + '/' + parentDir + '/' + name;
                 for (int i = 2; usedContentPaths.contains(contentPath); i++) {
-                    contentPath = ext + '/' + parentDir + '/' + name + '-' + i;
+                    contentPath = ext + '/' + grandParentDir + '/' + parentDir + '/' + name + '-' + i;
                 }
             }
             usedContentPaths.add(contentPath);

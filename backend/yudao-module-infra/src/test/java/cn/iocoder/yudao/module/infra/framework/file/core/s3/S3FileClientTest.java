@@ -2,16 +2,28 @@ package cn.iocoder.yudao.module.infra.framework.file.core.s3;
 
 import cn.hutool.core.io.resource.ResourceUtil;
 import cn.hutool.core.util.IdUtil;
+import cn.hutool.core.util.ReflectUtil;
+import cn.hutool.core.util.StrUtil;
+import cn.iocoder.yudao.framework.common.util.http.HttpUtils;
 import cn.iocoder.yudao.framework.common.util.validation.ValidationUtils;
 import cn.iocoder.yudao.module.infra.framework.file.core.client.s3.S3FileClient;
 import cn.iocoder.yudao.module.infra.framework.file.core.client.s3.S3FileClientConfig;
 import jakarta.validation.Validation;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 @SuppressWarnings("resource")
 public class S3FileClientTest {
@@ -67,6 +79,136 @@ public class S3FileClientTest {
         assertTrue(result.contains("/yudao/avatar/%E4%B8%AD%E6%96%87%20100%25"));
         assertTrue(result.contains("%E6%96%87%E4%BB%B6.jpg"));
         assertFalse(result.contains("%25E4%25B8%25AD"));
+        assertFalse(result.contains("response-content-disposition"));
+    }
+
+    @Test
+    public void testPresignUrl_privateAccess_scriptableAttachment() {
+        // 准备参数
+        S3FileClientConfig config = new S3FileClientConfig();
+        config.setAccessKey("admin");
+        config.setAccessSecret("password");
+        config.setBucket("yudao");
+        config.setDomain("http://127.0.0.1:9000/yudao");
+        config.setEndpoint("http://127.0.0.1:9000");
+        config.setEnablePathStyleAccess(true);
+        config.setEnablePublicAccess(false);
+        S3FileClient client = new S3FileClient(0L, config);
+        client.init();
+
+        // 调用：新上传的 SVG、已保存的历史签名 URL 重新签名
+        String result = client.presignGetUrl("avatar/图标.svg", 300);
+        String historyResult = client.presignGetUrl(
+                "http://127.0.0.1:9000/yudao/avatar/%E5%9B%BE%E6%A0%87.svg?X-Amz-Signature=old", 300);
+        String putResult = client.presignPutUrl("avatar/图标.svg");
+
+        // 断言：GET 签名要求按附件下载；PUT 签名不额外约束请求头，兼容前端直传
+        assertTrue(result.contains("/yudao/avatar/%E5%9B%BE%E6%A0%87.svg"));
+        assertTrue(result.contains("response-content-disposition=attachment"));
+        assertTrue(historyResult.contains("/yudao/avatar/%E5%9B%BE%E6%A0%87.svg"));
+        assertTrue(historyResult.contains("response-content-disposition=attachment"));
+        assertFalse(historyResult.contains("X-Amz-Signature=old"));
+        assertFalse(StrUtil.containsIgnoreCase(putResult, "content-disposition"));
+    }
+
+    @Test
+    public void testPresignGetUrl_privateAccess_customDomainSignedUrl() {
+        // 准备参数：阿里云 OSS 配置自定义域名，预签名地址使用服务商的域名
+        S3FileClientConfig config = new S3FileClientConfig();
+        config.setAccessKey("access-key");
+        config.setAccessSecret("access-secret");
+        config.setBucket("test-bucket");
+        config.setDomain("https://custom.example.com");
+        config.setEndpoint("oss-cn-beijing.aliyuncs.com");
+        config.setEnablePathStyleAccess(false);
+        config.setEnablePublicAccess(false);
+        S3FileClient client = new S3FileClient(0L, config);
+        client.init();
+        // 上传时返回的预签名地址（库里保存的地址）
+        String uploaded = client.presignGetUrl("ai/ppt/中文 100%+幻灯片.png", 300);
+        String uploadedSvg = client.presignGetUrl("ai/ppt/图标.svg", 300);
+
+        // 调用：已签发的预签名地址再次签名（带上 fragment）
+        String result = client.presignGetUrl(uploaded + "#page", null);
+        String svgResult = client.presignGetUrl(uploadedSvg, null);
+
+        // 断言：对象名不变，不会把整个服务商地址当作对象名
+        assertTrue(uploaded.startsWith("https://test-bucket.oss-cn-beijing.aliyuncs.com/ai/ppt/%E4%B8%AD%E6%96%87%20100%25"), uploaded);
+        assertEquals(HttpUtils.removeUrlPathQueryAndFragment(uploaded), HttpUtils.removeUrlPathQueryAndFragment(result));
+        assertEquals(1, StrUtil.count(result, "X-Amz-Signature="));
+        assertFalse(result.contains("#page"));
+        // 断言：SVG 重新签名后仍按附件下载，签名参数不重复
+        assertTrue(svgResult.startsWith("https://test-bucket.oss-cn-beijing.aliyuncs.com/ai/ppt/%E5%9B%BE%E6%A0%87.svg?"), svgResult);
+        assertEquals(1, StrUtil.count(svgResult, "response-content-disposition=attachment"));
+        assertEquals(1, StrUtil.count(svgResult, "X-Amz-Signature="));
+    }
+
+    @Test
+    public void testUpload_scriptableContentDisposition() {
+        // 准备参数
+        S3FileClientConfig config = new S3FileClientConfig();
+        config.setAccessKey("admin");
+        config.setAccessSecret("password");
+        config.setBucket("yudao");
+        config.setDomain("http://127.0.0.1:9000/yudao");
+        config.setEndpoint("http://127.0.0.1:9000");
+        config.setEnablePathStyleAccess(true);
+        config.setEnablePublicAccess(true);
+        S3FileClient client = new S3FileClient(0L, config);
+        client.init();
+        // mock S3 客户端
+        S3Client s3Client = mock(S3Client.class);
+        ReflectUtil.setFieldValue(client, "client", s3Client);
+
+        // 调用
+        client.upload(new byte[]{1}, "avatar/图标.svg", "image/svg+xml");
+        client.upload(new byte[]{1}, "avatar/页面.html", "text/html");
+        client.upload(new byte[]{1}, "avatar/头像.jpg", "image/jpeg");
+
+        // 断言：可携带脚本的对象按附件下载，普通图片不设置
+        ArgumentCaptor<PutObjectRequest> requestCaptor = ArgumentCaptor.forClass(PutObjectRequest.class);
+        verify(s3Client, times(3)).putObject(requestCaptor.capture(), any(RequestBody.class));
+        assertEquals("image/svg+xml", requestCaptor.getAllValues().get(0).contentType());
+        assertEquals("attachment", requestCaptor.getAllValues().get(0).contentDisposition());
+        assertEquals("attachment", requestCaptor.getAllValues().get(1).contentDisposition());
+        assertEquals("image/jpeg", requestCaptor.getAllValues().get(2).contentType());
+        assertNull(requestCaptor.getAllValues().get(2).contentDisposition());
+    }
+
+    @Test
+    public void testPresignPutUrl_aliyunUsesEndpointInsteadOfCustomDomain() {
+        S3FileClientConfig config = new S3FileClientConfig();
+        config.setAccessKey("access-key");
+        config.setAccessSecret("access-secret");
+        config.setBucket("test-bucket");
+        config.setDomain("https://custom.example.com");
+        config.setEndpoint("oss-cn-beijing.aliyuncs.com");
+        config.setEnablePathStyleAccess(false);
+        config.setEnablePublicAccess(false);
+        S3FileClient client = new S3FileClient(0L, config);
+        client.init();
+
+        String result = client.presignPutUrl("avatar.jpg");
+
+        assertTrue(result.startsWith("https://test-bucket.oss-cn-beijing.aliyuncs.com/"));
+    }
+
+    @Test
+    public void testPresignPutUrl_qiniuUsesEndpointInsteadOfCustomDomain() {
+        S3FileClientConfig config = new S3FileClientConfig();
+        config.setAccessKey("access-key");
+        config.setAccessSecret("access-secret");
+        config.setBucket("test-bucket");
+        config.setDomain("https://custom.example.com");
+        config.setEndpoint("s3-cn-south-1.qiniucs.com");
+        config.setEnablePathStyleAccess(false);
+        config.setEnablePublicAccess(false);
+        S3FileClient client = new S3FileClient(0L, config);
+        client.init();
+
+        String result = client.presignPutUrl("avatar.jpg");
+
+        assertTrue(result.startsWith("https://test-bucket.s3-cn-south-1.qiniucs.com/"));
     }
 
     @Test

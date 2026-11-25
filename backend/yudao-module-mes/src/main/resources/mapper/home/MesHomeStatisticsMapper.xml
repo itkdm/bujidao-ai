@@ -3,7 +3,7 @@
 <mapper namespace="cn.iocoder.yudao.module.mes.dal.mysql.home.MesHomeStatisticsMapper">
 
     <!-- 按状态统计工单数量 -->
-    <select id="selectWorkOrderCountGroupByStatus" resultType="java.util.Map">
+    <select id="selectWorkOrderCountGroupByStatus" resultType="cn.iocoder.yudao.framework.mybatis.core.util.CaseInsensitiveResultMap">
         SELECT status, COUNT(*) AS count
         FROM mes_pro_work_order
         WHERE deleted = 0
@@ -11,10 +11,10 @@
     </select>
 
     <!-- 统计报工产量合计 -->
-    <select id="selectFeedbackSummary" resultType="java.util.Map">
-        SELECT IFNULL(SUM(feedback_quantity), 0)     AS feedbackQuantity,
-               IFNULL(SUM(qualified_quantity), 0)    AS qualifiedQuantity,
-               IFNULL(SUM(unqualified_quantity), 0)  AS unqualifiedQuantity
+    <select id="selectFeedbackSummary" resultType="cn.iocoder.yudao.framework.mybatis.core.util.CaseInsensitiveResultMap">
+        SELECT COALESCE(SUM(feedback_quantity), 0)     AS feedbackQuantity,
+               COALESCE(SUM(qualified_quantity), 0)    AS qualifiedQuantity,
+               COALESCE(SUM(unqualified_quantity), 0)  AS unqualifiedQuantity
         FROM mes_pro_feedback
         WHERE deleted = 0
           AND status = ${@cn.iocoder.yudao.module.mes.enums.pro.MesProFeedbackStatusEnum@FINISHED.status}
@@ -25,7 +25,7 @@
     </select>
 
     <!-- 按设备状态统计设备台数 -->
-    <select id="selectMachineryCountGroupByStatus" resultType="java.util.Map">
+    <select id="selectMachineryCountGroupByStatus" resultType="cn.iocoder.yudao.framework.mybatis.core.util.CaseInsensitiveResultMap">
         SELECT status, COUNT(*) AS count
         FROM mes_dv_machinery
         WHERE deleted = 0
@@ -51,11 +51,11 @@
     </select>
 
     <!-- 按天聚合报工产量 -->
-    <select id="selectDailyFeedbackTrend" resultType="java.util.Map">
-        SELECT DATE_FORMAT(feedback_time, '%Y-%m-%d')    AS date,
-               IFNULL(SUM(feedback_quantity), 0)         AS quantity,
-               IFNULL(SUM(qualified_quantity), 0)        AS qualifiedQuantity,
-               IFNULL(SUM(unqualified_quantity), 0)      AS unqualifiedQuantity
+    <select id="selectDailyFeedbackTrend" resultType="cn.iocoder.yudao.framework.mybatis.core.util.CaseInsensitiveResultMap">
+        SELECT ${@cn.iocoder.yudao.framework.mybatis.core.util.SqlDialectUtils@formatDate('feedback_time')}    AS statDate,
+               COALESCE(SUM(feedback_quantity), 0)         AS quantity,
+               COALESCE(SUM(qualified_quantity), 0)        AS qualifiedQuantity,
+               COALESCE(SUM(unqualified_quantity), 0)      AS unqualifiedQuantity
         FROM mes_pro_feedback
         WHERE deleted = 0
           AND status = ${@cn.iocoder.yudao.module.mes.enums.pro.MesProFeedbackStatusEnum@FINISHED.status}
@@ -63,8 +63,8 @@
           <if test="endTime != null">
               AND feedback_time &lt; #{endTime}
           </if>
-        GROUP BY DATE_FORMAT(feedback_time, '%Y-%m-%d')
-        ORDER BY date
+        GROUP BY ${@cn.iocoder.yudao.framework.mybatis.core.util.SqlDialectUtils@formatDate('feedback_time')}
+        ORDER BY statDate
     </select>
 
 </mapper>

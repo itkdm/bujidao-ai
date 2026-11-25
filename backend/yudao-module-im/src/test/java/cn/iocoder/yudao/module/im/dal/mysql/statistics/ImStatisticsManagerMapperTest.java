@@ -164,7 +164,7 @@ public class ImStatisticsManagerMapperTest extends BaseDbUnitTest {
 
         // 断言：分桶包含「1-9 人」和「10-49 人」
         Map<Object, Long> byRange = dist.stream().collect(java.util.stream.Collectors.toMap(
-                m -> m.get("range"), m -> ((Number) m.get("count")).longValue()));
+                m -> m.get("sizeRange"), m -> ((Number) m.get("count")).longValue()));
         assertEquals(1L, byRange.get("1-9 人"));
         assertEquals(1L, byRange.get("10-49 人"));
     }
@@ -228,6 +228,9 @@ public class ImStatisticsManagerMapperTest extends BaseDbUnitTest {
         assertEquals(3L, ((Number) tops.get(0).get("messageCount")).longValue());
         assertEquals(2L, ((Number) tops.get(1).get("userId")).longValue());
         assertEquals(2L, ((Number) tops.get(1).get("messageCount")).longValue());
+        // 断言：key 大小写不敏感，兼容 PostgreSQL 小写、Oracle 大写的列标签
+        assertEquals(1L, ((Number) tops.get(0).get("userid")).longValue());
+        assertEquals(3L, ((Number) tops.get(0).get("MESSAGECOUNT")).longValue());
     }
 
     // ========== 工具方法 ==========

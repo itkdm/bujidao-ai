@@ -3,9 +3,12 @@ package cn.iocoder.yudao.framework.common.util.collection;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.collection.CollectionUtil;
 import cn.hutool.core.util.ArrayUtil;
+import cn.hutool.core.util.StrUtil;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
+import cn.iocoder.yudao.framework.common.util.number.NumberUtils;
 import com.google.common.collect.ImmutableMap;
 
+import java.math.BigDecimal;
 import java.util.*;
 import java.util.function.*;
 import java.util.stream.Collectors;
@@ -21,6 +24,14 @@ import static java.util.Arrays.asList;
  */
 public class CollectionUtils {
 
+    public static void addIfNotBlank(Collection<String> target, String... values) {
+        for (String value : values) {
+            if (StrUtil.isNotBlank(value)) {
+                target.add(value);
+            }
+        }
+    }
+
     public static boolean containsAny(Object source, Object... targets) {
         return asList(targets).contains(source);
     }
@@ -31,6 +42,34 @@ public class CollectionUtils {
 
     public static <T> boolean anyMatch(Collection<T> from, Predicate<T> predicate) {
         return from.stream().anyMatch(predicate);
+    }
+
+    public static <T> long sum(Collection<T> from, ToLongFunction<T> valueFunc) {
+        if (CollUtil.isEmpty(from)) {
+            return 0L;
+        }
+        return from.stream().mapToLong(valueFunc).sum();
+    }
+
+    public static <T> BigDecimal sumBigDecimal(Collection<T> from, Function<T, BigDecimal> valueFunc) {
+        if (CollUtil.isEmpty(from)) {
+            return BigDecimal.ZERO;
+        }
+        return from.stream().map(valueFunc).map(NumberUtils::zeroIfNull).reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    public static <T> long count(Collection<T> from, Predicate<T> predicate) {
+        if (CollUtil.isEmpty(from)) {
+            return 0L;
+        }
+        return from.stream().filter(predicate).count();
+    }
+
+    public static <T, R> long distinctCount(Collection<T> from, Function<T, R> keyMapper) {
+        if (CollUtil.isEmpty(from)) {
+            return 0L;
+        }
+        return from.stream().map(keyMapper).filter(Objects::nonNull).distinct().count();
     }
 
     public static <T> List<T> filterList(Collection<T> from, Predicate<T> predicate) {
@@ -124,6 +163,15 @@ public class CollectionUtils {
         return from.stream().filter(filter).map(func).filter(Objects::nonNull).collect(Collectors.toSet());
     }
 
+    public static <T, U, S extends Set<U>> S convertSetBySupplier(
+            Collection<T> from, Function<T, U> func, Supplier<S> supplier) {
+        if (CollUtil.isEmpty(from)) {
+            return supplier.get();
+        }
+        return from.stream().map(func).filter(Objects::nonNull)
+                .collect(Collectors.toCollection(supplier));
+    }
+
     public static <T, U> Set<U> convertLinkedSet(Collection<T> from, Function<T, U> func) {
         if (CollUtil.isEmpty(from)) {
             return new LinkedHashSet<>();
@@ -214,11 +262,17 @@ public class CollectionUtils {
     }
 
     public static <T, K, V> Map<K, List<V>> convertMultiMap(Collection<T> from, Function<T, K> keyFunc, Function<T, V> valueFunc) {
+        return convertMultiMap(from, keyFunc, valueFunc, HashMap::new);
+    }
+
+    public static <T, K, V> Map<K, List<V>> convertMultiMap(Collection<T> from, Function<T, K> keyFunc,
+                                                         Function<T, V> valueFunc,
+                                                         Supplier<? extends Map<K, List<V>>> supplier) {
         if (CollUtil.isEmpty(from)) {
-            return new HashMap<>();
+            return supplier.get();
         }
-        return from.stream()
-                .collect(Collectors.groupingBy(keyFunc, Collectors.mapping(valueFunc, Collectors.toList())));
+        return from.stream().collect(Collectors.groupingBy(keyFunc, supplier,
+                Collectors.mapping(valueFunc, Collectors.toList())));
     }
 
     // 暂时没想好名字，先以 2 结尾噶

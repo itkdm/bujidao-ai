@@ -1,9 +1,9 @@
 package cn.iocoder.yudao.module.mes.controller.admin.wm.stocktaking.task.vo.result;
 
-import cn.idev.excel.annotation.ExcelIgnoreUnannotated;
-import cn.idev.excel.annotation.ExcelProperty;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
+import org.apache.fesod.sheet.annotation.ExcelIgnoreUnannotated;
+import org.apache.fesod.sheet.annotation.ExcelProperty;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -76,6 +76,10 @@ public class MesWmStockTakingTaskResultRespVO {
     @Schema(description = "账面数量", example = "100.000000")
     @ExcelProperty("账面数量")
     private BigDecimal quantity;
+
+    @Schema(description = "实盘数量", example = "98.000000")
+    @ExcelProperty("实盘数量")
+    private BigDecimal takingQuantity;
 
     @Schema(description = "创建时间", requiredMode = Schema.RequiredMode.REQUIRED)
     @ExcelProperty("创建时间")

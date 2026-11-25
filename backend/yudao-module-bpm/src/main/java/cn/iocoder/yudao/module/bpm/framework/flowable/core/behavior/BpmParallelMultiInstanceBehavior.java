@@ -1,6 +1,7 @@
 package cn.iocoder.yudao.module.bpm.framework.flowable.core.behavior;
 
 import cn.hutool.core.collection.CollUtil;
+import cn.hutool.core.util.ObjUtil;
 import cn.iocoder.yudao.framework.common.util.collection.SetUtils;
 import cn.iocoder.yudao.module.bpm.enums.definition.BpmChildProcessMultiInstanceSourceTypeEnum;
 import cn.iocoder.yudao.module.bpm.framework.flowable.core.candidate.BpmTaskCandidateInvoker;
@@ -17,6 +18,7 @@ import org.flowable.engine.impl.bpmn.behavior.ParallelMultiInstanceBehavior;
 import org.flowable.common.engine.api.delegate.Expression;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -37,6 +39,10 @@ public class BpmParallelMultiInstanceBehavior extends ParallelMultiInstanceBehav
         super(activity, innerActivityBehavior);
         // 关联 Pull Request：https://gitee.com/zhijiantianya/ruoyi-vue-pro/pulls/1483
         // 在解析/构造阶段基于 activityId 初始化与 activity 绑定且不变的字段，避免在运行期修改 Behavior 实例状态
+        // 注意：仅 UserTask 使用自定义变量；CallActivity 等节点，需要保留 Flowable 解析的 collection 配置（例如说，子流程多实例的表单字段）
+        if (!(activity instanceof UserTask)) {
+            return;
+        }
         super.collectionExpression = null; // collectionExpression 和 collectionVariable 是互斥的
         super.collectionVariable = FlowableUtils.formatExecutionCollectionVariable(activity.getId());
         // 从 execution.getVariable() 读取当前所有任务处理的人的 key
@@ -57,9 +63,13 @@ public class BpmParallelMultiInstanceBehavior extends ParallelMultiInstanceBehav
     protected int resolveNrOfInstances(DelegateExecution execution) {
         // 情况一：UserTask 节点
         if (execution.getCurrentFlowElement() instanceof UserTask) {
-            // 获取任务的所有处理人
+            // 获取任务的所有处理人：从多实例的根 execution 读取本地变量。该方法在进入节点（根 execution）、
+            // 每个实例完成（子 execution，见 ParallelMultiInstanceBehavior#leave）时都会调用，后者复用根 execution 已经计算的结果
+            // 不使用 execution.getVariable 原因：它会继承读取流程实例上的同名变量（例如说，老版本使用 setVariable 写入的、
+            // 发起时表单传入的），导致退回后重新进入该节点时，不会重新计算审批人
+            DelegateExecution multiInstanceRootExecution = ObjUtil.defaultIfNull(getMultiInstanceRootExecution(execution), execution);
             @SuppressWarnings("unchecked")
-            Set<Long> assigneeUserIds = (Set<Long>) execution.getVariable(super.collectionVariable, Set.class);
+            Set<Long> assigneeUserIds = (Set<Long>) multiInstanceRootExecution.getVariableLocal(super.collectionVariable, Set.class);
             if (assigneeUserIds == null) {
                 assigneeUserIds = taskCandidateInvoker.calculateUsersByTask(execution);
                 if (CollUtil.isEmpty(assigneeUserIds)) {
@@ -68,7 +78,7 @@ public class BpmParallelMultiInstanceBehavior extends ParallelMultiInstanceBehav
                     // 用途：1）审批人为空时；2）审批类型为自动通过、自动拒绝时
                     assigneeUserIds = SetUtils.asSet((Long) null);
                 }
-                execution.setVariableLocal(super.collectionVariable, assigneeUserIds);
+                multiInstanceRootExecution.setVariableLocal(super.collectionVariable, assigneeUserIds);
             }
             return assigneeUserIds.size();
         }
@@ -77,10 +87,10 @@ public class BpmParallelMultiInstanceBehavior extends ParallelMultiInstanceBehav
         if (execution.getCurrentFlowElement() instanceof CallActivity) {
             FlowElement flowElement = execution.getCurrentFlowElement();
             Integer sourceType = BpmnModelUtils.parseMultiInstanceSourceType(flowElement);
-            if (sourceType.equals(BpmChildProcessMultiInstanceSourceTypeEnum.NUMBER_FORM.getType())) {
+            if (Objects.equals(sourceType, BpmChildProcessMultiInstanceSourceTypeEnum.NUMBER_FORM.getType())) {
                 return execution.getVariable(super.collectionExpression.getExpressionText(), Integer.class);
             }
-            if (sourceType.equals(BpmChildProcessMultiInstanceSourceTypeEnum.MULTIPLE_FORM.getType())) {
+            if (Objects.equals(sourceType, BpmChildProcessMultiInstanceSourceTypeEnum.MULTIPLE_FORM.getType())) {
                 return execution.getVariable(super.collectionExpression.getExpressionText(), List.class).size();
             }
         }
@@ -92,17 +102,29 @@ public class BpmParallelMultiInstanceBehavior extends ParallelMultiInstanceBehav
 
     @Override
     public void setCollectionExpression(Expression collectionExpression) {
-        // 保持自定义变量名，忽略解析器写入的 collection 表达式
+        // UserTask 保持自定义变量名，忽略解析器写入的 collection 表达式
+        if (activity instanceof UserTask) {
+            return;
+        }
+        super.setCollectionExpression(collectionExpression);
     }
 
     @Override
     public void setCollectionVariable(String collectionVariable) {
-        // 保持自定义变量名，忽略解析器写入的 collection 变量名
+        // UserTask 保持自定义变量名，忽略解析器写入的 collection 变量名
+        if (activity instanceof UserTask) {
+            return;
+        }
+        super.setCollectionVariable(collectionVariable);
     }
 
     @Override
     public void setCollectionElementVariable(String collectionElementVariable) {
-        // 保持自定义变量名，忽略解析器写入的单元素变量名
+        // UserTask 保持自定义变量名，忽略解析器写入的单元素变量名
+        if (activity instanceof UserTask) {
+            return;
+        }
+        super.setCollectionElementVariable(collectionElementVariable);
     }
 
 }

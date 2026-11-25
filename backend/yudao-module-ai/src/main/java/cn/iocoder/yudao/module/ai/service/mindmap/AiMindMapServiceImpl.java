@@ -1,25 +1,27 @@
 package cn.iocoder.yudao.module.ai.service.mindmap;
 
-import cn.hutool.core.collection.CollUtil;
+import cn.hutool.core.util.IdUtil;
 import cn.hutool.core.util.ObjUtil;
 import cn.hutool.core.util.StrUtil;
-import cn.iocoder.yudao.module.ai.enums.model.AiModelTypeEnum;
-import cn.iocoder.yudao.module.ai.enums.model.AiPlatformEnum;
-import cn.iocoder.yudao.module.ai.util.AiUtils;
+import cn.iocoder.yudao.framework.common.exception.ServiceException;
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.framework.tenant.core.util.TenantUtils;
 import cn.iocoder.yudao.module.ai.controller.admin.mindmap.vo.AiMindMapGenerateReqVO;
+import cn.iocoder.yudao.module.ai.controller.admin.mindmap.vo.AiMindMapGenerateRespVO;
 import cn.iocoder.yudao.module.ai.controller.admin.mindmap.vo.AiMindMapPageReqVO;
 import cn.iocoder.yudao.module.ai.dal.dataobject.mindmap.AiMindMapDO;
-import cn.iocoder.yudao.module.ai.dal.dataobject.model.AiChatRoleDO;
 import cn.iocoder.yudao.module.ai.dal.dataobject.model.AiModelDO;
 import cn.iocoder.yudao.module.ai.dal.mysql.mindmap.AiMindMapMapper;
-import cn.iocoder.yudao.module.ai.enums.AiChatRoleEnum;
-import cn.iocoder.yudao.module.ai.enums.ErrorCodeConstants;
-import cn.iocoder.yudao.module.ai.service.model.AiChatRoleService;
+import cn.iocoder.yudao.module.ai.enums.model.AiModelTypeEnum;
+import cn.iocoder.yudao.module.ai.enums.model.AiPlatformEnum;
+import cn.iocoder.yudao.module.ai.enums.requestlog.AiRequestLogBizTypeEnum;
+import cn.iocoder.yudao.module.ai.enums.requestlog.AiRequestLogStatusEnum;
 import cn.iocoder.yudao.module.ai.service.model.AiModelService;
+import cn.iocoder.yudao.module.ai.service.requestlog.AiRequestLogService;
+import cn.iocoder.yudao.module.ai.service.requestlog.dto.AiRequestLogCreateReqDTO;
+import cn.iocoder.yudao.module.ai.util.AiChatUtils;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.messages.Message;
@@ -34,6 +36,7 @@ import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.framework.common.pojo.CommonResult.error;
@@ -49,36 +52,65 @@ import static cn.iocoder.yudao.module.ai.enums.ErrorCodeConstants.*;
 @Slf4j
 public class AiMindMapServiceImpl implements AiMindMapService {
 
+    /**
+     * 思维导图的系统提示词：把用户的提问总结成最多四级标题的 Markdown
+     */
+    static final String SYSTEM_MESSAGE = " 你是一位非常优秀的思维导图助手，你会把用户的所有提问都总结成思维导图，然后以 Markdown 格式输出。markdown 只需要输出一级标题，二级标题，三级标题，四级标题，最多输出四级，除此之外不要输出任何其他 markdown 标记。下面是一个合格的例子：\n"
+            + " # Geek-AI 助手\n"
+            + " ## 完整的开源系统\n"
+            + " ### 前端开源\n"
+            + " ### 后端开源\n"
+            + " ## 支持各种大模型\n"
+            + " ### OpenAI\n"
+            + " ### Azure\n"
+            + " ### 文心一言\n"
+            + " ### 通义千问\n"
+            + " ## 集成多种收费方式\n"
+            + " ### 支付宝\n"
+            + " ### 微信\n"
+            + "除此之外不要任何解释性语句。\n";
+
     @Resource
     private AiModelService modalService;
     @Resource
-    private AiChatRoleService chatRoleService;
+    private AiRequestLogService requestLogService;
 
     @Resource
     private AiMindMapMapper mindMapMapper;
 
     @Override
-    public Flux<CommonResult<String>> generateMindMap(AiMindMapGenerateReqVO generateReqVO, Long userId) {
-        // 1. 获取导图模型。尝试获取思维导图助手角色，如果没有则使用默认模型
-        AiChatRoleDO role = CollUtil.getFirst(
-                chatRoleService.getChatRoleListByName(AiChatRoleEnum.AI_MIND_MAP_ROLE.getName()));
-        // 1.1 获取导图执行模型
-        AiModelDO model = getModel(role);
-        // 1.2 获取角色设定消息
-        String systemMessage = role != null && StrUtil.isNotBlank(role.getSystemMessage())
-                ? role.getSystemMessage() : AiChatRoleEnum.AI_MIND_MAP_ROLE.getSystemMessage();
-        // 1.3 校验平台
+    public Flux<CommonResult<AiMindMapGenerateRespVO>> generateMindMap(AiMindMapGenerateReqVO generateReqVO,
+                                                                       Long userId) {
+        // 1. 校验模型：校验失败返回错误帧，由前端提示原因
+        AiModelDO model;
+        try {
+            model = validateChatModel(generateReqVO.getModelId());
+        } catch (ServiceException ex) {
+            return Flux.just(error(ex.getCode(), ex.getMessage()));
+        }
         AiPlatformEnum platform = AiPlatformEnum.validatePlatform(model.getPlatform());
         ChatModel chatModel = modalService.getChatModel(model.getId());
 
-        // 2. 插入思维导图信息
+        // 2.1 插入思维导图信息
+        String requestId = IdUtil.fastUUID();
         AiMindMapDO mindMapDO = BeanUtils.toBean(generateReqVO, AiMindMapDO.class, mindMap -> mindMap.setUserId(userId)
-                .setPlatform(platform.getPlatform()).setModelId(model.getId()).setModel(model.getModel()));
+                .setPlatform(platform.getPlatform()).setModelId(model.getId()).setModel(model.getModel())
+                .setRequestId(requestId));
         mindMapMapper.insert(mindMapDO);
+        // 2.2 构建请求日志
+        AiRequestLogCreateReqDTO requestLog = requestLogService.buildCreateReqDTO(requestId, userId,
+                AiRequestLogBizTypeEnum.MIND_MAP, mindMapDO.getId(), model);
+        AtomicBoolean finished = new AtomicBoolean(false);
 
-        // 3.1 构建 Prompt，并进行调用
-        Prompt prompt = buildPrompt(generateReqVO, model, systemMessage);
-        Flux<ChatResponse> streamResponse = chatModel.stream(prompt);
+        // 3.1 构建 Prompt，并进行调用：系统提示词由思维导图自身持有，使用内置文本
+        Flux<ChatResponse> streamResponse;
+        try {
+            Prompt prompt = buildPrompt(generateReqVO, model, SYSTEM_MESSAGE);
+            streamResponse = chatModel.stream(prompt);
+        } catch (RuntimeException ex) {
+            finishMindMap(requestLog, finished, mindMapDO.getId(), null, AiRequestLogStatusEnum.FAIL, ex);
+            throw ex;
+        }
 
         // 3.2 流式返回
         StringBuffer contentBuffer = new StringBuffer();
@@ -86,19 +118,75 @@ public class AiMindMapServiceImpl implements AiMindMapService {
             String newContent = chunk.getResult() != null ? chunk.getResult().getOutput().getText() : null;
             newContent = StrUtil.nullToDefault(newContent, ""); // 避免 null 的 情况
             contentBuffer.append(newContent);
-            // 响应结果
-            return success(newContent);
-        }).doOnComplete(() -> {
-            // 忽略租户，因为 Flux 异步无法透传租户
-            TenantUtils.executeIgnore(() ->
-                    mindMapMapper.updateById(new AiMindMapDO().setId(mindMapDO.getId()).setGeneratedContent(contentBuffer.toString())));
-        }).doOnError(throwable -> {
-            log.error("[generateWriteContent][generateReqVO({}) 发生异常]", generateReqVO, throwable);
-            // 忽略租户，因为 Flux 异步无法透传租户
-            TenantUtils.executeIgnore(() ->
-                    mindMapMapper.updateById(new AiMindMapDO().setId(mindMapDO.getId()).setErrorMessage(throwable.getMessage())));
-        }).onErrorResume(error -> Flux.just(error(ErrorCodeConstants.WRITE_STREAM_ERROR)));
+            // 响应结果：用量为请求日志的最新快照，与取消并发时保持一致
+            synchronized (requestLog) {
+                requestLogService.setCreateReqDTO(requestLog, chunk);
+                return success(new AiMindMapGenerateRespVO().setId(mindMapDO.getId()).setContent(newContent)
+                        .setInputTokens(requestLog.getInputTokens()).setOutputTokens(requestLog.getOutputTokens()).setTotalTokens(requestLog.getTotalTokens()));
+            }
+        }).doOnComplete(() -> finishMindMap(requestLog, finished, mindMapDO.getId(), contentBuffer.toString(),
+                AiRequestLogStatusEnum.SUCCESS, null)
+        ).doOnError(throwable -> {
+            // 不打印请求对象：需求可能是很长的原文
+            log.error("[generateMindMap][mindMapId({}) requestId({}) 发生异常]",
+                    mindMapDO.getId(), requestId, throwable);
+            finishMindMap(requestLog, finished, mindMapDO.getId(), null, AiRequestLogStatusEnum.FAIL, throwable);
+        }).doOnCancel(() -> {
+            log.info("[generateMindMap][requestId({}) 取消请求]", requestId);
+            finishMindMap(requestLog, finished, mindMapDO.getId(), null, AiRequestLogStatusEnum.CANCEL, null);
+        }).onErrorResume(error -> Flux.just(error(MIND_MAP_GENERATE_FAIL,
+                StrUtil.blankToDefault(error.getMessage(), error.getClass().getName()))));
+    }
 
+    /**
+     * 校验模型：存在、启用，并且是对话模型
+     *
+     * @param modelId 模型编号
+     * @return 模型
+     */
+    private AiModelDO validateChatModel(Long modelId) {
+        AiModelDO model = modalService.validateModel(modelId);
+        if (ObjUtil.notEqual(model.getType(), AiModelTypeEnum.CHAT.getType())) {
+            throw exception(MODEL_USE_TYPE_ERROR);
+        }
+        return model;
+    }
+
+    /**
+     * 结束思维导图生成：记录请求日志，并更新生成结果与用量
+     *
+     * 同一请求仅第一次调用生效；两次写入相互独立，失败只记录日志，不影响已返回的生成内容
+     */
+    private void finishMindMap(AiRequestLogCreateReqDTO requestLog, AtomicBoolean finished, Long mindMapId,
+                               String generatedContent, AiRequestLogStatusEnum status, Throwable error) {
+        // 1. 记录请求日志：与 chunk 的用量更新互斥，保证思维导图与日志的用量一致
+        AiMindMapDO updateObj;
+        synchronized (requestLog) {
+            if (!finished.compareAndSet(false, true)) {
+                return;
+            }
+            requestLog.setStatus(status.getStatus()).setErrorMessage(error != null
+                    ? StrUtil.blankToDefault(error.getMessage(), error.getClass().getName()) : null);
+            try {
+                requestLogService.createRequestLog(requestLog);
+            } catch (Exception ex) {
+                log.error("[finishMindMap][requestId({}) 记录请求日志失败]", requestLog.getRequestId(), ex);
+            }
+            updateObj = new AiMindMapDO().setId(mindMapId).setGeneratedContent(generatedContent)
+                    .setErrorMessage(requestLog.getErrorMessage())
+                    .setInputTokens(requestLog.getInputTokens()).setOutputTokens(requestLog.getOutputTokens()).setTotalTokens(requestLog.getTotalTokens());
+            updateObj.setUpdater(StrUtil.toStringOrNull(requestLog.getUserId()));
+        }
+
+        // 2. 更新思维导图结果与用量：Flux 异步回调中没有租户上下文，按请求开始时的租户执行
+        TenantUtils.execute(requestLog.getTenantId(), () -> {
+            try {
+                mindMapMapper.updateById(updateObj);
+            } catch (Exception ex) {
+                log.error("[finishMindMap][mindMapId({}) requestId({}) 更新思维导图结果失败]",
+                        mindMapId, requestLog.getRequestId(), ex);
+            }
+        });
     }
 
     private Prompt buildPrompt(AiMindMapGenerateReqVO generateReqVO, AiModelDO model, String systemMessage) {
@@ -106,7 +194,7 @@ public class AiMindMapServiceImpl implements AiMindMapService {
         List<Message> chatMessages = buildMessages(generateReqVO, systemMessage);
         // 2. 构建 options 对象
         AiPlatformEnum platform = AiPlatformEnum.validatePlatform(model.getPlatform());
-        ChatOptions options = AiUtils.buildChatOptions(platform, model.getModel(), model.getTemperature(), model.getMaxTokens());
+        ChatOptions options = AiChatUtils.buildChatOptions(platform, model.getModel(), model.getTemperature(), model.getMaxTokens());
         return new Prompt(chatMessages, options);
     }
 
@@ -116,27 +204,9 @@ public class AiMindMapServiceImpl implements AiMindMapService {
         if (StrUtil.isNotBlank(systemMessage)) {
             chatMessages.add(new SystemMessage(systemMessage));
         }
-        // 2. 用户输入
+        // 2. 用户输入：原文作为 user 消息，不套模板
         chatMessages.add(new UserMessage(generateReqVO.getPrompt()));
         return chatMessages;
-    }
-
-    private AiModelDO getModel(AiChatRoleDO role) {
-        AiModelDO model = null;
-        if (role != null && role.getModelId() != null) {
-            model = modalService.getModel(role.getModelId());
-        }
-        if (model == null) {
-            model = modalService.getRequiredDefaultModel(AiModelTypeEnum.CHAT.getType());
-        }
-        // 校验模型存在、且合法
-        if (model == null) {
-            throw exception(MODEL_NOT_EXISTS);
-        }
-        if (ObjUtil.notEqual(model.getType(), AiModelTypeEnum.CHAT.getType())) {
-            throw exception(MODEL_USE_TYPE_ERROR);
-        }
-        return model;
     }
 
     @Override
@@ -151,6 +221,11 @@ public class AiMindMapServiceImpl implements AiMindMapService {
         if (mindMapMapper.selectById(id) == null) {
             throw exception(MIND_MAP_NOT_EXISTS);
         }
+    }
+
+    @Override
+    public AiMindMapDO getMindMap(Long id) {
+        return mindMapMapper.selectById(id);
     }
 
     @Override

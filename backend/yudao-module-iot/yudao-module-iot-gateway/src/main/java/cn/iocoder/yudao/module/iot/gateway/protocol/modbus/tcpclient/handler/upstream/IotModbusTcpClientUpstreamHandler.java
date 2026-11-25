@@ -4,6 +4,7 @@ import cn.hutool.core.map.MapUtil;
 import cn.iocoder.yudao.module.iot.core.biz.dto.IotModbusDeviceConfigRespDTO;
 import cn.iocoder.yudao.module.iot.core.biz.dto.IotModbusPointRespDTO;
 import cn.iocoder.yudao.module.iot.core.enums.IotDeviceMessageMethodEnum;
+import cn.iocoder.yudao.module.iot.core.enums.IotProtocolTypeEnum;
 import cn.iocoder.yudao.module.iot.core.mq.message.IotDeviceMessage;
 import cn.iocoder.yudao.module.iot.gateway.protocol.modbus.common.utils.IotModbusCommonUtils;
 import cn.iocoder.yudao.module.iot.gateway.service.device.message.IotDeviceMessageService;
@@ -30,7 +31,7 @@ public class IotModbusTcpClientUpstreamHandler {
     }
 
     /**
-     * 处理 Modbus 读取结果
+     * 处理 Modbus 读取结果：发送到消息总线会阻塞，由轮询调度器提交到连接的 worker 队列上执行
      *
      * @param config   设备配置
      * @param point    点位配置
@@ -48,9 +49,9 @@ public class IotModbusTcpClientUpstreamHandler {
             Map<String, Object> params = MapUtil.of(point.getIdentifier(), convertedValue);
             IotDeviceMessage message = IotDeviceMessage.requestOf(IotDeviceMessageMethodEnum.PROPERTY_POST.getMethod(), params);
 
-            // 2. 发送到消息总线
+            // 2. 发送到消息总线：轮询由网关发起，没有设备确认；离线暂存失败时只记日志
             messageService.sendDeviceMessage(message, config.getProductKey(),
-                    config.getDeviceName(), serverId);
+                    config.getDeviceName(), serverId, IotProtocolTypeEnum.MODBUS_TCP_CLIENT);
         } catch (Exception e) {
             log.error("[handleReadResult][处理读取结果失败, deviceId={}, identifier={}]",
                     config.getDeviceId(), point.getIdentifier(), e);

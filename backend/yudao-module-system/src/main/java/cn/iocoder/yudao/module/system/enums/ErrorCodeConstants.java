@@ -16,6 +16,8 @@ public interface ErrorCodeConstants {
     ErrorCode AUTH_THIRD_LOGIN_NOT_BIND = new ErrorCode(1_002_000_005, "未绑定账号，需要进行绑定");
     ErrorCode AUTH_MOBILE_NOT_EXISTS = new ErrorCode(1_002_000_007, "手机号不存在");
     ErrorCode AUTH_REGISTER_CAPTCHA_CODE_ERROR = new ErrorCode(1_002_000_008, "验证码不正确，原因：{}");
+    ErrorCode AUTH_QRCODE_INVALID = new ErrorCode(1_002_000_009, "二维码已失效或领取凭证不正确，请重新扫码");
+    ErrorCode AUTH_QRCODE_ALREADY_CONFIRMED = new ErrorCode(1_002_000_010, "二维码已被其他用户确认，请重新扫码");
 
     // ========== 菜单模块 1-002-001-000 ==========
     ErrorCode MENU_NAME_DUPLICATE = new ErrorCode(1_002_001_000, "已经存在该名字的菜单");
@@ -46,6 +48,8 @@ public interface ErrorCodeConstants {
     ErrorCode USER_IMPORT_INIT_PASSWORD = new ErrorCode(1_002_003_009, "初始密码不能为空");
     ErrorCode USER_MOBILE_NOT_EXISTS = new ErrorCode(1_002_003_010, "该手机号尚未注册");
     ErrorCode USER_REGISTER_DISABLED = new ErrorCode(1_002_003_011, "注册功能已关闭");
+    ErrorCode USER_ADMIN_NOT_ALLOW_DISABLE = new ErrorCode(1_002_003_012, "超级管理员或租户管理员账号不能禁用");
+    ErrorCode USER_ADMIN_NOT_ALLOW_DELETE = new ErrorCode(1_002_003_013, "超级管理员或租户管理员账号不能删除");
 
     // ========== 部门模块 1-002-004-000 ==========
     ErrorCode DEPT_NAME_DUPLICATE = new ErrorCode(1_002_004_000, "已经存在该名字的部门");
@@ -55,6 +59,7 @@ public interface ErrorCodeConstants {
     ErrorCode DEPT_PARENT_ERROR = new ErrorCode(1_002_004_004, "不能设置自己为父部门");
     ErrorCode DEPT_NOT_ENABLE = new ErrorCode(1_002_004_006, "部门({})不处于开启状态，不允许选择");
     ErrorCode DEPT_PARENT_IS_CHILD = new ErrorCode(1_002_004_007, "不能设置自己的子部门为父部门");
+    ErrorCode DEPT_NOT_IN_SCOPE = new ErrorCode(1_002_004_008, "部门({})不在数据权限范围内，禁止操作");
 
     // ========== 岗位模块 1-002-005-000 ==========
     ErrorCode POST_NOT_FOUND = new ErrorCode(1_002_005_000, "当前岗位不存在");
@@ -101,6 +106,9 @@ public interface ErrorCodeConstants {
     ErrorCode SMS_CODE_USED = new ErrorCode(1_002_014_002, "验证码已使用");
     ErrorCode SMS_CODE_EXCEED_SEND_MAXIMUM_QUANTITY_PER_DAY = new ErrorCode(1_002_014_004, "超过每日短信发送数量");
     ErrorCode SMS_CODE_SEND_TOO_FAST = new ErrorCode(1_002_014_005, "短信发送过于频繁");
+    ErrorCode SMS_CODE_EXCEED_VALIDATE_MAXIMUM_QUANTITY = new ErrorCode(1_002_014_006, "验证码错误次数过多，请重新获取");
+    ErrorCode SMS_CODE_EXCEED_SEND_MAXIMUM_QUANTITY_PER_IP_PER_DAY = new ErrorCode(1_002_014_007, "超过当前 IP 每日短信发送数量");
+    ErrorCode SMS_CODE_EXCEED_SEND_MAXIMUM_QUANTITY_PER_IP_PER_HOUR = new ErrorCode(1_002_014_008, "超过当前 IP 每小时短信发送数量");
 
     // ========== 租户信息 1-002-015-000 ==========
     ErrorCode TENANT_NOT_EXISTS = new ErrorCode(1_002_015_000, "租户不存在");

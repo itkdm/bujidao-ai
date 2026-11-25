@@ -4,9 +4,14 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeSet;
 import java.util.function.BiFunction;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -16,6 +21,33 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  */
 public class CollectionUtilsTest {
 
+    @Test
+    public void testAddIfNotBlank() {
+        // 准备参数
+        List<String> values = new ArrayList<>();
+
+        // 调用
+        CollectionUtils.addIfNotBlank(values, "a", null, "", " ", "b");
+
+        // 断言
+        assertEquals(Arrays.asList("a", "b"), values);
+    }
+
+    @Test
+    public void testConvertMultiMapWithLinkedHashMap() {
+        // 准备参数
+        List<String> values = Arrays.asList("b1", "a1", "b2");
+
+        // 调用
+        Map<String, List<String>> result = CollectionUtils.convertMultiMap(
+                values, value -> value.substring(0, 1),
+                value -> value, LinkedHashMap::new);
+
+        // 断言
+        assertEquals(Arrays.asList("b", "a"), new ArrayList<>(result.keySet()));
+        assertEquals(Arrays.asList("b1", "b2"), result.get("b"));
+    }
+
     @Data
     @AllArgsConstructor
     private static class Dog {
@@ -24,6 +56,38 @@ public class CollectionUtilsTest {
         private String name;
         private String code;
 
+    }
+
+    @Test
+    public void testSum() {
+        assertEquals(6L, CollectionUtils.sum(Arrays.asList(1L, 2L, 3L), Long::longValue));
+        assertEquals(0L, CollectionUtils.sum(Collections.<Long>emptyList(), Long::longValue));
+    }
+
+    @Test
+    public void testCount() {
+        assertEquals(2L, CollectionUtils.count(Arrays.asList(1, 2, 3, 4), value -> value % 2 == 0));
+        assertEquals(0L, CollectionUtils.count(Collections.emptyList(), value -> true));
+    }
+
+    @Test
+    public void testDistinctCount() {
+        assertEquals(3L, CollectionUtils.distinctCount(Arrays.asList("a", "b", "a", "c"), value -> value));
+        assertEquals(0L, CollectionUtils.distinctCount(Collections.emptyList(), value -> value));
+    }
+
+    @Test
+    public void testConvertSet_withSupplier() {
+        // 调用，并断言：按指定 Set 类型完成转换、去重和排序
+        TreeSet<Integer> result = CollectionUtils.convertSetBySupplier(
+                Arrays.asList("3", "1", null, "3", "2"),
+                value -> value == null ? null : Integer.valueOf(value), TreeSet::new);
+        assertEquals(Arrays.asList(1, 2, 3), Arrays.asList(result.toArray(new Integer[0])));
+
+        // 调用，并断言：空集合仍返回指定 Set 类型
+        result = CollectionUtils.convertSetBySupplier(Collections.<String>emptyList(),
+                Integer::valueOf, TreeSet::new);
+        assertEquals(TreeSet.class, result.getClass());
     }
 
     @Test

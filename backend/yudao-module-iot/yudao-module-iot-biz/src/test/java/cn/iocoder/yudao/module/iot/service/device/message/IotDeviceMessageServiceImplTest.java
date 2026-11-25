@@ -1,42 +1,67 @@
 package cn.iocoder.yudao.module.iot.service.device.message;
 
 import cn.hutool.core.date.LocalDateTimeUtil;
+import cn.hutool.extra.spring.SpringUtil;
 import cn.iocoder.yudao.framework.common.exception.ServiceException;
+import cn.iocoder.yudao.framework.common.enums.DateIntervalEnum;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.test.core.ut.BaseMockitoUnitTest;
 import cn.iocoder.yudao.module.iot.controller.admin.device.vo.message.IotDeviceMessagePageReqVO;
+import cn.iocoder.yudao.module.iot.controller.admin.statistics.vo.IotStatisticsDeviceMessageReqVO;
+import cn.iocoder.yudao.module.iot.controller.admin.statistics.vo.IotStatisticsDeviceMessageSummaryByDateRespVO;
 import cn.iocoder.yudao.module.iot.core.enums.IotDeviceMessageMethodEnum;
+import cn.iocoder.yudao.module.iot.core.enums.IotProtocolTypeEnum;
+import cn.iocoder.yudao.module.iot.core.enums.device.IotDeviceStateEnum;
+import cn.iocoder.yudao.module.iot.core.messagebus.core.IotMessageRejectedException;
 import cn.iocoder.yudao.module.iot.core.mq.message.IotDeviceMessage;
 import cn.iocoder.yudao.module.iot.core.mq.producer.IotDeviceMessageProducer;
+import cn.iocoder.yudao.module.iot.core.topic.IotDeviceIdentity;
 import cn.iocoder.yudao.module.iot.dal.dataobject.device.IotDeviceDO;
 import cn.iocoder.yudao.module.iot.dal.dataobject.device.IotDeviceMessageDO;
-import cn.iocoder.yudao.module.iot.dal.tdengine.IotDeviceMessageMapper;
+import cn.iocoder.yudao.module.iot.dal.dataobject.device.IotDeviceOpcUaPointDO;
+import cn.iocoder.yudao.module.iot.dal.dataobject.product.IotProductDO;
+import cn.iocoder.yudao.module.iot.dal.dataobject.thingmodel.IotThingModelDO;
+import cn.iocoder.yudao.module.iot.dal.dataobject.thingmodel.model.ThingModelProperty;
+import cn.iocoder.yudao.module.iot.dal.storage.IotDeviceMessageDAO;
+import cn.iocoder.yudao.module.iot.enums.thingmodel.IotThingModelAccessModeEnum;
+import cn.iocoder.yudao.module.iot.enums.thingmodel.IotThingModelTypeEnum;
+import cn.iocoder.yudao.module.iot.service.device.IotDeviceOpcUaPointService;
 import cn.iocoder.yudao.module.iot.service.device.IotDeviceService;
 import cn.iocoder.yudao.module.iot.service.device.property.IotDevicePropertyService;
 import cn.iocoder.yudao.module.iot.service.ota.IotOtaTaskRecordService;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import cn.iocoder.yudao.module.iot.service.product.IotProductService;
+import cn.iocoder.yudao.module.iot.service.thingmodel.IotThingModelService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.MockedStatic;
 
+import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 
+import static cn.iocoder.yudao.framework.common.util.collection.CollectionUtils.convertList;
+import static cn.iocoder.yudao.framework.test.core.util.AssertUtils.assertServiceException;
+import static cn.iocoder.yudao.module.iot.enums.ErrorCodeConstants.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.*;
 
 /**
  * {@link IotDeviceMessageServiceImpl} 的单元测试
  *
- * 注：TDengine 数据源没有 embedded 替代，mapper 与依赖 service 走 mock；
+ * 注：时序库没有 embedded 替代，存储 DAO 与依赖 service 走 mock；
  * handleUpstreamDeviceMessage 与 sendDeviceMessage 下行成功路径依赖 SpringUtil.getBean 的自调用
- * createDeviceLogAsync，更适合放到集成测试，本类不展开。
+ * createDeviceLogAsync，通过 mockStatic 返回本实例（同步执行）。
  *
  * @author 芋道源码
  */
@@ -52,35 +77,15 @@ public class IotDeviceMessageServiceImplTest extends BaseMockitoUnitTest {
     @Mock
     private IotOtaTaskRecordService otaTaskRecordService;
     @Mock
-    private IotDeviceMessageMapper deviceMessageMapper;
+    private IotDeviceMessageDAO deviceMessageDAO;
     @Mock
     private IotDeviceMessageProducer deviceMessageProducer;
-
-    // ========== defineDeviceMessageStable ==========
-
-    @Test
-    public void testDefineDeviceMessageStable_whenTableExists_skipCreate() {
-        // 准备：showSTable 返回非空 → 表已存在
-        when(deviceMessageMapper.showSTable()).thenReturn("device_message");
-
-        // 调用
-        service.defineDeviceMessageStable();
-
-        // 断言：跳过 createSTable
-        verify(deviceMessageMapper, never()).createSTable();
-    }
-
-    @Test
-    public void testDefineDeviceMessageStable_whenTableMissing_create() {
-        // 准备：showSTable 返回空 → 表不存在
-        when(deviceMessageMapper.showSTable()).thenReturn("");
-
-        // 调用
-        service.defineDeviceMessageStable();
-
-        // 断言：触发 createSTable
-        verify(deviceMessageMapper, times(1)).createSTable();
-    }
+    @Mock
+    private IotProductService productService;
+    @Mock
+    private IotThingModelService thingModelService;
+    @Mock
+    private IotDeviceOpcUaPointService opcUaPointService;
 
     // ========== createDeviceLogAsync ==========
 
@@ -96,7 +101,7 @@ public class IotDeviceMessageServiceImplTest extends BaseMockitoUnitTest {
 
         // 断言：mapper.insert 接收到的 messageDO 已被填上 ts，值在 [before, after] 区间
         ArgumentCaptor<IotDeviceMessageDO> captor = ArgumentCaptor.forClass(IotDeviceMessageDO.class);
-        verify(deviceMessageMapper).insert(captor.capture());
+        verify(deviceMessageDAO).insert(captor.capture());
         Long actualTs = captor.getValue().getTs();
         assertNotNull(actualTs, "ts 不应为空");
         assertTrue(actualTs >= before && actualTs <= after,
@@ -104,14 +109,29 @@ public class IotDeviceMessageServiceImplTest extends BaseMockitoUnitTest {
     }
 
     @Test
+    public void testCreateDeviceLogAsync_idFallback_whenBlank() {
+        // 准备：构造一条 id 为空的消息，复合主键字段不能为 null
+        IotDeviceMessage message = buildMessage(IotDeviceMessageMethodEnum.PROPERTY_POST.getMethod())
+                .setId(null);
+
+        // 调用
+        service.createDeviceLogAsync(message);
+
+        // 断言：mapper.insert 接收到的 messageDO 已补充 id
+        ArgumentCaptor<IotDeviceMessageDO> captor = ArgumentCaptor.forClass(IotDeviceMessageDO.class);
+        verify(deviceMessageDAO).insert(captor.capture());
+        assertNotNull(captor.getValue().getId(), "id 不应为空");
+    }
+
+    @Test
     public void testCreateDeviceLogAsync_swallowMapperException() {
         // 准备：mapper.insert 抛异常，验证 @Async 方法内部 try/catch 兜底，不向上抛
         IotDeviceMessage message = buildMessage(IotDeviceMessageMethodEnum.PROPERTY_POST.getMethod());
-        doThrow(new RuntimeException("DB unavailable")).when(deviceMessageMapper).insert(any());
+        doThrow(new RuntimeException("DB unavailable")).when(deviceMessageDAO).insert(any());
 
         // 调用 & 断言
         assertDoesNotThrow(() -> service.createDeviceLogAsync(message));
-        verify(deviceMessageMapper).insert(any(IotDeviceMessageDO.class));
+        verify(deviceMessageDAO).insert(any(IotDeviceMessageDO.class));
     }
 
     // ========== sendDeviceMessage ==========
@@ -137,6 +157,7 @@ public class IotDeviceMessageServiceImplTest extends BaseMockitoUnitTest {
         // 准备：下行消息（SERVICE_INVOKE）；devicePropertyService 也查不到 serverId
         IotDeviceDO device = buildDevice();
         IotDeviceMessage message = buildMessage(IotDeviceMessageMethodEnum.SERVICE_INVOKE.getMethod());
+        when(productService.getProductFromCache(3L)).thenReturn(IotProductDO.builder().id(3L).protocolType("mqtt").build());
         when(devicePropertyService.getDeviceServerId(device.getId())).thenReturn(null);
 
         // 调用 & 断言：抛 DEVICE_DOWNSTREAM_FAILED_SERVER_ID_NULL
@@ -155,47 +176,16 @@ public class IotDeviceMessageServiceImplTest extends BaseMockitoUnitTest {
         reqVO.setPageNo(1);
         reqVO.setPageSize(10);
         IotDeviceMessageDO record = new IotDeviceMessageDO().setId("msg-1");
-        Page<IotDeviceMessageDO> page = new Page<>(1, 10, 1L);
-        page.setRecords(Collections.singletonList(record));
-        when(deviceMessageMapper.selectPage(any(), eq(reqVO))).thenReturn(page);
+        when(deviceMessageDAO.selectPage(same(reqVO)))
+                .thenReturn(new PageResult<>(Collections.singletonList(record), 1L));
 
         // 调用
         PageResult<IotDeviceMessageDO> result = service.getDeviceMessagePage(reqVO);
 
-        // 断言
+        // 断言：表不存在等存储差异，由 DAO 处理（见各 DAO 的单元测试）
         assertEquals(1L, result.getTotal());
         assertEquals(1, result.getList().size());
         assertEquals("msg-1", result.getList().get(0).getId());
-    }
-
-    @Test
-    public void testGetDeviceMessagePage_whenTableMissing_returnEmpty() {
-        // 准备：mapper 抛 "Table does not exist" → 视为表未创建，返回空结果
-        IotDeviceMessagePageReqVO reqVO = new IotDeviceMessagePageReqVO();
-        reqVO.setPageNo(1);
-        reqVO.setPageSize(10);
-        when(deviceMessageMapper.selectPage(any(), any()))
-                .thenThrow(new RuntimeException("Table does not exist"));
-
-        // 调用
-        PageResult<IotDeviceMessageDO> result = service.getDeviceMessagePage(reqVO);
-
-        // 断言
-        assertEquals(0L, result.getTotal());
-        assertTrue(result.getList().isEmpty());
-    }
-
-    @Test
-    public void testGetDeviceMessagePage_otherException_rethrow() {
-        // 准备：mapper 抛非「表不存在」的异常 → 应向上抛
-        IotDeviceMessagePageReqVO reqVO = new IotDeviceMessagePageReqVO();
-        reqVO.setPageNo(1);
-        reqVO.setPageSize(10);
-        when(deviceMessageMapper.selectPage(any(), any()))
-                .thenThrow(new RuntimeException("Connection refused"));
-
-        // 调用 & 断言
-        assertThrows(RuntimeException.class, () -> service.getDeviceMessagePage(reqVO));
     }
 
     // ========== getDeviceMessageListByRequestIdsAndReply ==========
@@ -207,7 +197,7 @@ public class IotDeviceMessageServiceImplTest extends BaseMockitoUnitTest {
                 1L, Collections.emptyList(), true);
 
         assertTrue(result.isEmpty());
-        verify(deviceMessageMapper, never()).selectListByRequestIdsAndReply(any(), any(), any());
+        verify(deviceMessageDAO, never()).selectListByRequestIdsAndReply(any(), any(), any());
     }
 
     @Test
@@ -215,7 +205,7 @@ public class IotDeviceMessageServiceImplTest extends BaseMockitoUnitTest {
         // 准备
         List<String> requestIds = Collections.singletonList("req-1");
         IotDeviceMessageDO record = new IotDeviceMessageDO().setId("msg-1");
-        when(deviceMessageMapper.selectListByRequestIdsAndReply(1L, requestIds, true))
+        when(deviceMessageDAO.selectListByRequestIdsAndReply(1L, requestIds, true))
                 .thenReturn(Collections.singletonList(record));
 
         // 调用
@@ -232,14 +222,14 @@ public class IotDeviceMessageServiceImplTest extends BaseMockitoUnitTest {
     @Test
     public void testGetDeviceMessageCount_whenCreateTimeNull_passNullToMapper() {
         // 准备
-        when(deviceMessageMapper.selectCountByCreateTime(isNull())).thenReturn(123L);
+        when(deviceMessageDAO.selectCountByCreateTime(isNull())).thenReturn(123L);
 
         // 调用
         Long count = service.getDeviceMessageCount(null);
 
         // 断言
         assertEquals(123L, count);
-        verify(deviceMessageMapper).selectCountByCreateTime(isNull());
+        verify(deviceMessageDAO).selectCountByCreateTime(isNull());
     }
 
     @Test
@@ -247,13 +237,590 @@ public class IotDeviceMessageServiceImplTest extends BaseMockitoUnitTest {
         // 准备：service 内部用 LocalDateTimeUtil.toEpochMilli 做转换，断言时也用同函数得到期望值
         LocalDateTime createTime = LocalDateTime.of(2026, 1, 1, 0, 0);
         long expectedMs = LocalDateTimeUtil.toEpochMilli(createTime);
-        when(deviceMessageMapper.selectCountByCreateTime(expectedMs)).thenReturn(456L);
+        when(deviceMessageDAO.selectCountByCreateTime(expectedMs)).thenReturn(456L);
 
         // 调用
         Long count = service.getDeviceMessageCount(createTime);
 
         // 断言
         assertEquals(456L, count);
+    }
+
+    // ========== getDeviceMessageSummaryByDate ==========
+
+    @Test
+    public void testGetDeviceMessageSummaryByDate_success() {
+        // 准备参数：按天合并 2026-01-01 的小时统计
+        IotStatisticsDeviceMessageReqVO reqVO = new IotStatisticsDeviceMessageReqVO();
+        reqVO.setInterval(DateIntervalEnum.DAY.getInterval());
+        LocalDateTime startTime = LocalDateTime.of(2026, 1, 1, 0, 0);
+        LocalDateTime endTime = LocalDateTime.of(2026, 1, 1, 23, 59, 59);
+        reqVO.setTimes(new LocalDateTime[]{startTime, endTime});
+
+        // mock 方法：DAO 统一返回 Timestamp 时间、Long 数量
+        when(deviceMessageDAO.selectDeviceMessageCountGroupByDate(
+                LocalDateTimeUtil.toEpochMilli(startTime), LocalDateTimeUtil.toEpochMilli(endTime)))
+                .thenReturn(Arrays.asList(
+                        IotDeviceMessageDAO.buildMessageCount(Timestamp.valueOf(startTime.withHour(1)), 3L, 1L),
+                        IotDeviceMessageDAO.buildMessageCount(Timestamp.valueOf(startTime.withHour(2)), 2L, 0L)));
+
+        // 调用
+        List<IotStatisticsDeviceMessageSummaryByDateRespVO> list = service.getDeviceMessageSummaryByDate(reqVO);
+
+        // 断言
+        assertEquals(1, list.size());
+        assertEquals(5, list.get(0).getUpstreamCount());
+        assertEquals(1, list.get(0).getDownstreamCount());
+    }
+
+    // ========== 透传校验 ==========
+
+    @Test
+    public void testSendDeviceMessage_rawPostReserved() {
+        // 准备参数：raw.post 只能由网关 raw 入口创建
+        IotDeviceMessage message = buildMessage(IotDeviceMessageMethodEnum.RAW_POST.getMethod());
+
+        // 调用，并断言异常
+        assertServiceException(() -> service.sendDeviceMessage(message, buildDevice(), null),
+                DEVICE_MESSAGE_RAW_METHOD_RESERVED);
+        verifyNoInteractions(deviceMessageProducer);
+    }
+
+    @Test
+    public void testSendDeviceMessage_rawPushProtocolNotSupported() {
+        // 准备参数
+        IotDeviceMessage message = buildRawPush("AQID");
+        // mock 方法：HTTP 产品
+        when(productService.getProductFromCache(3L)).thenReturn(IotProductDO.builder().id(3L).protocolType("http").build());
+
+        // 调用，并断言异常
+        assertServiceException(() -> service.sendDeviceMessage(message, buildDevice(), null),
+                DEVICE_MESSAGE_RAW_PROTOCOL_NOT_SUPPORTED, "http");
+        verifyNoInteractions(deviceMessageProducer);
+    }
+
+    @Test
+    public void testSendDeviceMessage_rawPushOpcUaNotSupported() {
+        // 准备参数
+        IotDeviceMessage message = buildRawPush("AQID");
+        // mock 方法：OPC UA 产品（一期只读）
+        when(productService.getProductFromCache(3L)).thenReturn(IotProductDO.builder().id(3L).protocolType("opc_ua_client").build());
+
+        // 调用，并断言异常
+        assertServiceException(() -> service.sendDeviceMessage(message, buildDevice(), null),
+                DEVICE_MESSAGE_RAW_PROTOCOL_NOT_SUPPORTED, "opc_ua_client");
+        verifyNoInteractions(deviceMessageProducer);
+    }
+
+    @Test
+    public void testSendDeviceMessage_opcUaDownstreamNotSupported() {
+        // mock 方法：OPC UA 产品（只支持属性设置）
+        when(productService.getProductFromCache(3L)).thenReturn(IotProductDO.builder().id(3L).protocolType("opc_ua_client").build());
+
+        // 调用，并断言异常：属性设置以外的下行消息（服务调用、配置推送、OTA、拓扑变更）都不下发
+        for (IotDeviceMessageMethodEnum method : new IotDeviceMessageMethodEnum[]{
+                IotDeviceMessageMethodEnum.SERVICE_INVOKE,
+                IotDeviceMessageMethodEnum.CONFIG_PUSH, IotDeviceMessageMethodEnum.OTA_UPGRADE,
+                IotDeviceMessageMethodEnum.TOPO_CHANGE}) {
+            assertServiceException(() -> service.sendDeviceMessage(buildMessage(method.getMethod()), buildDevice(), null),
+                    DEVICE_OPC_UA_DOWNSTREAM_NOT_SUPPORTED);
+        }
+        verifyNoInteractions(deviceMessageProducer);
+        verify(devicePropertyService, never()).getDeviceServerId(any());
+    }
+
+    @Test
+    public void testSendDeviceMessage_downstreamProductNotExists() {
+        // mock 方法：产品缓存为空（无法判断协议）
+
+        // 调用，并断言异常：不能绕过协议的下行能力校验
+        assertServiceException(() -> service.sendDeviceMessage(buildMessage(IotDeviceMessageMethodEnum.CONFIG_PUSH.getMethod()),
+                buildDevice(), null), PRODUCT_NOT_EXISTS);
+        verifyNoInteractions(deviceMessageProducer);
+    }
+
+    @Test
+    public void testSendDeviceMessage_opcUaReplyAllowed() {
+        // 准备参数：属性上报的回复（下行）
+        IotDeviceMessage message = buildMessage(IotDeviceMessageMethodEnum.PROPERTY_POST.getMethod()).setCode(0);
+
+        try (MockedStatic<SpringUtil> springUtilMock = mockStatic(SpringUtil.class)) {
+            springUtilMock.when(() -> SpringUtil.getBean(IotDeviceMessageServiceImpl.class)).thenReturn(service);
+            // 调用：回复不查产品协议，直接下发
+            service.sendDeviceMessage(message, buildDevice(), "server-1");
+        }
+        // 断言
+        verify(deviceMessageProducer).sendDeviceMessageToGateway(eq("server-1"), same(message));
+        verifyNoInteractions(productService);
+    }
+
+    @Test
+    public void testSendDeviceMessage_rawPushPayloadInvalid() {
+        // mock 方法：TCP 产品
+        when(productService.getProductFromCache(3L)).thenReturn(IotProductDO.builder().id(3L).protocolType("tcp").build());
+
+        // 调用，并断言异常：非法 Base64、空载荷
+        assertRawPayloadInvalid(buildRawPush("not base64!"));
+        assertRawPayloadInvalid(buildRawPush(""));
+        verifyNoInteractions(deviceMessageProducer);
+    }
+
+    @Test
+    public void testSendDeviceMessage_rawPushModbusPduInvalid() {
+        // mock 方法：Modbus 产品
+        when(productService.getProductFromCache(3L)).thenReturn(IotProductDO.builder().id(3L).protocolType("modbus_tcp_client").build());
+
+        // 调用，并断言异常：功能码 08 不在白名单；03 数量 126 超限
+        assertRawPayloadInvalid(buildRawPush(Base64.getEncoder().encodeToString(new byte[]{8, 0, 0, 0, 1})));
+        assertRawPayloadInvalid(buildRawPush(Base64.getEncoder().encodeToString(new byte[]{3, 0, 0, 0, 126})));
+        verifyNoInteractions(deviceMessageProducer);
+    }
+
+    @Test
+    public void testGetDeviceMessagePage_validateDevice() {
+        // 准备参数
+        IotDeviceMessagePageReqVO reqVO = new IotDeviceMessagePageReqVO();
+        reqVO.setDeviceId(2L);
+        // mock 方法：设备不属于当前租户
+        when(deviceService.validateDeviceExists(2L)).thenThrow(new ServiceException(DEVICE_NOT_EXISTS));
+
+        // 调用，并断言异常：不查时序库
+        assertServiceException(() -> service.getDeviceMessagePage(reqVO), DEVICE_NOT_EXISTS);
+        verifyNoInteractions(deviceMessageDAO);
+    }
+
+    @Test
+    public void testSendDeviceMessage_rawPushRewriteToRaw() {
+        // 准备参数：未带 padding 的 Base64，规范化为标准 Base64
+        IotDeviceMessage message = buildRawPush("AQI");
+        // mock 方法：TCP 产品，设备已连接网关
+        when(productService.getProductFromCache(3L)).thenReturn(IotProductDO.builder().id(3L).protocolType("tcp").build());
+        when(devicePropertyService.getDeviceServerId(2L)).thenReturn("server-1");
+
+        try (MockedStatic<SpringUtil> springUtilMock = mockStatic(SpringUtil.class)) {
+            springUtilMock.when(() -> SpringUtil.getBean(IotDeviceMessageServiceImpl.class)).thenReturn(service);
+            // 调用
+            service.sendDeviceMessage(message, buildDevice(), null);
+        }
+        // 断言：发给网关的消息，载荷在 raw，params 置空
+        ArgumentCaptor<IotDeviceMessage> messageCaptor = ArgumentCaptor.forClass(IotDeviceMessage.class);
+        verify(deviceMessageProducer).sendDeviceMessageToGateway(eq("server-1"), messageCaptor.capture());
+        assertEquals(IotDeviceMessageMethodEnum.RAW_PUSH.getMethod(), messageCaptor.getValue().getMethod());
+        assertEquals("AQI=", messageCaptor.getValue().getRaw());
+        assertNull(messageCaptor.getValue().getParams());
+        // 断言：消息日志带上 raw
+        ArgumentCaptor<IotDeviceMessageDO> logCaptor = ArgumentCaptor.forClass(IotDeviceMessageDO.class);
+        verify(deviceMessageDAO).insert(logCaptor.capture());
+        assertEquals("AQI=", logCaptor.getValue().getRaw());
+        assertNull(logCaptor.getValue().getParams());
+        assertFalse(logCaptor.getValue().getUpstream());
+    }
+
+    @Test
+    public void testSendDeviceMessage_clearForgedRaw() {
+        // 准备参数：非 raw.push 的下行消息，携带伪造的 raw
+        HashMap<String, Object> params = new HashMap<>();
+        params.put("power", 1);
+        IotDeviceMessage message = buildMessage(IotDeviceMessageMethodEnum.PROPERTY_SET.getMethod())
+                .setParams(params).setRaw("AQID");
+        // mock 方法：设备已连接网关
+        when(productService.getProductFromCache(3L)).thenReturn(IotProductDO.builder().id(3L).protocolType("tcp").build());
+        when(devicePropertyService.getDeviceServerId(2L)).thenReturn("server-1");
+
+        try (MockedStatic<SpringUtil> springUtilMock = mockStatic(SpringUtil.class)) {
+            springUtilMock.when(() -> SpringUtil.getBean(IotDeviceMessageServiceImpl.class)).thenReturn(service);
+            // 调用
+            service.sendDeviceMessage(message, buildDevice(), null);
+        }
+        // 断言：raw 被清空，params 保持不变
+        ArgumentCaptor<IotDeviceMessage> messageCaptor = ArgumentCaptor.forClass(IotDeviceMessage.class);
+        verify(deviceMessageProducer).sendDeviceMessageToGateway(eq("server-1"), messageCaptor.capture());
+        assertNull(messageCaptor.getValue().getRaw());
+        assertSame(params, messageCaptor.getValue().getParams());
+        // 只查询产品协议（下行能力校验），不走透传路径；TCP 协议不校验物模型
+        verifyNoInteractions(thingModelService, opcUaPointService);
+        verify(productService).getProductFromCache(3L);
+        verifyNoMoreInteractions(productService);
+    }
+
+    @Test
+    public void testSendDeviceMessage_opcUaPropertySetSuccess() {
+        // 准备参数
+        IotDeviceMessage message = buildPropertySet("power", 1);
+        // mock 方法：OPC UA 产品，物模型属性读写，点位启用且可写
+        when(productService.getProductFromCache(3L)).thenReturn(IotProductDO.builder().id(3L).protocolType("opc_ua_client").build());
+        when(thingModelService.getThingModelListByProductIdFromCache(3L)).thenReturn(Collections.singletonList(
+                buildPropertyThingModel(10L, "power", IotThingModelAccessModeEnum.READ_WRITE)));
+        when(opcUaPointService.getEnabledDeviceOpcUaPointMapByDeviceIds(Collections.singleton(2L))).thenReturn(
+                Collections.singletonMap(2L, Collections.singletonList(IotDeviceOpcUaPointDO.builder().id(100L)
+                        .deviceId(2L).thingModelId(10L).writable(true).build())));
+        when(devicePropertyService.getDeviceServerId(2L)).thenReturn("server-1");
+
+        try (MockedStatic<SpringUtil> springUtilMock = mockStatic(SpringUtil.class)) {
+            springUtilMock.when(() -> SpringUtil.getBean(IotDeviceMessageServiceImpl.class)).thenReturn(service);
+            // 调用
+            service.sendDeviceMessage(message, buildDevice(), null);
+        }
+        // 断言：下发到网关
+        verify(deviceMessageProducer).sendDeviceMessageToGateway(eq("server-1"), same(message));
+    }
+
+    @Test
+    public void testSendDeviceMessage_opcUaPropertySetPointNotWritable() {
+        // mock 方法：OPC UA 产品，物模型属性读写
+        when(productService.getProductFromCache(3L)).thenReturn(IotProductDO.builder().id(3L).protocolType("opc_ua_client").build());
+        when(thingModelService.getThingModelListByProductIdFromCache(3L)).thenReturn(Arrays.asList(
+                buildPropertyThingModel(10L, "power", IotThingModelAccessModeEnum.READ_WRITE),
+                buildPropertyThingModel(11L, "speed", IotThingModelAccessModeEnum.READ_WRITE)));
+        // mock 方法：power 点位不可写（默认），speed 没有启用的点位
+        when(opcUaPointService.getEnabledDeviceOpcUaPointMapByDeviceIds(Collections.singleton(2L))).thenReturn(
+                Collections.singletonMap(2L, Collections.singletonList(IotDeviceOpcUaPointDO.builder().id(100L)
+                        .deviceId(2L).thingModelId(10L).writable(false).build())));
+
+        // 调用，并断言异常
+        assertServiceException(() -> service.sendDeviceMessage(buildPropertySet("power", 1), buildDevice(), null),
+                DEVICE_OPC_UA_POINT_NOT_WRITABLE, "power");
+        assertServiceException(() -> service.sendDeviceMessage(buildPropertySet("speed", 1), buildDevice(), null),
+                DEVICE_OPC_UA_POINT_NOT_WRITABLE, "speed");
+        verifyNoInteractions(deviceMessageProducer);
+    }
+
+    @Test
+    public void testSendDeviceMessage_modbusPropertySetNotWritable() {
+        // mock 方法：Modbus 产品，power 只读；temperature 是事件不是属性
+        when(productService.getProductFromCache(3L)).thenReturn(IotProductDO.builder().id(3L).protocolType("modbus_tcp_server").build());
+        IotThingModelDO event = buildPropertyThingModel(12L, "temperature", IotThingModelAccessModeEnum.READ_WRITE);
+        event.setType(IotThingModelTypeEnum.EVENT.getType());
+        when(thingModelService.getThingModelListByProductIdFromCache(3L)).thenReturn(Arrays.asList(
+                buildPropertyThingModel(10L, "power", IotThingModelAccessModeEnum.READ_ONLY), event));
+
+        // 调用，并断言异常：只读属性、非属性、不存在的属性都不可写
+        assertServiceException(() -> service.sendDeviceMessage(buildPropertySet("power", 1), buildDevice(), null),
+                DEVICE_MESSAGE_PROPERTY_NOT_WRITABLE, "power");
+        assertServiceException(() -> service.sendDeviceMessage(buildPropertySet("temperature", 1), buildDevice(), null),
+                DEVICE_MESSAGE_PROPERTY_NOT_WRITABLE, "temperature");
+        assertServiceException(() -> service.sendDeviceMessage(buildPropertySet("unknown", 1), buildDevice(), null),
+                DEVICE_MESSAGE_PROPERTY_NOT_WRITABLE, "unknown");
+        verifyNoInteractions(deviceMessageProducer, opcUaPointService);
+    }
+
+    @Test
+    public void testSendDeviceMessage_modbusPropertySetParamsInvalid() {
+        // mock 方法：Modbus 产品
+        when(productService.getProductFromCache(3L)).thenReturn(IotProductDO.builder().id(3L).protocolType("modbus_tcp_client").build());
+
+        // 调用，并断言异常：参数为空 Map、非 Map
+        assertServiceException(() -> service.sendDeviceMessage(buildMessage(IotDeviceMessageMethodEnum.PROPERTY_SET.getMethod()),
+                buildDevice(), null), DEVICE_MESSAGE_PROPERTY_SET_PARAMS_INVALID);
+        assertServiceException(() -> service.sendDeviceMessage(buildMessage(IotDeviceMessageMethodEnum.PROPERTY_SET.getMethod())
+                .setParams("power"), buildDevice(), null), DEVICE_MESSAGE_PROPERTY_SET_PARAMS_INVALID);
+        verifyNoInteractions(deviceMessageProducer, thingModelService);
+    }
+
+    @Test
+    public void testSendDeviceMessage_upstreamClearForgedRaw() {
+        // 准备参数：模拟上报，携带伪造的 raw（否则可绕过标准自动回复）
+        IotDeviceMessage message = buildMessage(IotDeviceMessageMethodEnum.PROPERTY_POST.getMethod()).setRaw("AQID");
+
+        // 调用
+        service.sendDeviceMessage(message, buildDevice(), null);
+        // 断言：raw 被清空后再发到消息总线
+        verify(deviceMessageProducer).sendDeviceMessage(same(message));
+        assertNull(message.getRaw());
+    }
+
+    // ========== handleUpstreamDeviceMessage ==========
+
+    @Test
+    public void testHandleUpstreamDeviceMessage_reply() {
+        // 准备参数：设备经标准路径上报的属性（没有 raw）
+        IotDeviceDO device = buildDevice();
+        IotDeviceMessage message = buildMessage(IotDeviceMessageMethodEnum.PROPERTY_POST.getMethod())
+                .setRequestId("req-1").setServerId("server-1");
+
+        try (MockedStatic<SpringUtil> springUtilMock = mockStatic(SpringUtil.class)) {
+            springUtilMock.when(() -> SpringUtil.getBean(IotDeviceMessageServiceImpl.class)).thenReturn(service);
+            // 调用
+            service.handleUpstreamDeviceMessage(message, device);
+        }
+        // 断言：保存属性，并自动回复
+        verify(devicePropertyService).saveDeviceProperty(same(device), same(message));
+        ArgumentCaptor<IotDeviceMessage> replyCaptor = ArgumentCaptor.forClass(IotDeviceMessage.class);
+        verify(deviceMessageProducer).sendDeviceMessageToGateway(eq("server-1"), replyCaptor.capture());
+        assertEquals("req-1", replyCaptor.getValue().getRequestId());
+        assertEquals(IotDeviceMessageMethodEnum.PROPERTY_POST.getMethod(), replyCaptor.getValue().getMethod());
+        assertEquals(0, replyCaptor.getValue().getCode());
+        assertNull(replyCaptor.getValue().getRaw());
+    }
+
+    @Test
+    public void testHandleUpstreamDeviceMessage_rawNoReply() {
+        // 准备参数：网关透传解析出的属性（带原始帧）
+        IotDeviceDO device = buildDevice();
+        IotDeviceMessage message = buildMessage(IotDeviceMessageMethodEnum.PROPERTY_POST.getMethod())
+                .setRequestId("req-1").setServerId("server-1").setRaw("AQID");
+
+        try (MockedStatic<SpringUtil> springUtilMock = mockStatic(SpringUtil.class)) {
+            springUtilMock.when(() -> SpringUtil.getBean(IotDeviceMessageServiceImpl.class)).thenReturn(service);
+            // 调用
+            service.handleUpstreamDeviceMessage(message, device);
+        }
+        // 断言：照常保存属性，日志带上 raw；不自动回复
+        verify(devicePropertyService).saveDeviceProperty(same(device), same(message));
+        ArgumentCaptor<IotDeviceMessageDO> logCaptor = ArgumentCaptor.forClass(IotDeviceMessageDO.class);
+        verify(deviceMessageDAO).insert(logCaptor.capture());
+        assertEquals("AQID", logCaptor.getValue().getRaw());
+        assertTrue(logCaptor.getValue().getUpstream());
+        verify(deviceMessageProducer, never()).sendDeviceMessageToGateway(any(), any());
+    }
+
+    @Test
+    public void testHandleUpstreamDeviceMessage_rawPostNoReply() {
+        // 准备参数：网关未解析的透传上报
+        IotDeviceDO device = buildDevice();
+        IotDeviceMessage message = buildMessage(IotDeviceMessageMethodEnum.RAW_POST.getMethod())
+                .setParams(null).setServerId("server-1").setRaw("AQID");
+
+        try (MockedStatic<SpringUtil> springUtilMock = mockStatic(SpringUtil.class)) {
+            springUtilMock.when(() -> SpringUtil.getBean(IotDeviceMessageServiceImpl.class)).thenReturn(service);
+            // 调用
+            service.handleUpstreamDeviceMessage(message, device);
+        }
+        // 断言：只记录日志（带 raw），不自动回复
+        ArgumentCaptor<IotDeviceMessageDO> logCaptor = ArgumentCaptor.forClass(IotDeviceMessageDO.class);
+        verify(deviceMessageDAO).insert(logCaptor.capture());
+        assertEquals("AQID", logCaptor.getValue().getRaw());
+        assertNull(logCaptor.getValue().getParams());
+        verify(deviceMessageProducer, never()).sendDeviceMessageToGateway(any(), any());
+    }
+
+    // ========== handleUpstreamDeviceMessage：设备状态 ==========
+
+    @Test
+    public void testHandleUpstreamDeviceMessage_stateInvalid() {
+        // 准备参数：设备自报的非法状态
+        IotDeviceDO device = buildDevice();
+        IotDeviceMessage message = buildMessage(IotDeviceMessageMethodEnum.STATE_UPDATE.getMethod());
+        message.setServerId("server-1").setParams(Collections.singletonMap("state", 5));
+
+        try (MockedStatic<SpringUtil> springUtilMock = mockStatic(SpringUtil.class)) {
+            springUtilMock.when(() -> SpringUtil.getBean(IotDeviceMessageServiceImpl.class)).thenReturn(service);
+            // 调用：参数错误属于业务异常，记录日志后结束，不抛给消息总线
+            assertDoesNotThrow(() -> service.handleUpstreamDeviceMessage(message, device));
+        }
+        // 断言：不更新状态
+        verify(deviceService, never()).updateDeviceState(any(), any(), any(), anyBoolean());
+    }
+
+    @Test
+    public void testHandleUpstreamDeviceMessage_staleServerOffline() {
+        // 准备参数：旧网关节点的离线
+        IotDeviceDO device = buildDevice();
+        IotDeviceMessage message = buildMessage(IotDeviceMessageMethodEnum.STATE_UPDATE.getMethod());
+        message.setServerId("server-old").setParams(Collections.singletonMap("state", IotDeviceStateEnum.OFFLINE.getState()));
+        // mock 方法：设备已经连接到新的网关节点
+        when(productService.getProductFromCache(eq(3L)))
+                .thenReturn(new IotProductDO().setProtocolType(IotProtocolTypeEnum.MQTT.getType()));
+        when(devicePropertyService.getDeviceServerId(eq(2L))).thenReturn("server-new");
+
+        try (MockedStatic<SpringUtil> springUtilMock = mockStatic(SpringUtil.class)) {
+            springUtilMock.when(() -> SpringUtil.getBean(IotDeviceMessageServiceImpl.class)).thenReturn(service);
+            // 调用
+            service.handleUpstreamDeviceMessage(message, device);
+        }
+        // 断言：忽略旧节点的离线
+        verify(deviceService, never()).updateDeviceState(any(), any(), any(), anyBoolean());
+    }
+
+    @Test
+    public void testHandleUpstreamDeviceMessage_emqxOfflineNotCompareServerId() {
+        // 准备参数：EMQX 设备的离线（serverId 是接收 webhook 的节点）
+        IotDeviceDO device = buildDevice();
+        LocalDateTime reportTime = LocalDateTime.of(2026, 10, 29, 10, 0, 0);
+        IotDeviceMessage message = buildMessage(IotDeviceMessageMethodEnum.STATE_UPDATE.getMethod());
+        message.setServerId("server-1").setReportTime(reportTime)
+                .setParams(Collections.singletonMap("state", IotDeviceStateEnum.OFFLINE.getState()));
+        // mock 方法
+        when(productService.getProductFromCache(eq(3L)))
+                .thenReturn(new IotProductDO().setProtocolType(IotProtocolTypeEnum.EMQX.getType()));
+
+        try (MockedStatic<SpringUtil> springUtilMock = mockStatic(SpringUtil.class)) {
+            springUtilMock.when(() -> SpringUtil.getBean(IotDeviceMessageServiceImpl.class)).thenReturn(service);
+            // 调用
+            service.handleUpstreamDeviceMessage(message, device);
+        }
+        // 断言：不比较 serverId，按消息的事件时间更新状态
+        verify(devicePropertyService, never()).getDeviceServerId(any());
+        verify(deviceService).updateDeviceState(same(device), eq(IotDeviceStateEnum.OFFLINE.getState()),
+                eq(reportTime), eq(true));
+    }
+
+    @Test
+    public void testHandleUpstreamDeviceMessage_packKeepReportTime() {
+        // 准备参数：网关的批量上报，包含一个空的子设备（跳过）、一个子设备
+        IotDeviceDO gateway = buildDevice();
+        LocalDateTime reportTime = LocalDateTime.of(2026, 10, 29, 10, 0, 0);
+        HashMap<String, Object> subDevice = new HashMap<>();
+        subDevice.put("identity", new IotDeviceIdentity("sub-pk", "sub-dn"));
+        subDevice.put("properties", Collections.singletonMap("humidity", 60));
+        HashMap<String, Object> params = new HashMap<>();
+        params.put("properties", Collections.singletonMap("temperature", 25));
+        params.put("subDevices", Arrays.asList(null, subDevice));
+        IotDeviceMessage message = buildMessage(IotDeviceMessageMethodEnum.PROPERTY_PACK_POST.getMethod());
+        message.setReportTime(reportTime).setParams(params);
+        // mock 方法
+        when(deviceService.getDeviceFromCache(eq("sub-pk"), eq("sub-dn")))
+                .thenReturn(IotDeviceDO.builder().id(5L).productId(6L).build());
+
+        try (MockedStatic<SpringUtil> springUtilMock = mockStatic(SpringUtil.class)) {
+            springUtilMock.when(() -> SpringUtil.getBean(IotDeviceMessageServiceImpl.class)).thenReturn(service);
+            // 调用
+            service.handleUpstreamDeviceMessage(message, gateway);
+        }
+        // 断言：拆分出的消息，沿用 pack 的上报时间
+        ArgumentCaptor<IotDeviceMessage> captor = ArgumentCaptor.forClass(IotDeviceMessage.class);
+        verify(deviceMessageProducer, times(2)).sendDeviceMessage(captor.capture());
+        assertEquals(Arrays.asList(2L, 5L), convertList(captor.getAllValues(), IotDeviceMessage::getDeviceId));
+        captor.getAllValues().forEach(subMessage -> assertEquals(reportTime, subMessage.getReportTime()));
+    }
+
+    @Test
+    public void testHandleUpstreamDeviceMessage_spooledNoReply() {
+        // 准备参数：补传的属性上报，网关接收时刻在 1 小时前
+        IotDeviceDO device = buildDevice();
+        long spoolTime = System.currentTimeMillis() - 3600 * 1000L;
+        IotDeviceMessage message = buildMessage(IotDeviceMessageMethodEnum.PROPERTY_POST.getMethod())
+                .setRequestId("req-1").setServerId("server-1").setSpoolTime(spoolTime);
+
+        try (MockedStatic<SpringUtil> springUtilMock = mockStatic(SpringUtil.class)) {
+            springUtilMock.when(() -> SpringUtil.getBean(IotDeviceMessageServiceImpl.class)).thenReturn(service);
+            // 调用
+            service.handleUpstreamDeviceMessage(message, device);
+        }
+        // 断言：保存属性，日志时间为网关接收时刻，不回复
+        verify(devicePropertyService).saveDeviceProperty(same(device), same(message));
+        ArgumentCaptor<IotDeviceMessageDO> captor = ArgumentCaptor.forClass(IotDeviceMessageDO.class);
+        verify(deviceMessageDAO).insert(captor.capture());
+        assertEquals(spoolTime, captor.getValue().getTs());
+        verify(deviceMessageProducer, never()).sendDeviceMessageToGateway(any(), any());
+    }
+
+    @Test
+    public void testHandleUpstreamDeviceMessage_spooledPack() {
+        // 准备参数：补传的批量上报，网关自身 1 个属性 + 1 个事件，1 个子设备的属性
+        IotDeviceDO gateway = buildDevice();
+        long spoolTime = System.currentTimeMillis() - 3600 * 1000L;
+        HashMap<String, Object> subDevice = new HashMap<>();
+        subDevice.put("identity", new IotDeviceIdentity("sub-pk", "sub-dn"));
+        subDevice.put("properties", Collections.singletonMap("humidity", 60));
+        HashMap<String, Object> params = new HashMap<>();
+        params.put("properties", Collections.singletonMap("temperature", 25));
+        params.put("events", Collections.singletonMap("alarm", Collections.singletonMap("value", 1)));
+        params.put("subDevices", Collections.singletonList(subDevice));
+        IotDeviceMessage message = buildMessage(IotDeviceMessageMethodEnum.PROPERTY_PACK_POST.getMethod());
+        message.setReportTime(LocalDateTimeUtil.of(spoolTime)).setSpoolTime(spoolTime).setParams(params);
+        // mock 方法：第一次处理时，子设备的消息发送失败（例如 Redis 临时不可用）
+        when(deviceService.getDeviceFromCache(eq("sub-pk"), eq("sub-dn")))
+                .thenReturn(IotDeviceDO.builder().id(5L).productId(6L).build());
+        doNothing().doNothing().doThrow(new IllegalStateException("redis down")).doNothing()
+                .when(deviceMessageProducer).sendDeviceMessageConfirmed(any());
+
+        // 调用：第一次失败，抛出（整个 pack 等待重投）；第二次（重投）成功
+        assertThrows(IllegalStateException.class, () -> service.handleUpstreamDeviceMessage(message, gateway));
+        try (MockedStatic<SpringUtil> springUtilMock = mockStatic(SpringUtil.class)) {
+            springUtilMock.when(() -> SpringUtil.getBean(IotDeviceMessageServiceImpl.class)).thenReturn(service);
+            service.handleUpstreamDeviceMessage(message, gateway);
+        }
+
+        // 断言：拆出的消息等待 broker 确认，沿用 spoolTime；重投时编号与第一次相同
+        ArgumentCaptor<IotDeviceMessage> captor = ArgumentCaptor.forClass(IotDeviceMessage.class);
+        verify(deviceMessageProducer, times(6)).sendDeviceMessageConfirmed(captor.capture());
+        verify(deviceMessageProducer, never()).sendDeviceMessage(any());
+        List<IotDeviceMessage> sent = captor.getAllValues();
+        sent.forEach(subMessage -> assertEquals(spoolTime, subMessage.getSpoolTime()));
+        assertEquals(convertList(sent.subList(0, 3), IotDeviceMessage::getId),
+                convertList(sent.subList(3, 6), IotDeviceMessage::getId));
+        assertEquals(3, sent.stream().limit(3).map(IotDeviceMessage::getId).distinct().count());
+        // 断言：补传的消息不回复
+        verify(deviceMessageProducer, never()).sendDeviceMessageToGateway(any(), any());
+    }
+
+    @Test
+    public void testHandleUpstreamDeviceMessage_spooledPackRejectedSkipped() {
+        // 准备参数：补传的批量上报，网关自身 1 个属性 + 1 个事件，1 个子设备的属性
+        IotDeviceDO gateway = buildDevice();
+        long spoolTime = System.currentTimeMillis() - 3600 * 1000L;
+        HashMap<String, Object> subDevice = new HashMap<>();
+        subDevice.put("identity", new IotDeviceIdentity("sub-pk", "sub-dn"));
+        subDevice.put("properties", Collections.singletonMap("humidity", 60));
+        HashMap<String, Object> params = new HashMap<>();
+        params.put("properties", Collections.singletonMap("temperature", 25));
+        params.put("events", Collections.singletonMap("alarm", Collections.singletonMap("value", 1)));
+        params.put("subDevices", Collections.singletonList(subDevice));
+        IotDeviceMessage message = buildMessage(IotDeviceMessageMethodEnum.PROPERTY_PACK_POST.getMethod());
+        message.setReportTime(LocalDateTimeUtil.of(spoolTime)).setSpoolTime(spoolTime).setParams(params);
+        // mock 方法：第一条拆出的消息被消息总线永久拒绝（例如说超过大小限制），之后成功
+        when(deviceService.getDeviceFromCache(eq("sub-pk"), eq("sub-dn")))
+                .thenReturn(IotDeviceDO.builder().id(5L).productId(6L).build());
+        doThrow(new IotMessageRejectedException("too large", null)).doNothing()
+                .when(deviceMessageProducer).sendDeviceMessageConfirmed(any());
+
+        // 调用：不抛出，pack 确认
+        try (MockedStatic<SpringUtil> springUtilMock = mockStatic(SpringUtil.class)) {
+            springUtilMock.when(() -> SpringUtil.getBean(IotDeviceMessageServiceImpl.class)).thenReturn(service);
+            service.handleUpstreamDeviceMessage(message, gateway);
+        }
+
+        // 断言：被拒绝的跳过，后面的消息（含子设备）照常确认发送
+        ArgumentCaptor<IotDeviceMessage> captor = ArgumentCaptor.forClass(IotDeviceMessage.class);
+        verify(deviceMessageProducer, times(3)).sendDeviceMessageConfirmed(captor.capture());
+        assertEquals(Arrays.asList(2L, 2L, 5L), convertList(captor.getAllValues(), IotDeviceMessage::getDeviceId));
+        verify(deviceMessageProducer, never()).sendDeviceMessage(any());
+    }
+
+    @Test
+    public void testHandleUpstreamDeviceMessage_spooledPackDuplicateSubDevice() {
+        // 准备参数：补传的批量上报，同一子设备出现 2 次（数据相同）
+        IotDeviceDO gateway = buildDevice();
+        long spoolTime = System.currentTimeMillis() - 3600 * 1000L;
+        HashMap<String, Object> subDevice = new HashMap<>();
+        subDevice.put("identity", new IotDeviceIdentity("sub-pk", "sub-dn"));
+        subDevice.put("properties", Collections.singletonMap("humidity", 60));
+        HashMap<String, Object> params = new HashMap<>();
+        params.put("subDevices", Arrays.asList(subDevice, subDevice));
+        IotDeviceMessage message = buildMessage(IotDeviceMessageMethodEnum.PROPERTY_PACK_POST.getMethod());
+        message.setReportTime(LocalDateTimeUtil.of(spoolTime)).setSpoolTime(spoolTime).setParams(params);
+        // mock 方法
+        when(deviceService.getDeviceFromCache(eq("sub-pk"), eq("sub-dn")))
+                .thenReturn(IotDeviceDO.builder().id(5L).productId(6L).build());
+
+        // 调用：处理 2 次（模拟重投）
+        try (MockedStatic<SpringUtil> springUtilMock = mockStatic(SpringUtil.class)) {
+            springUtilMock.when(() -> SpringUtil.getBean(IotDeviceMessageServiceImpl.class)).thenReturn(service);
+            service.handleUpstreamDeviceMessage(message, gateway);
+            service.handleUpstreamDeviceMessage(message, gateway);
+        }
+
+        // 断言：按序号派生编号，同一子设备的 2 条消息编号不同；重投时编号与第一次相同
+        ArgumentCaptor<IotDeviceMessage> captor = ArgumentCaptor.forClass(IotDeviceMessage.class);
+        verify(deviceMessageProducer, times(4)).sendDeviceMessageConfirmed(captor.capture());
+        List<String> ids = convertList(captor.getAllValues(), IotDeviceMessage::getId);
+        assertNotEquals(ids.get(0), ids.get(1));
+        assertEquals(ids.subList(0, 2), ids.subList(2, 4));
+    }
+
+    private void assertRawPayloadInvalid(IotDeviceMessage message) {
+        ServiceException ex = assertThrows(ServiceException.class,
+                () -> service.sendDeviceMessage(message, buildDevice(), null));
+        assertEquals(DEVICE_MESSAGE_RAW_PAYLOAD_INVALID.getCode(), ex.getCode());
+    }
+
+    private IotDeviceMessage buildRawPush(String payload) {
+        IotDeviceMessage message = buildMessage(IotDeviceMessageMethodEnum.RAW_PUSH.getMethod());
+        HashMap<String, Object> params = new HashMap<>();
+        params.put("payload", payload);
+        message.setParams(params);
+        return message;
     }
 
     // ========== 辅助方法 ==========
@@ -268,9 +835,25 @@ public class IotDeviceMessageServiceImplTest extends BaseMockitoUnitTest {
         return message;
     }
 
+    /** 构造属性设置消息 */
+    private IotDeviceMessage buildPropertySet(String identifier, Object value) {
+        HashMap<String, Object> params = new HashMap<>();
+        params.put(identifier, value);
+        return buildMessage(IotDeviceMessageMethodEnum.PROPERTY_SET.getMethod()).setParams(params);
+    }
+
+    /** 构造属性物模型 */
+    private IotThingModelDO buildPropertyThingModel(Long id, String identifier, IotThingModelAccessModeEnum accessMode) {
+        ThingModelProperty property = new ThingModelProperty();
+        property.setIdentifier(identifier);
+        property.setAccessMode(accessMode.getMode());
+        return IotThingModelDO.builder().id(id).productId(3L).identifier(identifier)
+                .type(IotThingModelTypeEnum.PROPERTY.getType()).property(property).build();
+    }
+
     /** 构造最简设备 */
     private IotDeviceDO buildDevice() {
-        return IotDeviceDO.builder().id(2L).build();
+        return IotDeviceDO.builder().id(2L).productId(3L).build();
     }
 
 }

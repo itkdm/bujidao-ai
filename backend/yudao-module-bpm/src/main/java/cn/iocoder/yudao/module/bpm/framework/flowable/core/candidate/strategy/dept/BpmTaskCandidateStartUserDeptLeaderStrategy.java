@@ -4,7 +4,7 @@ import cn.hutool.core.lang.Assert;
 import cn.iocoder.yudao.framework.common.util.number.NumberUtils;
 import cn.iocoder.yudao.module.bpm.framework.flowable.core.candidate.BpmTaskCandidateStrategy;
 import cn.iocoder.yudao.module.bpm.framework.flowable.core.enums.BpmTaskCandidateStrategyEnum;
-import cn.iocoder.yudao.module.bpm.service.task.BpmProcessInstanceService;
+import cn.iocoder.yudao.module.bpm.service.task.BpmProcessInstanceQueryService;
 import cn.iocoder.yudao.module.system.api.dept.dto.DeptRespDTO;
 import jakarta.annotation.Resource;
 import org.flowable.bpmn.model.BpmnModel;
@@ -29,7 +29,7 @@ public class BpmTaskCandidateStartUserDeptLeaderStrategy extends AbstractBpmTask
 
     @Resource
     @Lazy // 避免循环依赖
-    private BpmProcessInstanceService processInstanceService;
+    private BpmProcessInstanceQueryService processInstanceQueryService;
 
     @Override
     public BpmTaskCandidateStrategyEnum getStrategy() {
@@ -45,22 +45,23 @@ public class BpmTaskCandidateStartUserDeptLeaderStrategy extends AbstractBpmTask
     @Override
     public Set<Long> calculateUsersByTask(DelegateExecution execution, String param) {
         // 获得流程发起人
-        ProcessInstance processInstance = processInstanceService.getProcessInstance(execution.getProcessInstanceId());
+        ProcessInstance processInstance = processInstanceQueryService.getProcessInstance(execution.getProcessInstanceId());
         Long startUserId = NumberUtils.parseLong(processInstance.getStartUserId());
         // 获取发起人的部门负责人
-        return getStartUserDeptLeader(startUserId, param);
+        return getStartUserDeptLeader(startUserId, param, processInstance.getProcessVariables());
     }
 
     @Override
     public Set<Long> calculateUsersByActivity(BpmnModel bpmnModel, String activityId, String param,
                                               Long startUserId, String processDefinitionId, Map<String, Object> processVariables) {
         // 获取发起人的部门负责人
-        return getStartUserDeptLeader(startUserId, param);
+        return getStartUserDeptLeader(startUserId, param, processVariables);
     }
 
-    private Set<Long> getStartUserDeptLeader(Long startUserId, String param) {
+    private Set<Long> getStartUserDeptLeader(Long startUserId, String param,
+                                             Map<String, Object> processVariables) {
         int level = Integer.parseInt(param); // 参数是部门的层级
-        DeptRespDTO dept = super.getStartUserDept(startUserId);
+        DeptRespDTO dept = super.getStartUserDept(startUserId, processVariables);
         if (dept == null) {
             return new HashSet<>();
         }

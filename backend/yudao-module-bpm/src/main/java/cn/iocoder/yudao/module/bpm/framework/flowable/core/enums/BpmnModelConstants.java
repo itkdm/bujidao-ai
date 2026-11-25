@@ -36,6 +36,11 @@ public interface BpmnModelConstants {
     String USER_TASK_TIMEOUT_HANDLER_TYPE = "timeoutHandlerType";
 
     /**
+     * BPMN ExtensionElement 的扩展属性，用于标记用户任务超时自动跳转的目标节点
+     */
+    String USER_TASK_TIMEOUT_JUMP_NODE_ID = "timeoutJumpNodeId";
+
+    /**
      * BPMN ExtensionElement 的扩展属性，用于标记用户任务的审批人与发起人相同时，对应的处理类型
      */
     String USER_TASK_ASSIGN_START_USER_HANDLER_TYPE = "assignStartUserHandlerType";
@@ -57,6 +62,11 @@ public interface BpmnModelConstants {
      * BPMN ExtensionElement 的扩展属性，用于标记用户任务拒绝后的退回的任务 Id
      */
     String USER_TASK_REJECT_RETURN_TASK_ID = "rejectReturnTaskId";
+
+    /**
+     * BPMN ExtensionElement 的扩展属性，用于标记节点退回后的审批方式。
+     */
+    String USER_TASK_RETURN_APPROVE_MODE = "returnApproveMode";
 
     /**
      * BPMN UserTask 的扩展属性，用于标记用户任务的审批类型

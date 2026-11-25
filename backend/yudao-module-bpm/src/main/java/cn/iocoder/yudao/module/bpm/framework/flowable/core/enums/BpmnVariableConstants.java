@@ -61,6 +61,13 @@ public class BpmnVariableConstants {
     public static final String PROCESS_INSTANCE_VARIABLE_NEED_SIMULATE_TASK_IDS = "NEED_SIMULATE_TASK_IDS";
 
     /**
+     * 流程实例的变量 - 用于审批超时【自动跳转】，标记流程实例发生过跳转，变量值类型为 Boolean
+     *
+     * 目的是：跨分支、往回跳转后，流程实例不再按流程变量从头执行，审批详情改为从当前进行中的节点开始预测
+     */
+    public static final String PROCESS_INSTANCE_VARIABLE_TIMEOUT_JUMPED = "PROCESS_TIMEOUT_JUMPED";
+
+    /**
      * 流程实例的变量 - 是否跳过表达式
      *
      * @see ProcessInstance#getProcessVariables()
@@ -100,9 +107,42 @@ public class BpmnVariableConstants {
      * @see org.flowable.task.api.Task#getTaskLocalVariables()
      */
     public static final String TASK_VARIABLE_REASON = "TASK_REASON";
+
+    /**
+     * 任务的变量 - 退回修改的修改人编号
+     *
+     * 退回后【从当前节点审批】时，任务处于退回修改中（WAIT_REVISION），由该用户修改表单后重新提交
+     */
+    public static final String TASK_VARIABLE_REVISION_ASSIGNEE = "TASK_REVISION_ASSIGNEE";
+    /**
+     * 任务的变量 - 退回修改的目标节点编号
+     *
+     * 修改人按该节点的表单字段权限修改表单
+     */
+    public static final String TASK_VARIABLE_REVISION_TARGET_NODE = "TASK_REVISION_TARGET_NODE";
+    /**
+     * 任务的变量 - 退回修改的批次编号
+     *
+     * 每次退回修改时重新生成，重新提交后保留：重新提交、审批人审批时，需要与前端详情中的批次一致，避免过期的页面提交
+     */
+    public static final String TASK_VARIABLE_REVISION_ID = "TASK_REVISION_ID";
+
     /**
      * 任务变量 - 签名图片 URL
      */
     public static final String TASK_SIGN_PIC_URL = "TASK_SIGN_PIC_URL";
+
+    /**
+     * 任务变量 - 委派的归还顺序
+     *
+     * 逗号分隔的用户编号，最后一个是当前被委派人的直接委派人。多次委派时，审批后逐层归还
+     */
+    public static final String TASK_DELEGATE_RETURN_USERS = "TASK_DELEGATE_RETURN_USERS";
+    /**
+     * 任务变量 - 加签等待中的审批人
+     *
+     * 被委派的任务向前加签时，owner 需要保留给委派归还使用，所以等待恢复审批的用户记录在这里
+     */
+    public static final String TASK_SIGN_WAIT_ASSIGNEE = "TASK_SIGN_WAIT_ASSIGNEE";
 
 }

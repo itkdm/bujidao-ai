@@ -2,10 +2,13 @@ package cn.iocoder.yudao.framework.common.util.number;
 
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.NumberUtil;
+import cn.hutool.core.util.ReUtil;
 import cn.hutool.core.util.StrUtil;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * 数字的工具类，补全 {@link cn.hutool.core.util.NumberUtil} 的功能
@@ -14,12 +17,61 @@ import java.util.List;
  */
 public class NumberUtils {
 
+    private static final Pattern FIRST_BIG_DECIMAL_PATTERN = Pattern.compile("-?\\d+(?:\\.\\d+)?");
+
+    /**
+     * 一百，用于百分数和比例计算
+     */
+    public static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
+
     public static Long parseLong(String str) {
         return StrUtil.isNotEmpty(str) ? Long.valueOf(str) : null;
     }
 
     public static Integer parseInt(String str) {
         return StrUtil.isNotEmpty(str) ? Integer.valueOf(str) : null;
+    }
+
+    /**
+     * 获得数字，为 null 时返回 {@link BigDecimal#ZERO}
+     *
+     * @param value 数字
+     * @return 数字
+     */
+    public static BigDecimal zeroIfNull(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
+    }
+
+    /**
+     * 获得数字去掉末尾 0 后的十进制文本（{@link BigDecimal#toPlainString()}）的长度，含负号与小数点
+     *
+     * 按 precision、scale 计算，不实际展开文本：例如 1E+999999999 展开后约 1GB，这里只返回长度；
+     * 长度使用 long，scale 为 int 的上下界时也不会溢出
+     *
+     * @param value 数字，不能为 null
+     * @return 十进制文本的长度，例如 12.3400 为 5（12.34）、-0.05 为 5、0 为 1
+     * @throws ArithmeticException 去掉末尾 0 后 scale 超出 int 范围时
+     */
+    public static long getPlainStringLength(BigDecimal value) {
+        BigDecimal number = value.stripTrailingZeros();
+        long precision = number.precision();
+        long scale = number.scale();
+        long length = scale <= 0 ? precision - scale : scale >= precision ? scale + 2 : precision + 1;
+        return number.signum() < 0 ? length + 1 : length;
+    }
+
+    /**
+     * 从文本中解析首个数字
+     *
+     * @param text 文本
+     * @return 数字；不存在时返回 {@link BigDecimal#ZERO}
+     */
+    public static BigDecimal parseFirstBigDecimal(String text) {
+        if (StrUtil.isEmpty(text)) {
+            return BigDecimal.ZERO;
+        }
+        String number = ReUtil.getGroup0(FIRST_BIG_DECIMAL_PATTERN, text.replace(",", ""));
+        return NumberUtil.toBigDecimal(number);
     }
 
     public static boolean isAllNumber(List<String> values) {
@@ -73,6 +125,42 @@ public class NumberUtils {
             }
         }
         return NumberUtil.mul(values);
+    }
+
+    /**
+     * 除法运算，结果保留两位小数并四舍五入
+     *
+     * @param dividend 被除数，空值按 0 处理
+     * @param divisor 除数，为空或 0 时返回 0
+     * @return 商
+     */
+    public static Double div(Long dividend, Long divisor) {
+        if (divisor == null || divisor == 0) {
+            return 0D;
+        }
+        return BigDecimal.valueOf(dividend == null ? 0L : dividend)
+                .divide(BigDecimal.valueOf(divisor), 2, RoundingMode.HALF_UP)
+                .doubleValue();
+    }
+
+    /**
+     * 获得整数类型 [minValue, maxValue] 范围内的边界：超出范围时，钳制到范围内
+     *
+     * 例如说，int 类型下边界 >= 3000000000 时，没有满足的值，返回 null；上边界 <= 3000000000 时，钳制为 <= Integer.MAX_VALUE
+     *
+     * @param value    边界值，需已取整（下边界向上取整、上边界向下取整）
+     * @param lower    是否为下边界（>=），否则为上边界（<=）
+     * @param minValue 类型的最小值，需 minValue <= maxValue
+     * @param maxValue 类型的最大值
+     * @return 边界；下边界大于 maxValue、上边界小于 minValue 时，该类型没有满足的值，返回 null
+     */
+    public static Long getIntegerBound(BigDecimal value, boolean lower, long minValue, long maxValue) {
+        BigDecimal min = BigDecimal.valueOf(minValue);
+        BigDecimal max = BigDecimal.valueOf(maxValue);
+        if (lower ? NumberUtil.isGreater(value, max) : NumberUtil.isLess(value, min)) {
+            return null;
+        }
+        return value.max(min).min(max).longValue();
     }
 
 }

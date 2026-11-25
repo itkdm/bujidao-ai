@@ -11,14 +11,14 @@
     <view>
       <wd-form ref="formRef" :model="formData" :schema="formSchema">
         <wd-cell-group border>
-              <wd-form-item title="名字" title-width="180rpx" prop="name">
+          <wd-form-item title="名字" title-width="180rpx" prop="name">
             <wd-input
               v-model="formData.name"
               clearable
               placeholder="请输入名字"
             />
           </wd-form-item>
-              <wd-form-item title="简介" title-width="180rpx" prop="description">
+          <wd-form-item title="简介" title-width="180rpx" prop="description">
             <wd-textarea
               v-model="formData.description"
               clearable
@@ -27,21 +27,22 @@
               show-word-limit
             />
           </wd-form-item>
-                  <wd-form-item
+          <wd-form-item
             title="出生日期"
             title-width="180rpx"
             prop="birthday"
             is-link
-            :value="formatDateTime(formData.birthday)"
+            :value="formData.birthday ? formatDateTime(formData.birthday) : ''"
             placeholder="请选择出生日期"
             @click="birthdayVisible = true"
           />
           <wd-datetime-picker
-            v-model="formData.birthday"
             v-model:visible="birthdayVisible"
+            :model-value="formData.birthday || Date.now()"
             type="datetime"
+            @update:model-value="value => formData.birthday = value"
           />
-                  <yd-form-picker
+          <yd-form-picker
             v-model="formData.sex"
             label="性别"
             label-width="180rpx"
@@ -49,7 +50,7 @@
             :dict-type="DICT_TYPE.SYSTEM_USER_SEX"
             placeholder="请选择性别"
           />
-                  <wd-form-item title="是否有效" title-width="180rpx" prop="enabled" center>
+          <wd-form-item title="是否有效" title-width="180rpx" prop="enabled" center>
             <wd-radio-group v-model="formData.enabled" type="button">
               <wd-radio
                 v-for="dict in getBoolDictOptions(DICT_TYPE.INFRA_BOOLEAN_STRING)"
@@ -60,17 +61,19 @@
               </wd-radio>
             </wd-radio-group>
           </wd-form-item>
-                  <wd-form-item title="头像" title-width="180rpx" prop="avatar">
+          <wd-form-item title="头像" title-width="180rpx" prop="avatar">
             <yd-upload-img v-model="formData.avatar" directory="infra/demo" />
           </wd-form-item>
-                  <wd-form-item title="附件" title-width="180rpx" prop="video">
-            <yd-upload-file v-model="formData.video" directory="infra/demo" />
+          <wd-form-item title="附件" title-width="180rpx" prop="video">
+            <yd-upload-file v-model="formData.video" :limit="1" directory="infra/demo" />
           </wd-form-item>
-                  <wd-form-item title="备注" title-width="180rpx" prop="memo">
-            <wd-input
+          <wd-form-item title="备注" title-width="180rpx" prop="memo">
+            <wd-textarea
               v-model="formData.memo"
               clearable
               placeholder="请输入备注"
+              :maxlength="2000"
+              show-word-limit
             />
           </wd-form-item>
         </wd-cell-group>
@@ -93,7 +96,9 @@
 
 <script lang="ts" setup>
 import type { FormInstance } from '@wot-ui/ui/components/wd-form/types'
-import type { Student } from '@/api/infra/demo'
+import type {
+  Student,
+} from '@/api/infra/demo'
 import { computed, onMounted, ref } from 'vue'
 import { useToast } from '@wot-ui/ui/components/wd-toast'
 import { createStudent, getStudent, updateStudent } from '@/api/infra/demo'
@@ -104,7 +109,7 @@ import { formatDateTime } from '@/utils/date'
 import { createFormSchema } from '@/utils/wot'
 
 const props = defineProps<{
-  id?: number | any
+  id?: number
 }>()
 
 definePage({
@@ -117,13 +122,13 @@ definePage({
 const toast = useToast()
 const getTitle = computed(() => props.id ? '编辑学生' : '新增学生')
 const formLoading = ref(false) // 表单提交状态
-const formData = ref<Student>({
+const formData = ref<Partial<Student>>({
   id: undefined,
   name: '',
   description: '',
   birthday: undefined,
-  sex: 0,
-  enabled: false,
+  sex: undefined,
+  enabled: undefined,
   avatar: '',
   video: '',
   memo: '',
@@ -163,11 +168,12 @@ async function handleSubmit() {
 
   formLoading.value = true
   try {
+    const data = formData.value as Student
     if (props.id) {
-      await updateStudent(formData.value)
+      await updateStudent(data)
       toast.success('修改成功')
     } else {
-      await createStudent(formData.value)
+      await createStudent(data)
       toast.success('新增成功')
     }
     uni.$emit('infra:demo:reload')
@@ -178,7 +184,7 @@ async function handleSubmit() {
 }
 
 /** 初始化 */
-onMounted(() => {
+onMounted(async () => {
   getDetail()
 })
 </script>

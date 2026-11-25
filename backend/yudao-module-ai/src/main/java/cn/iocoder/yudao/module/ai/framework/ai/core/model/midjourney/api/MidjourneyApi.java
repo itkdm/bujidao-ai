@@ -2,13 +2,19 @@ package cn.iocoder.yudao.module.ai.framework.ai.core.model.midjourney.api;
 
 import cn.hutool.core.util.StrUtil;
 import cn.iocoder.yudao.framework.common.util.json.JsonUtils;
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
+import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Value;
+import lombok.experimental.Accessors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.web.reactive.function.client.ClientResponse;
@@ -33,10 +39,15 @@ public class MidjourneyApi {
     private final Predicate<HttpStatusCode> STATUS_PREDICATE = status -> !status.is2xxSuccessful();
 
     private final Function<Object, Function<ClientResponse, Mono<? extends Throwable>>> EXCEPTION_FUNCTION =
-            reqParam -> response -> response.bodyToMono(String.class).handle((responseBody, sink) -> {
+            reqParam -> response -> response.bodyToMono(String.class).defaultIfEmpty("").handle((responseBody, sink) -> {
                 HttpRequest request = response.request();
                 log.error("[midjourney-api] 调用失败！请求方式:[{}]，请求地址:[{}]，请求参数:[{}]，响应数据: [{}]",
                         request.getMethod(), request.getURI(), reqParam, responseBody);
+                // 中转没有该接口（例如说不支持融图、换脸、局部重绘），转为明确的错误
+                if (response.statusCode().value() == HttpStatus.NOT_FOUND.value()) {
+                    sink.error(new IllegalStateException("[midjourney-api] 中转不支持该接口：" + request.getURI().getPath()));
+                    return;
+                }
                 sink.error(new IllegalStateException("[midjourney-api] 调用失败！"));
             });
 
@@ -53,6 +64,10 @@ public class MidjourneyApi {
                 .defaultHeaders(httpHeaders -> {
                     httpHeaders.setContentType(MediaType.APPLICATION_JSON);
                     httpHeaders.setBearerAuth(apiKey);
+                    // 兼容 novicezk/midjourney-proxy：开启 mj.api-secret 后，通过 mj-api-secret 请求头鉴权
+                    if (StrUtil.isNotEmpty(apiKey)) {
+                        httpHeaders.set("mj-api-secret", apiKey);
+                    }
                 })
                 .build();
         this.notifyUrl = notifyUrl;
@@ -83,6 +98,45 @@ public class MidjourneyApi {
             request.setNotifyHook(notifyUrl);
         }
         String response = post("/submit/action", request);
+        return JsonUtils.parseObject(response, SubmitResponse.class);
+    }
+
+    /**
+     * blend - 融图：2-5 张图片
+     *
+     * @param request 请求
+     * @return 提交结果
+     */
+    public SubmitResponse blend(BlendRequest request) {
+        if (StrUtil.isEmpty(request.notifyHook())) {
+            request = new BlendRequest(request.base64Array(), request.dimensions(), notifyUrl, request.state());
+        }
+        String response = post("/submit/blend", request);
+        return JsonUtils.parseObject(response, SubmitResponse.class);
+    }
+
+    /**
+     * swapFace - 换脸：把来源图的脸换到目标图上
+     *
+     * @param request 请求
+     * @return 提交结果
+     */
+    public SubmitResponse swapFace(SwapFaceRequest request) {
+        if (StrUtil.isEmpty(request.notifyHook())) {
+            request = new SwapFaceRequest(request.sourceBase64(), request.targetBase64(), notifyUrl, request.state());
+        }
+        String response = post("/insight-face/swap", request);
+        return JsonUtils.parseObject(response, SubmitResponse.class);
+    }
+
+    /**
+     * modal - 提交弹窗内容，例如说局部重绘的蒙版与提示词
+     *
+     * @param request 请求
+     * @return 提交结果
+     */
+    public SubmitResponse modal(ModalRequest request) {
+        String response = post("/submit/modal", request);
         return JsonUtils.parseObject(response, SubmitResponse.class);
     }
 
@@ -173,72 +227,221 @@ public class MidjourneyApi {
     }
 
     /**
-     * Submit 统一返回
-     *
-     * @param code 状态码: 1(提交成功), 21(已存在), 22(排队中), other(错误)
-     * @param description 描述
-     * @param properties 扩展字段
-     * @param result 任务ID
+     * Blend 请求（融图）
      */
-    public record SubmitResponse(String code,
-                                 String description,
-                                 Map<String, Object> properties,
-                                 String result) {
+    @Value
+    @Accessors(fluent = true)
+    @NoArgsConstructor(access = AccessLevel.PRIVATE, force = true)
+    @AllArgsConstructor
+    @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
+    public static class BlendRequest {
+
+        /**
+         * 图片 base64 数组，2-5 张
+         */
+        List<String> base64Array;
+        /**
+         * 尺寸：PORTRAIT(2:3)、SQUARE(1:1)、LANDSCAPE(3:2)
+         */
+        String dimensions;
+        /**
+         * 通知地址
+         */
+        String notifyHook;
+        /**
+         * 自定义参数
+         */
+        String state;
+
+    }
+
+    /**
+     * SwapFace 请求（换脸）
+     */
+    @Value
+    @Accessors(fluent = true)
+    @NoArgsConstructor(access = AccessLevel.PRIVATE, force = true)
+    @AllArgsConstructor
+    @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
+    public static class SwapFaceRequest {
+
+        /**
+         * 来源人脸图片 base64
+         */
+        String sourceBase64;
+        /**
+         * 目标图片 base64
+         */
+        String targetBase64;
+        /**
+         * 通知地址
+         */
+        String notifyHook;
+        /**
+         * 自定义参数
+         */
+        String state;
+
+    }
+
+    /**
+     * Modal 请求（局部重绘等弹窗的提交）
+     */
+    @Value
+    @Accessors(fluent = true)
+    @NoArgsConstructor(access = AccessLevel.PRIVATE, force = true)
+    @AllArgsConstructor
+    @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
+    public static class ModalRequest {
+
+        /**
+         * 任务编号
+         */
+        String taskId;
+        /**
+         * 提示词
+         */
+        String prompt;
+        /**
+         * 蒙版 base64：黑底，白色为重绘区域
+         */
+        String maskBase64;
+
+    }
+
+    /**
+     * Submit 统一返回
+     */
+    @Value
+    @Accessors(fluent = true)
+    @NoArgsConstructor(access = AccessLevel.PRIVATE, force = true)
+    @AllArgsConstructor
+    @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
+    public static class SubmitResponse {
+
+        /**
+         * 状态码: 1(提交成功), 21(已存在 / 窗口等待), 22(排队中), other(错误)
+         */
+        String code;
+        /**
+         * 描述
+         */
+        String description;
+        /**
+         * 扩展字段
+         */
+        Map<String, Object> properties;
+        /**
+         * 任务ID
+         */
+        String result;
+
     }
 
     /**
      * 通知 request
-     *
-     * @param id job id
-     * @param action 任务类型 {@link TaskActionEnum}
-     * @param status 任务状态 {@link TaskStatusEnum}
-     * @param prompt 提示词
-     * @param promptEn 提示词-英文
-     * @param description 任务描述
-     * @param state 自定义参数
-     * @param submitTime 提交时间
-     * @param startTime 开始执行时间
-     * @param finishTime 结束时间
-     * @param imageUrl 图片url
-     * @param progress 任务进度
-     * @param failReason 失败原因
-     * @param buttons 任务完成后的可执行按钮
      */
-    public record Notify(String id,
-                         String action,
-                         String status,
+    @Value
+    @Accessors(fluent = true)
+    @NoArgsConstructor(access = AccessLevel.PRIVATE, force = true)
+    @AllArgsConstructor
+    @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
+    public static class Notify {
 
-                         String prompt,
-                         String promptEn,
+        /**
+         * job id
+         */
+        String id;
+        /**
+         * 任务类型 {@link TaskActionEnum}
+         */
+        String action;
+        /**
+         * 任务状态 {@link TaskStatusEnum}
+         */
+        String status;
 
-                         String description,
-                         String state,
+        /**
+         * 提示词
+         */
+        String prompt;
+        /**
+         * 提示词-英文
+         */
+        String promptEn;
 
-                         Long submitTime,
-                         Long startTime,
-                         Long finishTime,
+        /**
+         * 任务描述
+         */
+        String description;
+        /**
+         * 自定义参数
+         */
+        String state;
 
-                         String imageUrl,
-                         String progress,
-                         String failReason,
-                         List<Button> buttons) {
+        /**
+         * 提交时间
+         */
+        Long submitTime;
+        /**
+         * 开始执行时间
+         */
+        Long startTime;
+        /**
+         * 结束时间
+         */
+        Long finishTime;
+
+        /**
+         * 图片url
+         */
+        String imageUrl;
+        /**
+         * 任务进度
+         */
+        String progress;
+        /**
+         * 失败原因
+         */
+        String failReason;
+        /**
+         * 任务完成后的可执行按钮
+         */
+        List<Button> buttons;
 
     }
 
     /**
      * button
-     *
-     * @param customId MJ::JOB::upsample::1::85a4b4c1-8835-46c5-a15c-aea34fad1862 动作标识
-     * @param emoji 图标 emoji
-     * @param label Make Variations 文本
-     * @param type 类型，系统内部使用
-     * @param style 样式: 2（Primary）、3（Green）
      */
-    public record Button(String customId,
-                         String emoji,
-                         String label,
-                         String type,
-                         String style) {
+    @Value
+    @Accessors(fluent = true)
+    @NoArgsConstructor(access = AccessLevel.PRIVATE, force = true)
+    @AllArgsConstructor
+    @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
+    public static class Button {
+
+        /**
+         * MJ::JOB::upsample::1::85a4b4c1-8835-46c5-a15c-aea34fad1862 动作标识
+         */
+        String customId;
+        /**
+         * 图标 emoji
+         */
+        String emoji;
+        /**
+         * Make Variations 文本
+         */
+        String label;
+        /**
+         * 类型，系统内部使用
+         */
+        String type;
+        /**
+         * 样式: 2（Primary）、3（Green）
+         */
+        String style;
+
     }
 
     // ============ enums ============
@@ -312,7 +515,11 @@ public class MidjourneyApi {
         /**
          * 多图混合
          */
-        BLEND
+        BLEND,
+        /**
+         * 换脸
+         */
+        SWAP_FACE
 
     }
 
@@ -332,6 +539,10 @@ public class MidjourneyApi {
          */
         SUBMITTED(1),
         /**
+         * 窗口等待（例如说：局部重绘等需要弹窗确认的操作）
+         */
+        MODAL(2),
+        /**
          * 执行中
          */
         IN_PROGRESS(3),
@@ -342,9 +553,29 @@ public class MidjourneyApi {
         /**
          * 成功
          */
-        SUCCESS(4);
+        SUCCESS(4),
+        /**
+         * 已取消
+         */
+        CANCEL(4);
 
         private final int order;
+
+    }
+
+    /**
+     * 局部重绘（Modal）的中转流程
+     */
+    public enum ModalProtocolEnum {
+
+        /**
+         * 先执行局部重绘（Inpaint）按钮，再用返回的任务编号提交蒙版
+         */
+        ACTION_THEN_MODAL,
+        /**
+         * 直接用来源任务编号提交蒙版
+         */
+        DIRECT_MODAL
 
     }
 

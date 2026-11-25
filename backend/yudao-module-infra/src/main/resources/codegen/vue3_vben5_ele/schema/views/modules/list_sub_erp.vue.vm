@@ -12,17 +12,23 @@ import type { ${apiName} } from '#/api/${table.moduleName}/${table.businessName}
 
 #if ($table.templateType == 11) ## erp
 import ${subSimpleClassName}Form from './${subSimpleClassName_strikeCase}-form.vue'
-#end
 import { useVbenModal } from '@vben/common-ui';
 import { ElMessage, ElLoading } from 'element-plus';
-import { ref, computed, nextTick,watch } from 'vue';
+#end
+import {#if ($table.templateType == 11 && $deleteBatchEnable) ref,#end nextTick, watch } from 'vue';
+#if ($table.templateType == 11) ## erp
 import { $t } from '#/locales';
 import { ACTION_ICON, TableAction, useVbenVxeGrid } from '#/adapter/vxe-table';
+#else
+import { useVbenVxeGrid } from '#/adapter/vxe-table';
+#end
 
 #if ($table.templateType == 11) ## erp
 import { delete${subSimpleClassName},#if ($deleteBatchEnable) delete${subSimpleClassName}List,#end get${subSimpleClassName}Page } from '#/api/${table.moduleName}/${table.businessName}';
 import { use${subSimpleClassName}GridFormSchema, use${subSimpleClassName}GridColumns } from '../data';
+#if ($deleteBatchEnable)
 import { isEmpty } from '@vben/utils';
+#end
 #else
 #if ($subTable.subJoinMany) ## 一对多
 import { get${subSimpleClassName}ListBy${SubJoinColumnName} } from '#/api/${table.moduleName}/${table.businessName}';
@@ -41,19 +47,6 @@ const [FormModal, formModalApi] = useVbenModal({
   connectedComponent: ${subSimpleClassName}Form,
   destroyOnClose: true,
 });
-
-/** 刷新表格 */
-async function handleRefresh() {
-#if ($table.templateType == 11) ## erp
-  await gridApi.query();
-#else
-  #if ($subTable.subJoinMany) ## 一对多
-  await gridApi.grid.loadData(await get${subSimpleClassName}ListBy${SubJoinColumnName}(props.${subJoinColumn.javaField}!));
-  #else
-  await gridApi.grid.loadData([await get${subSimpleClassName}By${SubJoinColumnName}(props.${subJoinColumn.javaField}!)]);
-  #end
-#end
-}
 
 /** 创建${subTable.classComment} */
 function handleCreate() {
@@ -144,7 +137,7 @@ const [Grid, gridApi] = useVbenVxeGrid({
 #else
   columns: use${subSimpleClassName}GridColumns(),
   pagerConfig: {
-    nabled: false,
+    enabled: false,
   },
   toolbarConfig: {
     enabled: false,
@@ -163,6 +156,20 @@ const [Grid, gridApi] = useVbenVxeGrid({
   }
   #end
 });
+
+/** 刷新表格 */
+async function handleRefresh() {
+#if ($table.templateType == 11) ## erp
+  await gridApi.query();
+#else
+  #if ($subTable.subJoinMany) ## 一对多
+  await gridApi.grid.loadData(await get${subSimpleClassName}ListBy${SubJoinColumnName}(props.${subJoinColumn.javaField}!));
+  #else
+  const data = await get${subSimpleClassName}By${SubJoinColumnName}(props.${subJoinColumn.javaField}!);
+  await gridApi.grid.loadData(data ? [data] : []);
+  #end
+#end
+}
 
 /** 监听主表的关联字段的变化，加载对应的子表数据 */
 watch(

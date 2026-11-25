@@ -2,11 +2,8 @@
 import type { VxeTableGridOptions } from '#/adapter/vxe-table';
 import type { InfraStudentApi } from '#/api/infra/demo';
 
-import { useVbenModal } from '@vben/common-ui';
-import { ElMessage, ElLoading } from 'element-plus';
-import { ref, computed, nextTick,watch } from 'vue';
-import { $t } from '#/locales';
-import { ACTION_ICON, TableAction, useVbenVxeGrid } from '#/adapter/vxe-table';
+import { nextTick, watch } from 'vue';
+import { useVbenVxeGrid } from '#/adapter/vxe-table';
 
  import { getStudentContactListByStudentId } from '#/api/infra/demo';
 import { useStudentContactGridColumns } from '../data';
@@ -19,7 +16,7 @@ const [Grid, gridApi] = useVbenVxeGrid({
   gridOptions: {
   columns: useStudentContactGridColumns(),
   pagerConfig: {
-    nabled: false,
+    enabled: false,
   },
   toolbarConfig: {
     enabled: false,
@@ -31,6 +28,11 @@ const [Grid, gridApi] = useVbenVxeGrid({
   },
   } as VxeTableGridOptions<InfraStudentApi.StudentContact>,
 });
+
+/** 刷新表格 */
+async function handleRefresh() {
+   await gridApi.grid.loadData(await getStudentContactListByStudentId(props.studentId!));
+}
 
 /** 监听主表的关联字段的变化，加载对应的子表数据 */
 watch(

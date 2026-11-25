@@ -13,6 +13,7 @@ import cn.hutool.extra.spring.SpringUtil;
 import cn.iocoder.yudao.framework.common.enums.UserTypeEnum;
 import cn.iocoder.yudao.framework.common.util.json.JsonUtils;
 import cn.iocoder.yudao.framework.common.util.number.MoneyUtils;
+import cn.iocoder.yudao.framework.common.util.object.ObjectUtils;
 import cn.iocoder.yudao.module.member.api.address.MemberAddressApi;
 import cn.iocoder.yudao.module.member.api.address.dto.MemberAddressRespDTO;
 import cn.iocoder.yudao.module.pay.api.order.PayOrderApi;
@@ -68,6 +69,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -296,6 +299,12 @@ public class TradeOrderUpdateServiceImpl implements TradeOrderUpdateService {
                     id, payOrderId, JsonUtils.toJsonString(order));
             throw exception(ORDER_UPDATE_PAID_FAIL_PAY_ORDER_ID_ERROR);
         }
+        // 1.3 校验支付单号，与订单绑定的支付单号一致。避免其它支付应用中，相同商户订单编号、金额的支付单被用于串单
+        if (ObjectUtil.notEqual(order.getPayOrderId(), payOrderId)) {
+            log.error("[updateOrderPaid][order({}) 绑定的支付单({}) 与回调的支付单({}) 不匹配，请进行处理！]",
+                    id, order.getPayOrderId(), payOrderId);
+            throw exception(ORDER_UPDATE_PAID_FAIL_PAY_ORDER_ID_ERROR);
+        }
 
         // 2. 校验支付订单的合法性
         PayOrderRespDTO payOrder = validatePayOrderPaid(order, payOrderId);
@@ -391,7 +400,7 @@ public class TradeOrderUpdateServiceImpl implements TradeOrderUpdateService {
             // 2.2 无需发货
             updateOrderObj.setLogisticsId(0L).setLogisticsNo("");
         }
-        // 执行更新
+        // 执行更新：以读取时的状态作为乐观锁条件，避免并发收货、取消后被覆盖
         updateOrderObj.setStatus(TradeOrderStatusEnum.DELIVERED.getStatus()).setDeliveryTime(LocalDateTime.now());
         int updateCount = tradeOrderMapper.updateByIdAndStatus(order.getId(), order.getStatus(), updateOrderObj);
         if (updateCount == 0) {
@@ -433,14 +442,20 @@ public class TradeOrderUpdateServiceImpl implements TradeOrderUpdateService {
     /**
      * 校验交易订单满足被发货的条件
      * <p>
-     * 1. 交易订单未发货
+     * 1. 交易订单待发货，或已发货（修改物流信息）
+     * 2. 交易订单未退款
      *
      * @param id 交易订单编号
      * @return 交易订单
      */
     private TradeOrderDO validateOrderDeliverable(Long id) {
         TradeOrderDO order = validateOrderExists(id);
-        // 1. 校验订单是否未发货
+        // 1.1 校验订单状态：仅待发货、已发货（修改物流信息）可发货，见 https://github.com/YunaiV/ruoyi-vue-pro/issues/1310
+        if (!TradeOrderStatusEnum.isUndelivered(order.getStatus())
+                && !TradeOrderStatusEnum.isDelivered(order.getStatus())) {
+            throw exception(ORDER_DELIVERY_FAIL_STATUS_NOT_UNDELIVERED);
+        }
+        // 1.2 校验订单是否未退款
         if (ObjectUtil.notEqual(TradeOrderRefundStatusEnum.NONE.getStatus(), order.getRefundStatus())) {
             throw exception(ORDER_DELIVERY_FAIL_REFUND_STATUS_NOT_NONE);
         }
@@ -639,6 +654,49 @@ public class TradeOrderUpdateServiceImpl implements TradeOrderUpdateService {
 
         // 3. 增加订单日志
         TradeOrderLogUtils.setOrderInfo(order.getId(), order.getStatus(), TradeOrderStatusEnum.CANCELED.getStatus());
+
+        // 4. 关闭支付单
+        closePayOrder(order.getId(), order.getPayOrderId(), cancelType);
+    }
+
+    /**
+     * 注册事务提交后的支付单关闭任务
+     *
+     * @param orderId    交易订单编号
+     * @param payOrderId 支付订单编号
+     * @param cancelType 订单取消类型
+     */
+    private void closePayOrder(Long orderId, Long payOrderId, TradeOrderCancelTypeEnum cancelType) {
+        if (!ObjectUtils.equalsAny(cancelType, TradeOrderCancelTypeEnum.MEMBER_CANCEL,
+                TradeOrderCancelTypeEnum.PAY_TIMEOUT)
+                || payOrderId == null || !TransactionSynchronizationManager.isSynchronizationActive()) {
+            return;
+        }
+        // 必须在事务提交后，再关闭支付单，避免交易事务回滚后支付单已经关闭
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+
+            @Override
+            public void afterCommit() {
+                // 异步的原因：避免阻塞当前事务，无需等待结果
+                getSelf().closePayOrderAsync(orderId, payOrderId);
+            }
+
+        });
+    }
+
+    /**
+     * 异步关闭订单关联的支付单
+     *
+     * @param orderId    交易订单编号
+     * @param payOrderId 支付订单编号
+     */
+    @Async
+    public void closePayOrderAsync(Long orderId, Long payOrderId) {
+        try {
+            payOrderApi.closeOrder(payOrderId);
+        } catch (Throwable e) {
+            log.error("[closePayOrderAsync][order({}) payOrder({}) 异步关闭支付单失败]", orderId, payOrderId, e);
+        }
     }
 
     /**

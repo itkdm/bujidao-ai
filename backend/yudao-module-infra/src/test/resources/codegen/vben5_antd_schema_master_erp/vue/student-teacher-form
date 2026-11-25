@@ -25,7 +25,7 @@
         class: 'w-full',
       },
       formItemClass: 'col-span-2',
-      labelWidth: 80,
+      labelWidth: 120,
     },
     layout: 'horizontal',
     schema: useStudentTeacherFormSchema(),
@@ -58,7 +58,7 @@
         return;
       }
       // 加载数据
-      let data = modalApi.getData<InfraStudentApi.StudentTeacher>();
+      let data = modalApi.getData() as InfraStudentApi.StudentTeacher;
       if (!data) {
         return;
       }

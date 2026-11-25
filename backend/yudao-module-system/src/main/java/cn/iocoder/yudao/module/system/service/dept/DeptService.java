@@ -40,8 +40,9 @@ public interface DeptService {
      * 批量删除部门
      *
      * @param ids 部门编号数组
+     * @param userId 操作的用户编号，用于校验数据权限
      */
-    void deleteDeptList(List<Long> ids);
+    void deleteDeptList(List<Long> ids, Long userId);
 
     /**
      * 获得部门信息
@@ -95,6 +96,16 @@ public interface DeptService {
      * @return 子部门列表
      */
     List<DeptDO> getChildDeptList(Collection<Long> ids);
+
+    /**
+     * 获得指定部门的所有父部门
+     *
+     * 按直属父部门到根部门的顺序返回，不包含指定部门自身。
+     *
+     * @param id 部门编号
+     * @return 父部门列表
+     */
+    List<DeptDO> getParentDeptList(Long id);
 
     /**
      * 获得指定领导者的部门列表

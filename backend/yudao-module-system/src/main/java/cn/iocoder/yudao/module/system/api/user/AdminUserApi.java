@@ -1,5 +1,6 @@
 package cn.iocoder.yudao.module.system.api.user;
 
+import cn.hutool.core.collection.CollUtil;
 import cn.iocoder.yudao.framework.common.util.collection.CollectionUtils;
 import cn.iocoder.yudao.module.system.api.user.dto.AdminUserRespDTO;
 
@@ -22,6 +23,14 @@ public interface AdminUserApi {
      * @return 用户对象信息
      */
     AdminUserRespDTO getUser(Long id);
+
+    /**
+     * 通过手机号查询用户
+     *
+     * @param mobile 手机号
+     * @return 用户对象信息
+     */
+    AdminUserRespDTO getUserByMobile(String mobile);
 
     /**
      * 通过用户 ID 查询用户下属
@@ -64,12 +73,23 @@ public interface AdminUserApi {
     List<AdminUserRespDTO> getUserListByNickname(String nickname);
 
     /**
+     * 获得指定状态的用户列表
+     *
+     * @param status 用户状态
+     * @return 用户列表
+     */
+    List<AdminUserRespDTO> getUserListByStatus(Integer status);
+
+    /**
      * 获得用户 Map
      *
      * @param ids 用户编号数组
      * @return 用户 Map
      */
     default Map<Long, AdminUserRespDTO> getUserMap(Collection<Long> ids) {
+        if (CollUtil.isEmpty(ids)) {
+            return Collections.emptyMap();
+        }
         List<AdminUserRespDTO> users = getUserList(ids);
         return CollectionUtils.convertMap(users, AdminUserRespDTO::getId);
     }
@@ -80,10 +100,9 @@ public interface AdminUserApi {
      * 2. 用户被禁用
      *
      * @param id 用户编号
+     * @return 有效的用户对象信息
      */
-    default void validateUser(Long id) {
-        validateUserList(Collections.singleton(id));
-    }
+    AdminUserRespDTO validateUser(Long id);
 
     /**
      * 校验用户们是否有效。如下情况，视为无效：
