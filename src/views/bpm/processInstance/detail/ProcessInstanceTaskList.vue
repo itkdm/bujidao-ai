@@ -38,6 +38,14 @@
         </el-button>
       </template>
     </el-table-column>
+    <el-table-column align="center" label="附件/签名" min-width="180">
+      <template #default="scope">
+        <TaskEvidenceCell
+          :attachments="scope.row.attachments"
+          :sign-pic-url="scope.row.signPicUrl"
+        />
+      </template>
+    </el-table-column>
     <el-table-column align="center" label="耗时" prop="durationInMillis" min-width="100">
       <template #default="scope">
         {{ formatPast2(scope.row.durationInMillis) }}
@@ -61,9 +69,13 @@ import { propTypes } from '@/utils/propTypes'
 import { DICT_TYPE } from '@/utils/dict'
 import type { Api as FormCreateApi } from '@form-create/element-ui'
 import { setConfAndFields2 } from '@/utils/formCreate'
+import { useFormCreate } from '@/plugins/formCreate'
 import * as TaskApi from '@/api/bpm/task'
+import TaskEvidenceCell from '@/views/bpm/task/components/TaskEvidenceCell.vue'
 
 defineOptions({ name: 'BpmProcessInstanceTaskList' })
+
+useFormCreate() // 按需安装 form-create，需在渲染表单之前
 
 const props = defineProps({
   loading: propTypes.bool.def(false), // 是否加载中

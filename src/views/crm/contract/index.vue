@@ -140,7 +140,7 @@
         width="120"
         :formatter="dateFormatter2"
       />
-      <el-table-column align="center" label="客户签约人" prop="contactName" width="130">
+      <el-table-column align="center" label="客户签约人" prop="signContactName" width="130">
         <template #default="scope">
           <el-link
             :underline="false"
@@ -277,7 +277,7 @@ const { t } = useI18n() // 国际化
 
 const loading = ref(true) // 列表的加载中
 const total = ref(0) // 列表的总页数
-const list = ref([]) // 列表的数据
+const list = ref<ContractApi.ContractVO[]>([]) // 列表的数据
 const queryParams = reactive({
   pageNo: 1,
   pageSize: 10,

@@ -1,13 +1,11 @@
 import { useTimeAgo as useTimeAgoCore, UseTimeAgoMessages } from '@vueuse/core'
 import { useLocaleStoreWithOut } from '@/store/modules/locale'
 
-const TIME_AGO_MESSAGE_MAP: {
-  'zh-CN': UseTimeAgoMessages
-  en: UseTimeAgoMessages
-} = {
-  // @ts-ignore
+// 按语言注册表的全部语言配置词表：注册表新增语言而这里未补齐时，类型检查会报错
+const TIME_AGO_MESSAGE_MAP: Record<LocaleType, UseTimeAgoMessages> = {
   'zh-CN': {
     justNow: '刚刚',
+    invalid: '无效时间',
     past: (n) => (n.match(/\d/) ? `${n}前` : n),
     future: (n) => (n.match(/\d/) ? `${n}后` : n),
     month: (n, past) => (n === 1 ? (past ? '上个月' : '下个月') : `${n} 个月`),
@@ -18,9 +16,9 @@ const TIME_AGO_MESSAGE_MAP: {
     minute: (n) => `${n} 分钟`,
     second: (n) => `${n} 秒`
   },
-  // @ts-ignore
   en: {
     justNow: 'just now',
+    invalid: 'Invalid Date',
     past: (n) => (n.match(/\d/) ? `${n} ago` : n),
     future: (n) => (n.match(/\d/) ? `in ${n}` : n),
     month: (n, past) =>
@@ -39,10 +37,12 @@ const TIME_AGO_MESSAGE_MAP: {
 export const useTimeAgo = (time: Date | number | string) => {
   const localeStore = useLocaleStoreWithOut()
 
-  const currentLocale = computed(() => localeStore.getCurrentLocale)
-
+  // 词表随无刷新语言切换：VueUse 的 messages 不接受 ref，这里用 getter，
+  // 由其内部 computed 每次格式化时读取当前语言并建立依赖，共用同一时钟
   const timeAgo = useTimeAgoCore(time, {
-    messages: TIME_AGO_MESSAGE_MAP[unref(currentLocale).lang]
+    get messages() {
+      return TIME_AGO_MESSAGE_MAP[localeStore.getCurrentLocale.lang]
+    }
   })
 
   return timeAgo

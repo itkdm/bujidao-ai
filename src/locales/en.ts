@@ -1,4 +1,22 @@
 export default {
+  layout: {
+    expandNavigation: 'Expand navigation',
+    collapseNavigation: 'Collapse navigation',
+    closeNavigation: 'Close navigation menu',
+    mainNavigation: 'Main navigation',
+    switchLanguage: 'Switch language',
+    toggleDarkMode: 'Toggle dark mode',
+    switchLayout: 'Switch page layout',
+    layoutTitle: 'Page layout',
+    layoutHint: 'Applies immediately',
+    enterFullscreen: 'Enter fullscreen',
+    exitFullscreen: 'Exit fullscreen',
+    menuSearch: 'Search menu',
+    menuSearchPlaceholder: 'Enter menu title or path',
+    switchSize: 'Switch size',
+    message: 'Messages',
+    openChat: 'Open chat'
+  },
   common: {
     inputText: 'Please input',
     selectText: 'Please select',
@@ -6,7 +24,7 @@ export default {
     endTimeText: 'End time',
     login: 'Login',
     required: 'This is required',
-    loginOut: 'Login out',
+    loginOut: 'Log out',
     document: 'Document',
     profile: 'User Center',
     reminder: 'Reminder',
@@ -23,6 +41,9 @@ export default {
     closeTheRightTab: 'Close right',
     closeOther: 'Close other',
     closeAll: 'Close all',
+    scrollTagsLeft: 'Scroll tabs left',
+    scrollTagsRight: 'Scroll tabs right',
+    moreTabActions: 'More tab actions',
     prevLabel: 'Prev',
     nextLabel: 'Next',
     skipLabel: 'Jump',
@@ -54,7 +75,13 @@ export default {
     updateTime: 'Update Time',
     copy: 'Copy',
     copySuccess: 'Copy Success',
-    copyError: 'Copy Error'
+    copyError: 'Copy Error',
+    lengthRange: 'The length should be between {min} and {max}',
+    notSpace: 'Spaces are not allowed',
+    notSpecialCharacters: 'Special characters are not allowed',
+    phone: 'Please enter a valid mobile phone number',
+    email: 'Please enter a valid email address',
+    maxlength: 'The length cannot exceed {max} characters'
   },
   lock: {
     lockScreen: 'Lock screen',
@@ -140,7 +167,7 @@ export default {
     codePlaceholder: 'Please Enter Verification Code',
     mobileTitle: 'Mobile sign in',
     mobileNumber: 'Mobile Number',
-    mobileNumberPlaceholder: 'Plaease Enter Mobile Number',
+    mobileNumberPlaceholder: 'Please Enter Mobile Number',
     backLogin: 'back',
     getSmsCode: 'Get SMS Code',
     btnMobile: 'Mobile sign in',
@@ -163,6 +190,7 @@ export default {
   },
   router: {
     login: 'Login',
+    socialLogin: 'Social Login',
     home: 'Home',
     analysis: 'Analysis',
     workplace: 'Workplace'
@@ -188,7 +216,7 @@ export default {
     december: 'December',
     estimate: 'Estimate',
     actual: 'Actual',
-    directAccess: 'Airect access',
+    directAccess: 'Direct access',
     mailMarketing: 'Mail marketing',
     allianceAdvertising: 'Alliance advertising',
     videoAdvertising: 'Video advertising',
@@ -443,12 +471,13 @@ export default {
       truephone: 'Please Enter The Correct Phone Number'
     },
     password: {
-      oldPassword: 'Old PassWord',
+      oldPassword: 'Old Password',
       newPassword: 'New Password',
       confirmPassword: 'Confirm Password',
       oldPwdMsg: 'Please Enter Old Password',
       newPwdMsg: 'Please Enter New Password',
       cfPwdMsg: 'Please Enter Confirm Password',
+      pwdRules: 'Length must be between 4 and 16 characters',
       diffPwd: 'The Passwords Entered Twice No Match'
     }
   },
@@ -464,6 +493,7 @@ export default {
     btn_scale_y: 'Flip vertical',
     btn_zoom_in: 'Zoom in',
     btn_zoom_out: 'Zoom out',
-    preview: 'Preivew'
+    preview: 'Preview',
+    imageTypeError: 'Please select an image file'
   }
 }

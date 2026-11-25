@@ -333,7 +333,7 @@
           >
             查看
           </el-button>
-          <el-button link type="primary" @click="openModel(scope.row.id)"> 日志 </el-button>
+          <el-button link type="primary" @click="openLog(scope.row.id)"> 日志 </el-button>
           <el-button
             link
             type="primary"
@@ -372,6 +372,8 @@
 </template>
 
 <script setup lang="ts">
+import { parseId } from '@/utils/id'
+
 import { DICT_TYPE, getIntDictOptions, getDictLabel } from '@/utils/dict'
 import { dateFormatter } from '@/utils/formatTime'
 import { DeviceApi, DeviceVO } from '@/api/iot/device/device'
@@ -382,6 +384,8 @@ import { DeviceGroupApi, DeviceGroupVO } from '@/api/iot/device/group'
 import download from '@/utils/download'
 import DeviceGroupForm from './DeviceGroupForm.vue'
 import DeviceImportForm from './DeviceImportForm.vue'
+import defaultPicUrl from '@/assets/imgs/iot/device.png'
+import defaultIconUrl from '@/assets/svgs/iot/card-fill.svg'
 
 /** IoT 设备列表 */
 defineOptions({ name: 'IoTDevice' })
@@ -409,8 +413,6 @@ const products = ref<ProductVO[]>([]) // 产品列表
 const deviceGroups = ref<DeviceGroupVO[]>([]) // 设备分组列表
 const selectedIds = ref<number[]>([]) // 选中的设备编号数组
 const viewMode = ref<'card' | 'list'>('card') // 视图模式状态
-const defaultPicUrl = ref('/src/assets/imgs/iot/device.png') // 默认设备图片
-const defaultIconUrl = ref('/src/assets/svgs/iot/card-fill.svg') // 默认设备图标
 
 /** 查询列表 */
 const getList = async () => {
@@ -510,6 +512,10 @@ const openModel = (id: number) => {
   push({ name: 'IoTDeviceDetail', params: { id }, query: { tab: 'model' } })
 }
 
+const openLog = (id: number) => {
+  push({ name: 'IoTDeviceDetail', params: { id }, query: { tab: 'log' } })
+}
+
 /** 设备导入 */
 const importFormRef = ref()
 const handleImport = () => {
@@ -521,7 +527,7 @@ onMounted(async () => {
   // 处理 productId 参数
   const { productId } = route.query
   if (productId) {
-    queryParams.productId = Number(productId)
+    queryParams.productId = parseId(productId)
   }
   await getList()
 

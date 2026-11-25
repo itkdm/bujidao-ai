@@ -80,7 +80,7 @@
       <!-- 子表的表单 -->
       <ContentWrap>
         <el-tabs v-model="subTabsName" class="-mt-15px -mb-10px">
-          <el-tab-pane label="采购入库、退货单" name="item">
+          <el-tab-pane label="销售出库、退货单" name="item">
             <FinanceReceiptItemForm
               ref="itemFormRef"
               :customer-id="formData.customerId"
@@ -178,11 +178,11 @@ const formData = ref({
   discountPrice: 0,
   receiptPrice: 0,
   items: [] as FinanceReceiptItemVO[],
-  no: undefined as string | undefined // 订单单号，后端返回
+  no: undefined as string | undefined // 收款单号，后端返回
 })
 const formRules = reactive({
   customerId: [{ required: true, message: '客户不能为空', trigger: 'blur' }],
-  receiptTime: [{ required: true, message: '订单时间不能为空', trigger: 'blur' }]
+  receiptTime: [{ required: true, message: '收款时间不能为空', trigger: 'blur' }]
 })
 const disabled = computed(() => formType.value === 'detail')
 const formRef = ref() // 表单 Ref
@@ -201,7 +201,7 @@ watch(
     if (!val) {
       return
     }
-    const totalPrice = val.items.reduce((prev, curr) => prev + curr.receiptPrice, 0)
+    const totalPrice = val.items.reduce((prev, curr) => prev + (curr.receiptPrice || 0), 0)
     formData.value.totalPrice = totalPrice
     formData.value.receiptPrice = totalPrice - val.discountPrice
   },

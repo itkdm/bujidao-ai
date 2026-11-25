@@ -204,30 +204,27 @@ export function buildSubConditionRules(
  */
 function createCurrentTimeParamRule(getOperator: () => string): FormItemRule {
   return {
-    validator: (_rule, value, callback) => {
+    validator: ((_rule, value) => {
       const operator = getOperator()
 
       // “今天”没有附加输入项，直接通过。
       if (operator === IotRuleSceneTriggerTimeOperatorEnum.TODAY.value) {
-        callback()
-        return
+        return Promise.resolve()
       }
 
       if (isEmptyVal(value)) {
-        callback(new Error('请填写时间值'))
-        return
+        return Promise.reject(new Error('请填写时间值'))
       }
 
       // 时间区间需要同时存在开始和结束时间。
       if (operator === IotRuleSceneTriggerTimeOperatorEnum.BETWEEN_TIME.value) {
         const parts = String(value).split(',')
         if (!parts[0]?.trim() || !parts[1]?.trim()) {
-          callback(new Error('请填写开始和结束时间'))
-          return
+          return Promise.reject(new Error('请填写开始和结束时间'))
         }
       }
-      callback()
-    },
+      return Promise.resolve()
+    }) as any,
     trigger: ['change', 'blur']
   }
 }
@@ -426,21 +423,19 @@ export function buildAlertConfigRules(): Record<string, FormItemRule[]> {
  */
 function createParamsRule(): FormItemRule {
   return {
-    validator: (_rule, value, callback) => {
+    validator: ((_rule, value) => {
       if (isActionParamsEmpty(value)) {
-        callback(new Error('请填写参数配置'))
-        return
+        return Promise.reject(new Error('请填写参数配置'))
       }
 
       // 这里只校验 JSON 语法，具体参数结构由物模型参数配置组件负责生成。
       try {
         JSON.parse(String(value))
       } catch {
-        callback(new Error('参数格式须为合法 JSON'))
-        return
+        return Promise.reject(new Error('参数格式须为合法 JSON'))
       }
-      callback()
-    },
+      return Promise.resolve()
+    }) as any,
     trigger: ['change', 'blur']
   }
 }

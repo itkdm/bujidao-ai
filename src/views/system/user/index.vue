@@ -210,6 +210,7 @@
   <UserAssignRoleForm ref="assignRoleFormRef" @success="getList" />
 </template>
 <script lang="ts" setup>
+import { ElMessageBox } from 'element-plus'
 import { DICT_TYPE, getIntDictOptions } from '@/utils/dict'
 import { checkPermi } from '@/utils/permission'
 import { dateFormatter } from '@/utils/formatTime'
@@ -228,7 +229,7 @@ const { t } = useI18n() // 国际化
 
 const loading = ref(true) // 列表的加载中
 const total = ref(0) // 列表的总页数
-const list = ref([]) // 列表的数
+const list = ref<UserApi.UserVO[]>([]) // 列表的数
 const queryParams = reactive({
   pageNo: 1,
   pageSize: 10,
@@ -267,6 +268,8 @@ const resetQuery = () => {
 /** 处理部门被点击 */
 const handleDeptNodeClick = async (deptId: number | undefined) => {
   queryParams.deptId = deptId
+  // 切换或清空部门后回到第一页，避免沿用旧页码查不到数据
+  queryParams.pageNo = 1
   await getList()
 }
 
@@ -368,9 +371,15 @@ const handleDeleteBatch = async () => {
 const handleResetPwd = async (row: UserApi.UserVO) => {
   try {
     // 重置的二次确认
-    const result = await message.prompt(
+    const result = await ElMessageBox.prompt(
       '请输入"' + row.username + '"的新密码',
-      t('common.reminder')
+      t('common.reminder'),
+      {
+        confirmButtonText: t('common.ok'),
+        cancelButtonText: t('common.cancel'),
+        type: 'warning',
+        inputValidator: (value) => (value.length >= 4 && value.length <= 16) || '密码长度为 4-16 位'
+      }
     )
     const password = result.value
     // 发起重置

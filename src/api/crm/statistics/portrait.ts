@@ -29,28 +29,28 @@ export interface CrmStatisticCustomerAreaRespVO extends CrmStatisticCustomerBase
 
 // 客户分析 API
 export const StatisticsPortraitApi = {
-  // 1. 获取客户行业统计数据
+  // 获取客户行业统计数据
   getCustomerIndustry: (params: any) => {
     return request.get({
       url: '/crm/statistics-portrait/get-customer-industry-summary',
       params
     })
   },
-  // 2. 获取客户来源统计数据
+  // 获取客户来源统计数据
   getCustomerSource: (params: any) => {
     return request.get({
       url: '/crm/statistics-portrait/get-customer-source-summary',
       params
     })
   },
-  // 3. 获取客户级别统计数据
+  // 获取客户级别统计数据
   getCustomerLevel: (params: any) => {
     return request.get({
       url: '/crm/statistics-portrait/get-customer-level-summary',
       params
     })
   },
-  // 4. 获取客户地区统计数据
+  // 获取客户地区统计数据
   getCustomerArea: (params: any) => {
     return request.get({
       url: '/crm/statistics-portrait/get-customer-area-summary',

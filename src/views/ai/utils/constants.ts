@@ -11,17 +11,23 @@
  * AI 平台的枚举
  */
 export const AiPlatformEnum = {
-  TONG_YI: 'TongYi', // 阿里
-  YI_YAN: 'YiYan', // 百度
-  DEEP_SEEK: 'DeepSeek', // DeepSeek
-  ZHI_PU: 'ZhiPu', // 智谱 AI
-  XING_HUO: 'XingHuo', // 讯飞
-  SiliconFlow: 'SiliconFlow', // 硅基流动
-  OPENAI: 'OpenAI',
-  Ollama: 'Ollama',
-  STABLE_DIFFUSION: 'StableDiffusion', // Stability AI
-  MIDJOURNEY: 'Midjourney', // Midjourney
-  SUNO: 'Suno' // Suno AI
+  // TODO DONE @AI：如果要改？貌似阿里也要改。。。（已改为 ALIBABA）
+  ALIBABA: 'ALIBABA', // 阿里
+  BAIDU: 'BAIDU', // 百度
+  DEEPSEEK: 'DEEPSEEK', // DeepSeek
+  ZHIPU: 'ZHIPU', // 智谱 AI
+  IFLYTEK: 'IFLYTEK', // 讯飞
+  SILICONFLOW: 'SILICONFLOW', // 硅基流动
+  OPENAI: 'OPENAI',
+  OLLAMA: 'OLLAMA',
+  STABILITYAI: 'STABILITYAI', // Stability AI
+  MIDJOURNEY: 'MIDJOURNEY', // Midjourney
+  SUNO: 'SUNO', // Suno AI
+  TENCENT: 'TENCENT', // 腾讯
+  BYTEDANCE: 'BYTEDANCE', // 字节
+  MINIMAX: 'MINIMAX', // MiniMax
+  KLING: 'KLING', // 可灵
+  GEMINI: 'GEMINI' // 谷歌 Gemini（视频生成为 Vertex AI Veo）
 }
 
 export const AiModelTypeEnum = {
@@ -30,24 +36,68 @@ export const AiModelTypeEnum = {
   VOICE: 3, // 音频
   VIDEO: 4, // 视频
   EMBEDDING: 5, // 向量
-  RERANK: 6 // 重排
+  RERANK: 6, // 重排
+  MUSIC: 7, // 音乐
+  OCR: 8, // 文字识别
+  ASR: 9 // 语音识别
 }
+
+/**
+ * AI 文字识别状态的枚举，与后端 AiOcrStatusEnum 一致
+ */
+export const AiOcrStatusEnum = {
+  SUCCESS: 20, // 识别成功
+  FAIL: 30 // 识别失败
+}
+
+/**
+ * AI 语音识别状态的枚举，与后端 AiAsrStatusEnum 一致
+ */
+export const AiAsrStatusEnum = {
+  SUCCESS: 20, // 识别成功
+  FAIL: 30 // 识别失败
+}
+
+/**
+ * AI 聊天消息类型的枚举
+ */
+export const AiChatMessageTypeEnum = {
+  USER: 'user', // 用户
+  ASSISTANT: 'assistant', // 助手
+  SYSTEM: 'system' // 系统
+}
+
+/**
+ * AI 模型输入模态的枚举
+ */
+export const AiModelInputModalityEnum = {
+  TEXT: 'text', // 文本（必选）
+  IMAGE: 'image', // 图片
+  VIDEO: 'video' // 视频
+}
+
+/** AI 模型输入模态的选项 */
+export const AiModelInputModalityOptions = [
+  { label: '文本', value: AiModelInputModalityEnum.TEXT, disabled: true },
+  { label: '图片', value: AiModelInputModalityEnum.IMAGE },
+  { label: '视频', value: AiModelInputModalityEnum.VIDEO }
+]
 
 export const OtherPlatformEnum: ImageModelVO[] = [
   {
-    key: AiPlatformEnum.TONG_YI,
+    key: AiPlatformEnum.ALIBABA,
     name: '通义万相'
   },
   {
-    key: AiPlatformEnum.YI_YAN,
+    key: AiPlatformEnum.BAIDU,
     name: '百度千帆'
   },
   {
-    key: AiPlatformEnum.ZHI_PU,
+    key: AiPlatformEnum.ZHIPU,
     name: '智谱 AI'
   },
   {
-    key: AiPlatformEnum.SiliconFlow,
+    key: AiPlatformEnum.SILICONFLOW,
     name: '硅基流动'
   }
 ]
@@ -65,23 +115,274 @@ export const AiImageStatusEnum = {
  * AI 音乐生成状态的枚举
  */
 export const AiMusicStatusEnum = {
-  IN_PROGRESS: 10, // 进行中
+  PENDING: 10, // 待处理
+  IN_PROGRESS: 20, // 生成中
+  SAVING: 30, // 转存中
+  SUCCESS: 40, // 已完成
+  FAIL: 50 // 已失败
+}
+
+/** AI 音乐是否未结束：待处理、生成中、转存中 */
+export const isAiMusicRunning = (status?: number) =>
+  status === AiMusicStatusEnum.PENDING ||
+  status === AiMusicStatusEnum.IN_PROGRESS ||
+  status === AiMusicStatusEnum.SAVING
+
+/**
+ * AI 视频状态的枚举，与后端 AiVideoStatusEnum 一致
+ */
+export const AiVideoStatusEnum = {
+  PENDING: 10, // 待处理
+  IN_PROGRESS: 20, // 生成中
+  SAVING: 30, // 转存中
+  SUCCESS: 40, // 已完成
+  FAIL: 50 // 已失败
+}
+
+/** AI 视频是否未结束：待处理、生成中、转存中 */
+export const isAiVideoRunning = (status?: number) =>
+  status === AiVideoStatusEnum.PENDING ||
+  status === AiVideoStatusEnum.IN_PROGRESS ||
+  status === AiVideoStatusEnum.SAVING
+
+/**
+ * AI 视频创作类型的枚举，与后端 AiVideoTypeEnum 一致
+ */
+export const AiVideoTypeEnum = {
+  GENERATE: 1, // 视频生成
+  AVATAR: 2, // 数字人口播
+  MOTION: 3 // 动作模仿
+}
+
+/**
+ * AI 视频生成方式的枚举，与后端 AiVideoModeEnum 一致
+ */
+export const AiVideoModeEnum = {
+  TEXT: 'text', // 文生视频
+  IMAGE: 'image', // 图生视频
+  FIRST_LAST: 'first_last', // 首尾帧
+  REFERENCE: 'reference' // 参考生视频
+}
+
+/** AI 视频生成方式的选项：创作面板使用的短名称 */
+export const AiVideoModeOptions = [
+  { label: '文生', value: AiVideoModeEnum.TEXT },
+  { label: '图生', value: AiVideoModeEnum.IMAGE },
+  { label: '首尾帧', value: AiVideoModeEnum.FIRST_LAST },
+  { label: '参考', value: AiVideoModeEnum.REFERENCE }
+]
+
+/** AI 视频生成模式（quality）的选项：可灵旧版接口 */
+export const AiVideoQualityOptions = [
+  { label: '标准', value: 'std' },
+  { label: '高品质', value: 'pro' }
+]
+
+/** AI 视频提示词扩写（promptExpansionMode）的选项：MiniMax H3 */
+export const AiVideoPromptExpansionModeOptions = [
+  { label: '关闭', value: 'disabled' },
+  { label: '均衡', value: 'balanced' },
+  { label: '质量', value: 'quality' }
+]
+
+/** AI 视频镜头类型（shotType）的选项：通义万相 */
+export const AiVideoShotTypeOptions = [
+  { label: '单镜头', value: 'single' },
+  { label: '多镜头', value: 'multi' }
+]
+
+/**
+ * AI 短剧生成状态的枚举：角色形象、场景、视觉资产、镜头视频、成片共用；为空表示未生成
+ */
+export const AiDramaStatusEnum = {
+  PENDING: 10, // 待处理
+  IN_PROGRESS: 20, // 生成中
+  SAVING: 30, // 转存中
+  SUCCESS: 40, // 已完成
+  FAIL: 50 // 已失败
+}
+
+/** AI 短剧是否生成中：待处理、生成中、转存中 */
+export const isAiDramaRunning = (status?: number) =>
+  status === AiDramaStatusEnum.PENDING ||
+  status === AiDramaStatusEnum.IN_PROGRESS ||
+  status === AiDramaStatusEnum.SAVING
+
+/**
+ * AI 短剧工作台步骤的枚举：只在前端使用，不保存到项目
+ */
+export const AiDramaStepEnum = {
+  IDEA: 1, // 故事想法
+  SCRIPT: 2, // 剧本审阅
+  ASSET: 3, // 资产配置
+  STORYBOARD: 4 // 分镜与成片
+}
+
+/**
+ * AI 短剧项目状态的枚举
+ */
+export const AiDramaProjectStatusEnum = {
+  DRAFT: 10, // 草稿
+  SCRIPT_CHANGED: 20, // 剧本已修改：需要重新分析资产、拆分分镜
+  STORYBOARD_READY: 30 // 分镜已就绪
+}
+
+/**
+ * AI 短剧画风的枚举
+ */
+export const AiDramaStyleEnum = {
+  SCRIPT_TONE: 1 // 随剧本基调
+}
+
+/**
+ * AI 短剧音频类型的枚举
+ */
+export const AiDramaAudioTypeEnum = {
+  SAMPLE: 1, // 角色样音
+  NARRATION: 2, // 旁白
+  DIALOGUE: 3, // 对白
+  BGM: 4, // 配乐
+  REFERENCE: 5 // 参考音频
+}
+
+/**
+ * AI 短剧视觉资产类型的枚举
+ */
+export const AiDramaVisualAssetKindEnum = {
+  PROP: 1, // 道具
+  SHOT_FRAME: 2, // 关键帧
+  ARCHIVED_PROP: 3, // 道具的历史版本
+  ARCHIVED_SHOT_FRAME: 4 // 关键帧的历史版本
+}
+
+/**
+ * AI 音乐生成模式的枚举
+ */
+export const AiMusicGenerateModeEnum = {
+  INSPIRATION: 1, // 灵感
+  CUSTOM: 2, // 自定义
+  EXTEND: 3, // 续写
+  CONCAT: 4, // 拼接
+  UPLOAD: 5 // 上传
+}
+
+/**
+ * AI PPT 状态的枚举：任务、每页共用；每页的状态为空表示待生成
+ */
+export const AiPptStatusEnum = {
+  IN_PROGRESS: 10, // 生成中
   SUCCESS: 20, // 已完成
   FAIL: 30 // 已失败
 }
 
 /**
- * AI 写作类型的枚举
+ * AI PPT 格式的枚举
+ */
+export const AiPptModeEnum = {
+  DETAILED: 1, // 详细演示文稿
+  SLIDES: 2 // 演示用幻灯片
+}
+
+/**
+ * AI 技能文件类型的枚举
+ */
+export const AiSkillFileTypeEnum = {
+  DIRECTORY: 1, // 目录
+  FILE: 2 // 文件
+}
+
+/**
+ * AI PPT 素材来源的枚举
+ */
+export const AiPptSourceEnum = {
+  PASTE: 1, // 粘贴大纲
+  UPLOAD: 2 // 上传材料
+}
+
+/**
+ * AI PPT 语言的枚举
+ */
+export const AiPptLanguageEnum = {
+  ZH_CN: 'zh-CN', // 中文
+  EN: 'en' // English
+}
+
+/**
+ * AI PPT 导出格式的枚举
+ */
+export enum AiPptExportFormatEnum {
+  PPTX = 'pptx',
+  PDF = 'pdf'
+}
+
+/**
+ * AI PPT 支持的绘图平台，与后端一致
+ */
+export const AiPptImagePlatforms = [
+  AiPlatformEnum.OPENAI,
+  AiPlatformEnum.SILICONFLOW,
+  AiPlatformEnum.ALIBABA
+]
+
+/**
+ * AI PPT 材料支持的格式，与后端一致
+ */
+export const AiPptFileTypes = ['pdf', 'doc', 'docx', 'txt', 'md', 'markdown']
+
+/**
+ * AI 写作类型（写作场景）的枚举，与后端 AiWriteTypeEnum、字典 ai_write_type 一致
  */
 export enum AiWriteTypeEnum {
-  WRITING = 1, // 撰写
-  REPLY // 回复
+  WRITING = 1, // 文章写作
+  REPLY = 2, // 回复
+  GENERAL = 3, // 通用写作
+  WEEKLY_REPORT = 4, // 周报
+  XIAOHONGSHU = 5, // 小红书
+  REWRITE = 6, // 润色 / 改写
+  TRANSLATE = 7 // 文本翻译
 }
 
 // 表格展示对照map
 export const AiWriteTypeTableRender = {
-  [AiWriteTypeEnum.WRITING]: '撰写',
-  [AiWriteTypeEnum.REPLY]: '回复'
+  [AiWriteTypeEnum.WRITING]: '文章写作',
+  [AiWriteTypeEnum.REPLY]: '回复',
+  [AiWriteTypeEnum.GENERAL]: '通用写作',
+  [AiWriteTypeEnum.WEEKLY_REPORT]: '周报',
+  [AiWriteTypeEnum.XIAOHONGSHU]: '小红书',
+  [AiWriteTypeEnum.REWRITE]: '润色 / 改写',
+  [AiWriteTypeEnum.TRANSLATE]: '文本翻译'
+}
+
+/**
+ * AI 写作选项的枚举：字典 ai_write_format / ai_write_tone / ai_write_length / ai_write_language 的值 1 都是“自动”
+ */
+export const AiWriteOptionEnum = {
+  AUTO: 1, // 自动
+  TONE_PROFESSIONAL: 5 // 语气“专业”，周报默认
+}
+
+// 写作场景参数的可选值：与后端 AiWriteGenerateReqVO.SceneParams 的校验一致
+export const AiWriteXhsStyles = ['种草', '测评', '攻略', '日常分享'] // 小红书风格
+export const AiWriteRewriteModes = ['润色', '改写', '精简', '扩写'] // 润色 / 改写方式
+export const AiWriteTranslateDomains = ['通用', '技术', '法律', '医学', '商务', '文学'] // 翻译领域
+
+/** 各场景“原文”输入框的标题：没有配置的场景不显示原文 */
+export const AiWriteOriginalLabels: Partial<Record<AiWriteTypeEnum, string>> = {
+  [AiWriteTypeEnum.REPLY]: '原文',
+  [AiWriteTypeEnum.WEEKLY_REPORT]: '本周完成事项（每行一条）',
+  [AiWriteTypeEnum.REWRITE]: '原文',
+  [AiWriteTypeEnum.TRANSLATE]: '原文'
+}
+
+/** 各场景“要求”输入框的标题 */
+export const AiWritePromptLabels: Record<AiWriteTypeEnum, string> = {
+  [AiWriteTypeEnum.WRITING]: '写作主题',
+  [AiWriteTypeEnum.REPLY]: '回复要点',
+  [AiWriteTypeEnum.GENERAL]: '写作要求',
+  [AiWriteTypeEnum.WEEKLY_REPORT]: '下周计划 / 问题与风险',
+  [AiWriteTypeEnum.XIAOHONGSHU]: '主题 / 产品',
+  [AiWriteTypeEnum.REWRITE]: '补充要求',
+  [AiWriteTypeEnum.TRANSLATE]: '术语 / 补充说明'
 }
 
 // ========== 【图片 UI】相关的枚举 ==========
@@ -392,16 +693,42 @@ export const NijiVersionList = [
 
 // ========== 【写作 UI】相关的枚举 ==========
 
-/** 写作点击示例时的数据 **/
+/** 写作点击示例时的数据：按写作场景 **/
 export const WriteExample = {
-  write: {
+  [AiWriteTypeEnum.WRITING]: {
     prompt: 'vue',
     data: 'Vue.js 是一种用于构建用户界面的渐进式 JavaScript 框架。它的核心库只关注视图层，易于上手，同时也便于与其他库或已有项目整合。\n\nVue.js 的特点包括：\n- 响应式的数据绑定：Vue.js 会自动将数据与 DOM 同步，使得状态管理变得更加简单。\n- 组件化：Vue.js 允许开发者通过小型、独立和通常可复用的组件构建大型应用。\n- 虚拟 DOM：Vue.js 使用虚拟 DOM 实现快速渲染，提高了性能。\n\n在 Vue.js 中，一个典型的应用结构可能包括：\n1. 根实例：每个 Vue 应用都需要一个根实例作为入口点。\n2. 组件系统：可以创建自定义的可复用组件。\n3. 指令：特殊的带有前缀 v- 的属性，为 DOM 元素提供特殊的行为。\n4. 插值：用于文本内容，将数据动态地插入到 HTML。\n5. 计算属性和侦听器：用于处理数据的复杂逻辑和响应数据变化。\n6. 条件渲染：根据条件决定元素的渲染。\n7. 列表渲染：用于显示列表数据。\n8. 事件处理：响应用户交互。\n9. 表单输入绑定：处理表单输入和验证。\n10. 组件生命周期钩子：在组件的不同阶段执行特定的函数。\n\nVue.js 还提供了官方的路由器 Vue Router 和状态管理库 Vuex，以支持构建复杂的单页应用（SPA）。\n\n在开发过程中，开发者通常会使用 Vue CLI，这是一个强大的命令行工具，用于快速生成 Vue 项目脚手架，集成了诸如 Babel、Webpack 等现代前端工具，以及热重载、代码检测等开发体验优化功能。\n\nVue.js 的生态系统还包括大量的第三方库和插件，如 Vuetify（UI 组件库）、Vue Test Utils（测试工具）等，这些都极大地丰富了 Vue.js 的开发生态。\n\n总的来说，Vue.js 是一个灵活、高效的前端框架，适合从小型项目到大型企业级应用的开发。它的易用性、灵活性和强大的社区支持使其成为许多开发者的首选框架之一。'
   },
-  reply: {
+  [AiWriteTypeEnum.REPLY]: {
     originalContent: '领导，我想请假',
     prompt: '不批',
     data: '您的请假申请已收悉，经核实和考虑，暂时无法批准您的请假申请。\n\n如有特殊情况或紧急事务，请及时与我联系。\n\n祝工作顺利。\n\n谢谢。'
+  },
+  // 以下新场景的示例只填表单，不在预览放生成结果
+  [AiWriteTypeEnum.GENERAL]: {
+    prompt: '为公司年会写一段 1 分钟的开场主持词，热闹、接地气'
+  },
+  [AiWriteTypeEnum.WEEKLY_REPORT]: {
+    originalContent: '完成登录模块重构\n修复 3 个线上问题\n评审支付对接方案',
+    prompt: '下周上线新版登录；风险：第三方短信通道不稳定',
+    sceneParams: { period: '本周', role: '后端开发' }
+  },
+  [AiWriteTypeEnum.XIAOHONGSHU]: {
+    prompt: '一款适合程序员的机械键盘',
+    sceneParams: { audience: '每天敲代码的程序员', style: '测评', emoji: true, tagCount: 5 }
+  },
+  [AiWriteTypeEnum.REWRITE]: {
+    originalContent: '我们这个产品真的很好用，大家用了都说好，功能很多很强大。',
+    sceneParams: { mode: '润色' }
+  },
+  [AiWriteTypeEnum.TRANSLATE]: {
+    originalContent: '芋道是一个开源的快速开发平台。\n\n- 支持多租户\n- 支持工作流',
+    sceneParams: {
+      sourceLanguage: AiWriteOptionEnum.AUTO,
+      targetLanguage: 3,
+      domain: '技术',
+      preserveFormat: true
+    }
   }
 }
 
@@ -468,3 +795,116 @@ export const MindMapContentExample = `# Java 技术栈
 ### IntelliJ IDEA
 ### Eclipse
 ### Visual Studio Code`
+
+// ========== 【思考配置】相关的枚举 ==========
+
+/** AI 思考档位的展示名，未列出的档位直接展示档位值 */
+export const AiReasoningLevelLabels: Record<string, string> = {
+  off: '关闭',
+  on: '开启',
+  minimal: '最低',
+  low: '低',
+  medium: '中',
+  high: '高',
+  xhigh: '很高',
+  max: '最高'
+}
+
+/** AI 思考配置的预设 */
+export interface AiReasoningPreset {
+  key: string // 预设标识
+  name: string // 预设名称
+  note: string // 说明
+  defaultLevel: string // 默认档位
+  levels: [string, Record<string, unknown>][] // 档位及思考参数，从低到高
+}
+
+/**
+ * AI 思考配置的预设
+ *
+ * 只覆盖方案中已核对过官方文档的厂商和型号；预设只是示例，保存前仍需按厂商文档核对
+ */
+export const AiReasoningPresets: AiReasoningPreset[] = [
+  {
+    key: 'deepseek',
+    name: 'DeepSeek · 默认 high',
+    note: '思考模式下 temperature 被厂商忽略。',
+    defaultLevel: 'high',
+    levels: [
+      ['off', { thinking: { type: 'disabled' } }],
+      ['low', { thinking: { type: 'enabled' }, reasoning_effort: 'low' }],
+      ['high', { thinking: { type: 'enabled' }, reasoning_effort: 'high' }],
+      ['max', { thinking: { type: 'enabled' }, reasoning_effort: 'max' }]
+    ]
+  },
+  {
+    key: 'glm53',
+    name: 'GLM-5.3 · 只有一个非 off 档',
+    note: '官方文档：GLM-5.3 不能关闭思考。',
+    defaultLevel: 'on',
+    levels: [['on', { thinking: { type: 'enabled' } }]]
+  },
+  {
+    key: 'kimi3',
+    name: 'Kimi k3（没有 off 档）',
+    note: 'k3 系列只支持 reasoning_effort。没有 off 只表示没提供关闭选项，不代表厂商一定在思考。',
+    defaultLevel: 'max',
+    levels: [
+      ['low', { reasoning_effort: 'low' }],
+      ['high', { reasoning_effort: 'high' }],
+      ['max', { reasoning_effort: 'max' }]
+    ]
+  },
+  {
+    key: 'minimax',
+    name: 'MiniMax · MiniMax-M3',
+    note: 'M3.1-Flash 传 disabled 返回 400，该型号不要配 off；M2.x 的 off 不生效。',
+    defaultLevel: 'on',
+    levels: [
+      ['off', { thinking: { type: 'disabled' } }],
+      ['on', { thinking: { type: 'adaptive' } }]
+    ]
+  },
+  {
+    key: 'mimo',
+    name: '小米 MiMo · V2.6 系列',
+    note: '默认开启思考；思考模式下 temperature、top_p 被厂商固定为推荐值。',
+    defaultLevel: 'on',
+    levels: [
+      ['off', { thinking: { type: 'disabled' } }],
+      ['on', { thinking: { type: 'enabled' } }]
+    ]
+  },
+  {
+    key: 'qwen',
+    name: '通义 · 混合思考模型',
+    note: '未配置时仍是 enableThinking(true)。配置后每档必须写 enable_thinking；「仅思考」模型无法关闭。',
+    defaultLevel: 'on',
+    levels: [
+      ['off', { enable_thinking: false }],
+      ['on', { enable_thinking: true }]
+    ]
+  },
+  {
+    key: 'openai',
+    name: 'OpenAI · 推理模型（Chat）',
+    note: 'reasoning_effort 写强类型字段；temperature、max_tokens 仍会发送，需要去掉它们的型号暂不支持。',
+    defaultLevel: 'medium',
+    levels: [
+      ['low', { reasoning_effort: 'low' }],
+      ['medium', { reasoning_effort: 'medium' }],
+      ['high', { reasoning_effort: 'high' }]
+    ]
+  },
+  {
+    key: 'openrouter',
+    name: 'OpenRouter（OpenAI 平台 + 自定义 URL）',
+    note: 'reasoning 通过 extraBody 追加到请求顶层。exclude 只隐藏返回内容，不能当关闭用。',
+    defaultLevel: 'high',
+    levels: [
+      ['off', { reasoning: { enabled: false } }],
+      ['low', { reasoning: { effort: 'low' } }],
+      ['high', { reasoning: { effort: 'high' } }]
+    ]
+  }
+]

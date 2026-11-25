@@ -38,7 +38,7 @@
           v-model="queryParams.customerId"
           clearable
           filterable
-          placeholder="请选择供客户"
+          placeholder="请选择客户"
           class="!w-240px"
         >
           <el-option
@@ -116,10 +116,10 @@
           class="!w-240px"
         />
       </el-form-item>
-      <el-form-item label="采购单号" prop="bizNo">
+      <el-form-item label="销售单号" prop="bizNo">
         <el-input
           v-model="queryParams.bizNo"
-          placeholder="请输入采购单号"
+          placeholder="请输入销售单号"
           clearable
           @keyup.enter="handleQuery"
           class="!w-240px"
@@ -169,7 +169,7 @@
     >
       <el-table-column width="30" label="选择" type="selection" />
       <el-table-column min-width="180" label="收款单号" align="center" prop="no" />
-      <el-table-column label="供应商" align="center" prop="supplierName" />
+      <el-table-column label="客户" align="center" prop="customerName" />
       <el-table-column
         label="收款时间"
         align="center"

@@ -4,17 +4,27 @@
       <h3 class="m-0 px-7 shrink-0 flex items-center justify-between">
         <span>预览</span>
         <!-- 展示在右上角 -->
-        <el-button color="#846af7" v-show="showCopy" @click="copyContent" size="small">
-          <template #icon>
-            <Icon icon="ph:copy-bold" />
-          </template>
-          复制
-        </el-button>
+        <div class="flex items-center gap-8px">
+          <TokenUsage
+            v-if="usage"
+            :pending="isWriting"
+            :input-tokens="usage.inputTokens"
+            :output-tokens="usage.outputTokens"
+            :total-tokens="usage.totalTokens"
+          />
+          <el-button type="primary" v-show="showCopy" @click="copyContent" size="small">
+            <template #icon>
+              <Icon icon="ph:copy-bold" />
+            </template>
+            复制
+          </el-button>
+        </div>
       </h3>
     </template>
 
-    <div ref="contentRef" class="hide-scroll-bar h-full box-border overflow-y-auto">
-      <div class="w-full min-h-full relative flex-grow bg-white box-border p-3 sm:p-7">
+    <div class="hide-scroll-bar h-full box-border overflow-y-auto">
+      <!-- 编辑框撑满预览区、内部滚动（与 OCR 识别结果一致），不依赖 autosize 测量，避免文字被裁切 -->
+      <div class="w-full h-full relative flex flex-col bg-white box-border p-3 sm:p-7">
         <!-- 终止生成内容的按钮 -->
         <el-button
           v-show="isWriting"
@@ -29,9 +39,10 @@
         </el-button>
         <el-input
           id="inputId"
+          ref="inputRef"
           type="textarea"
           v-model="compContent"
-          autosize
+          class="write-text min-h-0 flex-1"
           :input-style="{ boxShadow: 'none' }"
           resize="none"
           placeholder="生成的内容……"
@@ -43,6 +54,8 @@
 
 <script setup lang="ts">
 import { useClipboard } from '@vueuse/core'
+import { AiWriteGenerateRespVO } from '@/api/ai/write'
+import TokenUsage from '@/views/ai/components/TokenUsage.vue'
 
 const message = useMessage() // 消息弹窗
 const { copied, copy } = useClipboard({ legacy: true }) // 粘贴板
@@ -57,6 +70,11 @@ const props = defineProps({
     // 是否正在生成文章
     type: Boolean,
     default: false
+  },
+  usage: {
+    // 最近一帧的生成结果，用于展示 Token 用量；为空时（示例、重置）不展示
+    type: Object as PropType<AiWriteGenerateRespVO>,
+    default: undefined
   }
 })
 
@@ -72,11 +90,12 @@ const compContent = computed({
   }
 })
 
-/** 滚动 */
-const contentRef = ref<HTMLDivElement>()
+/** 滚动：编辑框内部滚动，生成过程中滚到底部 */
+const inputRef = ref()
 defineExpose({
   scrollToBottom() {
-    contentRef.value?.scrollTo(0, contentRef.value?.scrollHeight)
+    const textarea: HTMLTextAreaElement | undefined = inputRef.value?.textarea
+    textarea?.scrollTo(0, textarea.scrollHeight)
   }
 })
 
@@ -102,6 +121,12 @@ watch(copied, (val) => {
   &::-webkit-scrollbar {
     width: 0;
     height: 0;
+  }
+}
+
+.write-text {
+  :deep(.el-textarea__inner) {
+    height: 100%;
   }
 }
 

@@ -112,6 +112,37 @@ export const getDictLabel = (dictType: string, value: any): string => {
 }
 
 export enum DICT_TYPE {
+  OA_REIMBURSE_STATUS = 'oa_reimburse_status',
+  OA_PAY_STATUS = 'oa_pay_status',
+  OA_TRANSPORT_TYPE = 'oa_transport_type',
+  OA_EXPENSE_TYPE = 'oa_expense_type',
+  OA_APPLY_URGENCY = 'oa_apply_urgency',
+  OA_REIMBURSEMENT_PAYMENT_METHOD = 'oa_reimbursement_payment_method',
+  OA_OVERTIME_TYPE = 'oa_overtime_type',
+  OA_LEAVE_TYPE = 'oa_leave_type',
+  OA_VEHICLE_STATUS = 'oa_vehicle_status',
+  OA_FILE_CATEGORY = 'oa_file_category',
+  OA_FILE_PERMISSION_LEVEL = 'oa_file_permission_level',
+  OA_FILE_SUBJECT_TYPE = 'oa_file_subject_type',
+  OA_VEHICLE_RETURN_STATUS = 'oa_vehicle_return_status',
+  OA_MEETING_ROOM_TYPE = 'oa_meeting_room_type',
+  OA_SUPPLY_CATEGORY = 'oa_supply_category', // 办公用品分类
+  OA_SUPPLY_MANAGE_TYPE = 'oa_supply_manage_type', // 办公用品管理类型
+  OA_SUPPLY_USE_TYPE = 'oa_supply_use_type', // 办公用品使用类型
+  OA_SUPPLY_PICKUP_METHOD = 'oa_supply_pickup_method', // 办公用品领取方式
+  OA_SUPPLY_ITEM_STATUS = 'oa_supply_item_status', // 办公用品明细状态
+  OA_MEETING_ROOM_STATUS = 'oa_meeting_room_status',
+  OA_MEETING_ROOM_EQUIPMENT = 'oa_meeting_room_equipment',
+  OA_MEETING_ROOM_BOOKING_SCOPE = 'oa_meeting_room_booking_scope',
+  OA_MEETING_ROOM_REMINDER_TYPE = 'oa_meeting_room_reminder_type',
+  OA_MEETING_ROOM_USE_STATUS = 'oa_meeting_room_use_status',
+  OA_VEHICLE_CATEGORY = 'oa_vehicle_category',
+  OA_SEAL_TYPE = 'oa_seal_type',
+  OA_SEAL_CATEGORY = 'oa_seal_category',
+  OA_SEAL_STATUS = 'oa_seal_status',
+  OA_SEAL_APPLY_TYPE = 'oa_seal_apply_type',
+  OA_SEAL_USE_MODE = 'oa_seal_use_mode',
+  OA_SEAL_USE_STATUS = 'oa_seal_use_status',
   USER_TYPE = 'user_type',
   COMMON_STATUS = 'common_status',
   TERMINAL = 'terminal', // 终端
@@ -152,6 +183,7 @@ export enum DICT_TYPE {
   BPM_TASK_CANDIDATE_STRATEGY = 'bpm_task_candidate_strategy',
   BPM_PROCESS_INSTANCE_STATUS = 'bpm_process_instance_status',
   BPM_TASK_STATUS = 'bpm_task_status',
+  BPM_COMMENT_TYPE = 'bpm_comment_type',
   BPM_OA_LEAVE_TYPE = 'bpm_oa_leave_type',
   BPM_PROCESS_LISTENER_TYPE = 'bpm_process_listener_type',
   BPM_PROCESS_LISTENER_VALUE_TYPE = 'bpm_process_listener_value_type',
@@ -217,6 +249,105 @@ export enum DICT_TYPE {
   CRM_PRODUCT_UNIT = 'crm_product_unit', // CRM 产品单位
   CRM_FOLLOW_UP_TYPE = 'crm_follow_up_type', // CRM 跟进方式
 
+  // ========== PMS - 项目管理模块 ==========
+  PMS_PROJECT_TYPE = 'pms_project_type', // PMS 项目类型
+  PMS_PROJECT_STATUS = 'pms_project_status', // PMS 项目状态
+  PMS_PROJECT_LEVEL = 'pms_project_level', // PMS 项目优先级
+  PMS_PROJECT_GROUP_TYPE = 'pms_project_group_type', // PMS 项目分组类型
+  PMS_PROJECT_SCENE_TYPE = 'pms_project_scene_type', // PMS 项目列表场景
+  PMS_PROJECT_SORT_TYPE = 'pms_project_sort_type', // PMS 项目排序类型
+  PMS_PROJECT_MEMBER_LEVEL = 'pms_project_member_level', // PMS 项目成员权限级别
+  PMS_ITERATION_STATUS = 'pms_iteration_status', // PMS 迭代状态
+  PMS_WORK_ITEM_TYPE = 'pms_work_item_type', // PMS 工作项类型
+  PMS_WORK_ITEM_STATUS_TYPE = 'pms_work_item_status_type', // PMS 工作项语义状态
+  PMS_WORK_ITEM_LIFECYCLE_STATUS = 'pms_work_item_lifecycle_status', // PMS 工作项生命周期状态
+  PMS_WORK_ITEM_PRIORITY = 'pms_work_item_priority', // PMS 工作项优先级
+  PMS_WORK_ITEM_DEFECT_TYPE = 'pms_work_item_defect_type', // PMS 工作项缺陷类型
+  PMS_KNOWLEDGE_OBJECT_TYPE = 'pms_knowledge_object_type', // PMS 知识对象类型
+  PMS_KNOWLEDGE_DOCUMENT_TYPE = 'pms_knowledge_document_type', // PMS 知识文档类型
+  PMS_KNOWLEDGE_DOCUMENT_STATUS = 'pms_knowledge_document_status', // PMS 知识文档状态
+  PMS_KNOWLEDGE_CONTENT_LEVEL = 'pms_knowledge_content_level', // PMS 知识内容协作等级
+  PMS_KNOWLEDGE_GROUP_TYPE = 'pms_knowledge_group_type', // PMS 知识库分组类型
+  PMS_KNOWLEDGE_LIBRARY_MEMBER_LEVEL = 'pms_knowledge_library_member_level', // PMS 知识库成员等级
+
+  // ========== OA - 办公自动化模块 ==========
+  OA_PRIORITY = 'oa_priority', // OA 优先级
+  OA_SCHEDULE_TYPE = 'oa_schedule_type', // OA 日程类型
+  OA_PLAN_TYPE = 'oa_plan_type', // OA 计划类型
+  OA_PLAN_STATUS = 'oa_plan_status', // OA 计划状态
+  OA_WORK_REPORT_TYPE = 'oa_work_report_type', // OA 工作汇报类型
+  OA_WORK_REPORT_STATUS = 'oa_work_report_status', // OA 工作汇报状态
+  OA_NOTE_TYPE = 'oa_note_type', // OA 笔记类型
+  OA_DISCUSSION_TYPE = 'oa_discussion_type', // OA 讨论类型
+  OA_TASK_TYPE = 'oa_task_type', // OA 任务类型
+  OA_TASK_STATUS = 'oa_task_status', // OA 任务状态
+  OA_ANNOUNCEMENT_TYPE = 'oa_announcement_type', // OA 公告类型
+  OA_ATTENDANCE_TYPE = 'oa_attendance_type', // OA 考勤类型
+  OA_ATTENDANCE_STATUS = 'oa_attendance_status', // OA 考勤状态
+
+  // ========== FMS - 财务管理模块 ==========
+  FMS_ACCOUNT_USER_LEVEL = 'fms_account_user_level', // FMS 账套用户权限级别
+  FMS_SUBJECT_CATEGORY = 'fms_subject_category', // FMS 科目类别
+  FMS_DEBIT_CREDIT_DIRECTION = 'fms_debit_credit_direction', // FMS 借贷方向
+  FMS_FINANCE_INDICATOR_TYPE = 'fms_finance_indicator_type', // FMS 财务指标取数报表类型
+  FMS_SUBJECT_TYPE = 'fms_subject_type', // FMS 科目类型
+  FMS_AUXILIARY_TYPE = 'fms_auxiliary_type', // FMS 辅助核算类别
+  FMS_VOUCHER_STATUS = 'fms_voucher_status', // FMS 凭证状态
+  FMS_VOUCHER_TIDY_TYPE = 'fms_voucher_tidy_type', // FMS 凭证整理方式
+  FMS_FORMULA_RULE = 'fms_formula_rule', // FMS 报表公式取数规则
+  FMS_REPORT_TYPE = 'fms_report_type', // FMS 财务报表类型
+  FMS_REPORT_PERIOD_TYPE = 'fms_report_period_type', // FMS 财务报表期间类型
+  FMS_LEDGER_BALANCE_MODE = 'fms_ledger_balance_mode', // FMS 账簿余额方向模式
+  FMS_ACCOUNTING_STANDARD = 'fms_accounting_standard', // FMS 会计制度
+  FMS_CLOSING_TYPE = 'fms_closing_type', // FMS 结账方案类型
+  FMS_CLOSING_TIME_TYPE = 'fms_closing_time_type', // FMS 结账取数期间
+  FMS_CLOSING_VOUCHER_TYPE = 'fms_closing_voucher_type', // FMS 结账凭证类型
+  FMS_CLOSING_TEMPLATE_CATEGORY = 'fms_closing_template_category', // FMS 结账模板分类
+
+  // ========== HRM - 人力资源模块 ==========
+  HRM_EMPLOYEE_ENTRY_STATUS = 'hrm_employee_entry_status', // HRM 员工入职状态
+  HRM_EMPLOYEE_STATUS = 'hrm_employee_status', // HRM 员工状态
+  HRM_EMPLOYEE_TYPE = 'hrm_employee_type', // HRM 聘用形式
+  HRM_EMPLOYEE_EDUCATION = 'hrm_employee_education', // HRM 员工学历
+  HRM_RECRUIT_POST_STATUS = 'hrm_recruit_post_status', // HRM 招聘职位状态
+  HRM_RECRUIT_JOB_NATURE = 'hrm_recruit_job_nature', // HRM 招聘工作性质
+  HRM_RECRUIT_WORK_TIME = 'hrm_recruit_work_time', // HRM 招聘工作经验
+  HRM_RECRUIT_POST_EDUCATION = 'hrm_recruit_post_education', // HRM 招聘职位学历要求
+  HRM_RECRUIT_SALARY_UNIT = 'hrm_recruit_salary_unit', // HRM 招聘薪资单位
+  HRM_RECRUIT_EMERGENCY_LEVEL = 'hrm_recruit_emergency_level', // HRM 招聘紧急程度
+  HRM_RECRUIT_CANDIDATE_STATUS = 'hrm_recruit_candidate_status', // HRM 招聘候选人状态
+  HRM_RECRUIT_CANDIDATE_EDUCATION = 'hrm_recruit_candidate_education', // HRM 招聘候选人学历
+  HRM_RECRUIT_INTERVIEW_TYPE = 'hrm_recruit_interview_type', // HRM 招聘面试方式
+  HRM_RECRUIT_INTERVIEW_RESULT = 'hrm_recruit_interview_result', // HRM 招聘面试结果
+  HRM_ATTENDANCE_CLOCK_TYPE = 'hrm_attendance_clock_type', // HRM 打卡类型
+  HRM_ATTENDANCE_CLOCK_SOURCE = 'hrm_attendance_clock_source', // HRM 打卡来源
+  HRM_ATTENDANCE_CLOCK_STATUS = 'hrm_attendance_clock_status', // HRM 打卡状态
+  HRM_ATTENDANCE_HOLIDAY_TYPE = 'hrm_attendance_holiday_type', // HRM 考勤节假日类型
+  HRM_ATTENDANCE_LEAVE_TYPE = 'hrm_attendance_leave_type', // HRM 请假类型
+  HRM_ATTENDANCE_YES_NO = 'hrm_attendance_yes_no', // HRM 考勤是否
+  HRM_ATTENDANCE_LATE_EARLY_DEDUCT_METHOD = 'hrm_attendance_late_early_deduct_method', // HRM 迟到早退扣款方式
+  HRM_ATTENDANCE_ABSENTEEISM_DEDUCT_METHOD = 'hrm_attendance_absenteeism_deduct_method', // HRM 旷工扣款方式
+  HRM_ATTENDANCE_MISSCARD_DEDUCT_METHOD = 'hrm_attendance_misscard_deduct_method', // HRM 缺卡扣款方式
+  HRM_SALARY_CHANGE_REASON = 'hrm_salary_change_reason', // HRM 薪资调整原因
+  HRM_SALARY_CHANGE_TYPE = 'hrm_salary_change_type', // HRM 薪资档案状态
+  HRM_SALARY_CHANGE_RECORD_STATUS = 'hrm_salary_change_record_status', // HRM 薪资调整记录状态
+  HRM_SALARY_MONTH_STATUS = 'hrm_salary_month_status', // HRM 工资表状态
+  HRM_SALARY_TAX_TYPE = 'hrm_salary_tax_type', // HRM 薪资计税类型
+  HRM_SALARY_OPTION_TYPE = 'hrm_salary_option_type', // HRM 薪资项类型
+  HRM_SALARY_SLIP_READ_STATUS = 'hrm_salary_slip_read_status', // HRM 工资条阅读状态
+  HRM_SALARY_YES_NO = 'hrm_salary_yes_no', // HRM 薪资是否
+  HRM_INSURANCE_SCHEME_TYPE = 'hrm_insurance_scheme_type', // HRM 社保方案类型
+  HRM_INSURANCE_PROJECT_TYPE = 'hrm_insurance_project_type', // HRM 社保项目类型
+  HRM_INSURANCE_MONTH_STATUS = 'hrm_insurance_month_status', // HRM 社保表状态
+  HRM_INSURANCE_EMP_STATUS = 'hrm_insurance_emp_status', // HRM 参保状态
+  HRM_PERFORMANCE_PLAN_STATUS = 'hrm_performance_plan_status', // HRM 绩效计划状态
+  HRM_PERFORMANCE_STAGE_STATUS = 'hrm_performance_stage_status', // HRM 绩效阶段状态
+  HRM_PERFORMANCE_ASSESSMENT_STAGE_STATUS = 'hrm_performance_assessment_stage_status', // HRM 绩效考核阶段处理状态
+  HRM_PERFORMANCE_APPEAL_STATUS = 'hrm_performance_appeal_status', // HRM 绩效申诉状态
+  HRM_PERFORMANCE_SCORE_CALCULATION = 'hrm_performance_score_calculation', // HRM 绩效计分方式
+  HRM_PERFORMANCE_UPPER_LIMIT_TYPE = 'hrm_performance_upper_limit_type', // HRM 绩效上限类型
+  HRM_PERFORMANCE_YES_NO = 'hrm_performance_yes_no', // HRM 绩效是否
+
   // ========== ERP - 企业资源计划模块  ==========
   ERP_AUDIT_STATUS = 'erp_audit_status', // ERP 审批状态
   ERP_STOCK_RECORD_BIZ_TYPE = 'erp_stock_record_biz_type', // 库存明细的业务类型
@@ -232,7 +363,18 @@ export enum DICT_TYPE {
   AI_PLATFORM = 'ai_platform', // AI 平台
   AI_MODEL_TYPE = 'ai_model_type', // AI 模型类型
   AI_IMAGE_STATUS = 'ai_image_status', // AI 图片状态
+  AI_IMAGE_MODE = 'ai_image_mode', // AI 绘图生成方式
   AI_MUSIC_STATUS = 'ai_music_status', // AI 音乐状态
+  AI_VIDEO_STATUS = 'ai_video_status', // AI 视频状态
+  AI_VIDEO_TYPE = 'ai_video_type', // AI 视频创作类型
+  AI_DRAMA_STATUS = 'ai_drama_status', // AI 短剧生成状态
+  AI_DRAMA_PROJECT_STATUS = 'ai_drama_project_status', // AI 短剧项目状态
+  AI_DRAMA_STYLE = 'ai_drama_style', // AI 短剧画风
+  AI_DRAMA_CHARACTER_ROLE_LEVEL = 'ai_drama_character_role_level', // AI 短剧角色等级
+  AI_DRAMA_CHARACTER_COSTUME_TIER = 'ai_drama_character_costume_tier', // AI 短剧角色服装华丽度
+  AI_DRAMA_SCENE_TYPE = 'ai_drama_scene_type', // AI 短剧镜头场景类型
+  AI_DRAMA_TASK_TYPE = 'ai_drama_task_type', // AI 短剧生成任务类型
+  AI_PPT_STATUS = 'ai_ppt_status', // AI PPT 状态
   AI_GENERATE_MODE = 'ai_generate_mode', // AI 生成模式
   AI_WRITE_TYPE = 'ai_write_type', // AI 写作类型
   AI_WRITE_LENGTH = 'ai_write_length', // AI 写作长度
@@ -240,6 +382,16 @@ export enum DICT_TYPE {
   AI_WRITE_TONE = 'ai_write_tone', // AI 写作语气
   AI_WRITE_LANGUAGE = 'ai_write_language', // AI 写作语言
   AI_MCP_CLIENT_NAME = 'ai_mcp_client_name', // AI MCP Client 名字
+  AI_REQUEST_LOG_BIZ_TYPE = 'ai_request_log_biz_type', // AI 请求日志业务类型
+  AI_REQUEST_LOG_STATUS = 'ai_request_log_status', // AI 请求日志状态
+
+  // ========== AI1 - 人工智能模块（Spring AI 版）  ==========
+  AI1_MODEL_TYPE = 'ai1_model_type', // AI1 模型类型
+  AI1_MCP_TRANSPORT = 'ai1_mcp_transport', // AI1 MCP 传输方式
+  AI1_KNOWLEDGE_DOCUMENT_STATUS = 'ai1_knowledge_document_status', // AI1 知识文档状态
+  AI1_SESSION_MESSAGE_ROLE = 'ai1_session_message_role', // AI1 会话消息角色
+  AI1_SESSION_MESSAGE_STATUS = 'ai1_session_message_status', // AI1 会话消息状态
+  AI1_SKILL_FILE_TYPE = 'ai1_skill_file_type', // AI1 SKILL 文件类型
 
   // ========== IOT - 物联网模块  ==========
   IOT_NET_TYPE = 'iot_net_type', // IOT 联网方式
@@ -252,7 +404,6 @@ export enum DICT_TYPE {
   IOT_THING_MODEL_TYPE = 'iot_thing_model_type', // IOT 产品功能类型
   IOT_THING_MODEL_UNIT = 'iot_thing_model_unit', // IOT 物模型单位
   IOT_RW_TYPE = 'iot_rw_type', // IOT 读写类型
-  // TODO @芋艿：貌似这几个多了 _enum 后缀
   IOT_DATA_SINK_TYPE_ENUM = 'iot_data_sink_type_enum', // IoT 数据流转目的类型
   IOT_RULE_SCENE_TRIGGER_TYPE_ENUM = 'iot_rule_scene_trigger_type_enum', // IoT 场景流转的触发类型枚举
   IOT_RULE_SCENE_ACTION_TYPE_ENUM = 'iot_rule_scene_action_type_enum', // IoT 规则场景的触发类型枚举
@@ -337,6 +488,14 @@ export enum DICT_TYPE {
   MES_WM_BARCODE_FORMAT = 'mes_wm_barcode_format', // MES 条码格式
   MES_WM_BARCODE_BIZ_TYPE = 'mes_wm_barcode_biz_type', // MES 条码业务类型
   MES_WM_PACKAGE_STATUS = 'mes_wm_package_status', // MES 装箱单状态
+
+  // ========== OA - 公文管理 ==========
+  OA_OFFICIAL_DOC_SECRET_LEVEL = 'oa_official_doc_secret_level', // 公文密级
+  OA_OFFICIAL_DOC_URGENCY_LEVEL = 'oa_official_doc_urgency_level', // 紧急程度
+  OA_OFFICIAL_DOC_PUBLIC_CATEGORY = 'oa_official_doc_public_category', // 公开类别
+  OA_OFFICIAL_DOC_SEPARATOR_TYPE = 'oa_official_doc_separator_type', // 模板分隔线
+  OA_OFFICIAL_DOC_HANDLE_STATUS = 'oa_official_doc_handle_status', // 收文办理状态
+  OA_OFFICIAL_DOC_RECEIVE_TYPE = 'oa_official_doc_receive_type', // 收文类型
 
   // ========== IM - 即时通讯模块  ==========
   IM_CONTENT_TYPE = 'im_content_type', // IM 内容类型

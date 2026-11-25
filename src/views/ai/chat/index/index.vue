@@ -60,6 +60,7 @@
               ref="messageRef"
               :conversation="activeConversation"
               :list="messageList"
+              :in-progress="conversationInProgress"
               @on-delete-success="handleMessageDelete"
               @on-edit="handleMessageEdit"
               @on-refresh="handleMessageRefresh"
@@ -88,10 +89,52 @@
           <div class="flex justify-between pb-0 pt-5px">
             <div class="flex items-center">
               <MessageFileUpload v-model="uploadFiles" :limit="5" :max-size="10" class="mr-10px" />
+              <!-- 语音输入：有可用的语音识别模型才展示；识别结果追加到输入框，不自动发送 -->
+              <el-button
+                v-if="asrModel"
+                size="small"
+                class="mr-10px"
+                :type="voiceRecording ? 'danger' : undefined"
+                :loading="voiceTranscribing"
+                @click="handleVoiceInput"
+              >
+                <Icon :icon="voiceRecording ? 'ep:video-pause' : 'ep:microphone'" class="mr-3px" />
+                {{ voiceRecording ? '停止录音' : '语音输入' }}
+              </el-button>
               <el-switch v-model="enableContext" />
               <span class="ml-5px mr-15px text-14px text-#8f8f8f">上下文</span>
               <el-switch v-model="enableWebSearch" />
               <span class="ml-5px text-14px text-#8f8f8f">联网搜索</span>
+              <!-- 思考等级：只有模型配置了档位才展示；只有一档时固定展示，不可点击 -->
+              <el-tag v-if="reasoningLevels.length === 1" type="info" size="small" class="ml-15px">
+                思考等级：{{ getReasoningLevelLabel(reasoningLevels[0]) }}
+              </el-tag>
+              <el-dropdown
+                v-else-if="reasoningLevels.length > 1"
+                trigger="click"
+                class="ml-15px"
+                @command="reasoningSelectedLevel = $event"
+              >
+                <el-button size="small">
+                  思考等级：{{ getReasoningLevelLabel(reasoningSelectedLevel) }}
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item
+                      v-for="level in reasoningLevels"
+                      :key="level"
+                      :command="level"
+                      :style="
+                        level === reasoningSelectedLevel
+                          ? { color: 'var(--el-color-primary)' }
+                          : undefined
+                      "
+                    >
+                      {{ getReasoningLevelLabel(level) }}
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </div>
             <el-button
               type="primary"
@@ -133,6 +176,18 @@ import MessageListEmpty from './components/message/MessageListEmpty.vue'
 import MessageLoading from './components/message/MessageLoading.vue'
 import MessageNewConversation from './components/message/MessageNewConversation.vue'
 import MessageFileUpload from './components/message/MessageFileUpload.vue'
+import { AiAsrStatusEnum, AiChatMessageTypeEnum, AiModelTypeEnum } from '@/views/ai/utils/constants'
+import { ModelApi, ModelVO } from '@/api/ai/model/model'
+import { AsrApi } from '@/api/ai/asr'
+import { useUpload } from '@/components/UploadFile/src/useUpload'
+import type { UploadRequestOptions } from 'element-plus'
+import { formatDate } from '@/utils/formatTime'
+import { getAsrMaxSeconds, startWavRecorder, WavRecorder } from '@/views/ai/utils/asr'
+import {
+  getReasoningLevelLabel,
+  getReasoningLevels,
+  resolveReasoningLevel
+} from '@/views/ai/utils/utils'
 
 /** AI 聊天对话 列表 */
 defineOptions({ name: 'AiChat' })
@@ -166,6 +221,17 @@ const prompt = ref<string>() // prompt
 const enableContext = ref<boolean>(true) // 是否开启上下文
 const enableWebSearch = ref<boolean>(false) // 是否开启联网搜索
 const uploadFiles = ref<string[]>([]) // 上传的文件 URL 列表
+// 思考档位：只存在于本次发送，不持久化
+const reasoningSelectedLevel = ref<string>() // 选中的思考档位
+const reasoningLevels = computed(() =>
+  getReasoningLevels(activeConversation.value?.modelReasoningConfig)
+) // 当前对话模型配置的思考档位，按配置顺序；未配置时为空数组
+// 语音输入
+const asrModel = ref<ModelVO>() // 语音识别模型：取第一个可用的模型，没有时不展示
+const voiceRecording = ref(false) // 是否正在录音
+const voiceTranscribing = ref(false) // 是否正在识别
+let voiceRecorder: WavRecorder | undefined
+let voiceRecordTimer: any // 录音达到最长时长后自动停止
 // 接收 Stream 消息
 const receiveMessageFullText = ref('')
 const receiveMessageDisplayedText = ref('')
@@ -254,6 +320,21 @@ const handleConversationCreateSuccess = async () => {
   uploadFiles.value = []
 }
 
+// =========== 【思考档位】相关 ===========
+
+/** 重置思考选择为模型默认档位：切换对话、切换模型时触发 */
+const resetReasoningSelection = () => {
+  reasoningSelectedLevel.value = resolveReasoningLevel(
+    activeConversation.value?.modelReasoningConfig
+  )
+}
+// 只监听对话编号和模型编号：同一对话重新拉取详情（如改标题）不重置已选档位
+watch(
+  [() => activeConversation.value?.id, () => activeConversation.value?.modelId],
+  resetReasoningSelection,
+  { immediate: true }
+)
+
 // =========== 【消息列表】相关 ===========
 
 /** 获取消息 message 列表 */
@@ -300,7 +381,7 @@ const messageList = computed(() => {
       {
         id: 0,
         conversationId: activeConversation.value.id || 0,
-        type: 'system',
+        type: AiChatMessageTypeEnum.SYSTEM,
         userId: '',
         roleId: '',
         model: 0,
@@ -442,13 +523,18 @@ const doSendMessageStream = async (userMessage: ChatMessageVO) => {
   conversationInProgress.value = true
   // 设置为空
   receiveMessageFullText.value = ''
+  // 本次思考档位：发送、重新生成都使用当前选择
+  const reasoningLevel = resolveReasoningLevel(
+    activeConversation.value?.modelReasoningConfig,
+    reasoningSelectedLevel.value
+  )
 
   try {
     // 1.1 先添加两个假数据，等 stream 返回再替换
     activeMessageList.value.push({
       id: -1,
       conversationId: activeConversationId.value,
-      type: 'user',
+      type: AiChatMessageTypeEnum.USER,
       content: userMessage.content,
       attachmentUrls: userMessage.attachmentUrls || [],
       createTime: new Date()
@@ -456,7 +542,7 @@ const doSendMessageStream = async (userMessage: ChatMessageVO) => {
     activeMessageList.value.push({
       id: -2,
       conversationId: activeConversationId.value,
-      type: 'assistant',
+      type: AiChatMessageTypeEnum.ASSISTANT,
       content: '思考中...',
       reasoningContent: '',
       createTime: new Date()
@@ -486,32 +572,34 @@ const doSendMessageStream = async (userMessage: ChatMessageVO) => {
           return
         }
 
-        // 如果内容为空，就不处理。
-        if (data.receive.content === '' && !data.receive.reasoningContent) {
-          return
-        }
-
-        // 首次返回需要添加一个 message 到页面，后面的都是更新
+        // 首个成功帧：替换两个假数据，只有用量时也替换；正文、思考统一在下面追加，避免首帧重复
         if (isFirstChunk) {
           isFirstChunk = false
           // 弹出两个假数据
           activeMessageList.value.pop()
           activeMessageList.value.pop()
           // 更新返回的数据
-          activeMessageList.value.push(data.send)
           data.send.attachmentUrls = userMessage.attachmentUrls
-          activeMessageList.value.push(data.receive)
+          activeMessageList.value.push(data.send)
+          activeMessageList.value.push({ ...data.receive, content: '', reasoningContent: '' })
         }
+        const lastMessage = activeMessageList.value[activeMessageList.value.length - 1]
+
+        // 同步 Token 用量：最新快照替换，未知保持 null
+        Object.assign(lastMessage, {
+          inputTokens: data.receive.inputTokens,
+          outputTokens: data.receive.outputTokens,
+          totalTokens: data.receive.totalTokens
+        })
 
         // 处理 reasoningContent
         if (data.receive.reasoningContent) {
-          const lastMessage = activeMessageList.value[activeMessageList.value.length - 1]
           lastMessage.reasoningContent =
-            lastMessage.reasoningContent + data.receive.reasoningContent
+            (lastMessage.reasoningContent || '') + data.receive.reasoningContent
         }
 
         // 处理正常内容
-        if (data.receive.content !== '') {
+        if (data.receive.content) {
           receiveMessageFullText.value = receiveMessageFullText.value + data.receive.content
         }
         // 滚动到最下面
@@ -527,7 +615,8 @@ const doSendMessageStream = async (userMessage: ChatMessageVO) => {
       () => {
         stopStream()
       },
-      userMessage.attachmentUrls
+      userMessage.attachmentUrls,
+      reasoningLevel
     )
   } catch {}
 }
@@ -617,8 +706,63 @@ const textRoll = async () => {
   } catch {}
 }
 
+// =========== 【语音输入】相关 ===========
+
+/** 点击语音输入：未录音时开始，录音中时停止并识别 */
+const handleVoiceInput = async () => {
+  if (voiceRecording.value) {
+    await stopVoiceInput()
+    return
+  }
+  const maxSeconds = getAsrMaxSeconds(asrModel.value?.platform)
+  try {
+    voiceRecorder = await startWavRecorder(maxSeconds)
+  } catch {
+    message.error('无法使用麦克风，请检查浏览器的麦克风权限')
+    return
+  }
+  voiceRecording.value = true
+  voiceRecordTimer = setTimeout(stopVoiceInput, maxSeconds * 1000)
+}
+
+const { httpRequest: uploadVoiceFile } = useUpload()
+
+/** 停止录音并识别：录音上传到文件服务后识别（会生成一条识别记录），结果追加到输入框，不自动发送 */
+const stopVoiceInput = async () => {
+  clearTimeout(voiceRecordTimer)
+  const recorder = voiceRecorder
+  if (!recorder) {
+    return
+  }
+  voiceRecorder = undefined
+  voiceRecording.value = false
+  voiceTranscribing.value = true
+  try {
+    const wav = await recorder.stop()
+    const file = new File([wav], `语音输入-${formatDate(new Date(), 'YYYYMMDDHHmmss')}.wav`, {
+      type: 'audio/wav'
+    })
+    const res: any = await uploadVoiceFile({ file, filename: 'file' } as UploadRequestOptions)
+    const record = await AsrApi.recognizeAsr({ modelId: asrModel.value!.id, fileUrl: res.data })
+    if (record.status !== AiAsrStatusEnum.SUCCESS) {
+      message.error(record.errorMessage || '语音识别失败')
+      return
+    }
+    if (record.originalText) {
+      prompt.value = (prompt.value || '') + record.originalText
+    }
+  } finally {
+    voiceTranscribing.value = false
+  }
+}
+
 /** 初始化 **/
 onMounted(async () => {
+  // 获取语音识别模型：不阻塞对话加载
+  ModelApi.getModelSimpleList(AiModelTypeEnum.ASR).then((models) => {
+    asrModel.value = models?.[0]
+  })
+
   // 如果有 conversationId 参数，则默认选中
   if (route.query.conversationId) {
     const id = route.query.conversationId as unknown as number
@@ -629,5 +773,11 @@ onMounted(async () => {
   // 获取列表数据
   activeMessageListLoading.value = true
   await getMessageList()
+})
+
+/** 销毁：放弃进行中的录音，释放麦克风 */
+onBeforeUnmount(() => {
+  clearTimeout(voiceRecordTimer)
+  voiceRecorder?.cancel()
 })
 </script>

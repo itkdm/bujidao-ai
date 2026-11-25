@@ -1,13 +1,9 @@
 <script lang="ts" setup>
-import { deleteUserCache } from '@/hooks/web/useCache'
 import { useLockStore } from '@/store/modules/lock'
 import { useNow } from '@/hooks/web/useNow'
 import { useDesign } from '@/hooks/web/useDesign'
-import { useTagsViewStore } from '@/store/modules/tagsView'
 import { useUserStore } from '@/store/modules/user'
 import avatarImg from '@/assets/imgs/avatar.gif'
-
-const tagsViewStore = useTagsViewStore()
 
 const { replace } = useRouter()
 
@@ -30,12 +26,14 @@ const { hour, month, minute, meridiem, year, day, week } = useNow(true)
 
 const { t } = useI18n()
 
+const passwordInputRef = ref() // 密码输入框 Ref
+
 // 解锁
 async function unLock() {
-  if (!password.value) {
+  if (!password.value || loading.value) {
     return
   }
-  let pwd = password.value
+  const pwd = password.value
   try {
     loading.value = true
     const res = await lockStore.unLock(pwd)
@@ -47,17 +45,24 @@ async function unLock() {
 
 // 返回登录
 async function goLogin() {
+  // 登出时统一清理 token、用户缓存、标签页与本会话的动态路由（接口失败时同样清理）
   await userStore.loginOut().catch(() => {})
-  // 登出后清理
-  deleteUserCache() // 清空用户缓存
-  tagsViewStore.delAllViews()
-  // resetRouter() // 重置静态路由表
   lockStore.resetLockInfo()
   replace('/login')
 }
 
+// 回车解锁；输入法组合输入（确认候选词）与按住重复触发时忽略
+function handleEnter(e: KeyboardEvent) {
+  if (e.isComposing || e.keyCode === 229 || e.repeat) return
+  unLock()
+}
+
 function handleShowForm(show = false) {
   showDate.value = show
+  if (!show) {
+    // 输入区显示后聚焦密码框
+    nextTick(() => passwordInputRef.value?.focus())
+  }
 }
 </script>
 
@@ -92,15 +97,17 @@ function handleShowForm(show = false) {
         <div :class="`${prefixCls}-entry-content`">
           <div class="flex flex-col items-center">
             <img :src="avatar" alt="" class="w-70px h-70px rounded-[50%]" />
-            <span class="text-14px my-10px text-[var(--logo-title-text-color)]">
+            <span class="text-14px my-10px text-white">
               {{ userName }}
             </span>
           </div>
           <ElInput
+            ref="passwordInputRef"
             type="password"
             :placeholder="t('lock.placeholder')"
             class="enter-x"
             v-model="password"
+            @keydown.enter="handleEnter"
           />
           <span :class="`text-14px ${prefixCls}-entry__err-msg enter-x`" v-if="errMsg">
             {{ t('lock.message') }}

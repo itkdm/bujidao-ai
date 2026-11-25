@@ -79,6 +79,7 @@ function handleChat(group: GroupLite) {
 
 /** 加入群聊：先关浮层（避免与 prompt 的 mask 互相遮挡）→ 弹申请理由（可选）→ applyJoinGroup */
 async function handleApply(group: GroupLite) {
+  const groupId = group.id
   handleClose()
   let applyContent = ''
   try {
@@ -92,11 +93,15 @@ async function handleApply(group: GroupLite) {
   } catch {
     return
   }
-  await applyJoinGroup({
-    groupId: group.id,
-    applyContent: applyContent || undefined,
-    addSource: ImGroupAddSource.SHARE_LINK
-  })
-  ElMessage.success('加群申请已发送')
+  try {
+    await applyJoinGroup({
+      groupId,
+      applyContent: applyContent || undefined,
+      addSource: ImGroupAddSource.SHARE_LINK
+    })
+    ElMessage.success('加群申请已发送')
+  } catch (error) {
+    console.warn('[IM GroupInfoCard] 申请加群失败', error)
+  }
 }
 </script>

@@ -1,4 +1,4 @@
-<!-- 数据统计 - 客户画像 -->
+<!-- 数据统计 - 销售漏斗分析 -->
 <template>
   <ContentWrap>
     <!-- 搜索工作栏 -->
@@ -34,6 +34,22 @@
             :key="dict.value"
             :label="dict.label"
             :value="dict.value"
+          />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="商机组" prop="statusTypeId">
+        <el-select
+          v-model="queryParams.statusTypeId"
+          class="!w-240px"
+          clearable
+          placeholder="请选择商机组"
+          @change="handleQuery"
+        >
+          <el-option
+            v-for="item in statusTypeList"
+            :key="item.id"
+            :label="item.name"
+            :value="item.id!"
           />
         </el-select>
       </el-form-item>
@@ -78,7 +94,7 @@
     </el-form>
   </ContentWrap>
 
-  <!-- 客户统计 -->
+  <!-- 销售漏斗统计 -->
   <el-col>
     <el-tabs v-model="activeTab">
       <el-tab-pane label="销售漏斗分析" lazy name="funnelRef">
@@ -100,6 +116,7 @@
 <script lang="ts" setup>
 import * as DeptApi from '@/api/system/dept'
 import * as UserApi from '@/api/system/user'
+import * as BusinessStatusApi from '@/api/crm/business/status'
 import { useUserStore } from '@/store/modules/user'
 import { beginOfDay, defaultShortcuts, endOfDay, formatDate } from '@/utils/formatTime'
 import { defaultProps, handleTree } from '@/utils/tree'
@@ -113,7 +130,8 @@ defineOptions({ name: 'CrmStatisticsFunnel' })
 const queryParams = reactive({
   interval: 2, // WEEK, 周
   deptId: useUserStore().getUser.deptId,
-  userId: undefined,
+  userId: undefined as number | undefined,
+  statusTypeId: undefined as number | undefined,
   times: [
     // 默认显示最近一周的数据
     formatDate(beginOfDay(new Date(new Date().getTime() - 3600 * 1000 * 24 * 7))),
@@ -124,6 +142,7 @@ const queryParams = reactive({
 const queryFormRef = ref() // 搜索的表单
 const deptList = ref<Tree[]>([]) // 部门树形结构
 const userList = ref<UserApi.UserVO[]>([]) // 全量用户清单
+const statusTypeList = ref<BusinessStatusApi.BusinessStatusTypeVO[]>([]) // 商机状态组
 
 /** 根据选择的部门筛选员工清单 */
 const userListByDeptId = computed(() =>
@@ -160,12 +179,21 @@ watch(activeTab, () => {
 /** 重置按钮操作 */
 const resetQuery = () => {
   queryFormRef.value.resetFields()
+  queryParams.statusTypeId = statusTypeList.value[0]?.id
   handleQuery()
 }
 
 /** 初始化 */
 onMounted(async () => {
-  deptList.value = handleTree(await DeptApi.getSimpleDeptList())
-  userList.value = handleTree(await UserApi.getSimpleUserList())
+  const [deptSimpleList, userSimpleList, businessStatusTypeList] = await Promise.all([
+    DeptApi.getSimpleDeptList(),
+    UserApi.getSimpleUserList(),
+    BusinessStatusApi.getBusinessStatusTypeSimpleList()
+  ])
+  deptList.value = handleTree(deptSimpleList)
+  userList.value = handleTree(userSimpleList)
+  statusTypeList.value = businessStatusTypeList
+  queryParams.statusTypeId = statusTypeList.value[0]?.id
+  handleQuery()
 })
 </script>

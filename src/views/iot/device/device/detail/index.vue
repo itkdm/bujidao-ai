@@ -27,6 +27,13 @@
       <el-tab-pane label="设备消息" name="log">
         <DeviceDetailsMessage v-if="activeTab === 'log'" :device-id="device.id" />
       </el-tab-pane>
+      <el-tab-pane label="设备影子" name="shadow" v-if="checkPermi(['iot:device:shadow-query'])">
+        <DeviceDetailsShadow
+          v-if="activeTab === 'shadow'"
+          :device-id="device.id"
+          :thing-model-list="thingModelList"
+        />
+      </el-tab-pane>
       <el-tab-pane label="模拟设备" name="simulator">
         <DeviceDetailsSimulator
           v-if="activeTab === 'simulator'"
@@ -58,10 +65,24 @@
           :thing-model-list="thingModelList"
         />
       </el-tab-pane>
+      <el-tab-pane
+        label="OPC UA 配置"
+        name="opcua"
+        v-if="product.protocolType === ProtocolTypeEnum.OPC_UA_CLIENT"
+      >
+        <DeviceOpcUaConfig
+          v-if="activeTab === 'opcua'"
+          :device="device"
+          :thing-model-list="thingModelList"
+        />
+      </el-tab-pane>
     </el-tabs>
   </el-col>
 </template>
 <script lang="ts" setup>
+import { parseId } from '@/utils/id'
+import { checkPermi } from '@/utils/permission'
+
 import { useTagsViewStore } from '@/store/modules/tagsView'
 import { DeviceApi, DeviceVO } from '@/api/iot/device/device'
 import { DeviceTypeEnum, ProductApi, ProductVO, ProtocolTypeEnum } from '@/api/iot/product/product'
@@ -70,16 +91,18 @@ import DeviceDetailsHeader from './DeviceDetailsHeader.vue'
 import DeviceDetailsInfo from './DeviceDetailsInfo.vue'
 import DeviceDetailsThingModel from './DeviceDetailsThingModel.vue'
 import DeviceDetailsMessage from './DeviceDetailsMessage.vue'
+import DeviceDetailsShadow from './DeviceDetailsShadow.vue'
 import DeviceDetailsSimulator from './DeviceDetailsSimulator.vue'
 import DeviceDetailConfig from './DeviceDetailConfig.vue'
 import DeviceModbusConfig from './DeviceModbusConfig.vue'
+import DeviceOpcUaConfig from './DeviceOpcUaConfig.vue'
 import DeviceDetailsSubDevice from './DeviceDetailsSubDevice.vue'
 
 defineOptions({ name: 'IoTDeviceDetail' })
 
 const route = useRoute()
 const message = useMessage()
-const id = Number(route.params.id) // 将字符串转换为数字
+const id = (parseId(route.params.id) as number) // 将字符串转换为数字
 const loading = ref(true) // 加载中
 const product = ref<ProductVO>({} as ProductVO) // 产品详情
 const device = ref<DeviceVO>({} as DeviceVO) // 设备详情

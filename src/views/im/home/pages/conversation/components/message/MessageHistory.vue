@@ -218,8 +218,7 @@
           {{ keyword || activeFilter ? '没有匹配的消息' : '暂无消息' }}
         </div>
 
-        <!-- 加载更早消息：列表底部 trigger（reverse 后最早的在最下，按钮放底部更自然）；
-             filter 命中 0 条时仍保留 —— 加载更早可能带回匹配内容 -->
+        <!-- 消息倒序展示，加载入口放在历史消息一侧；筛选无结果时也保留，继续加载可能命中 -->
         <div
           v-if="hasMore && allMessages.length > 0"
           class="py-3 text-center border-t border-t-solid border-[var(--el-border-color-lighter)]"
@@ -228,7 +227,7 @@
             加载更早消息
           </el-button>
         </div>
-        <!-- "没有更早" 只在已有匹配项时露出，避免和上面"没有匹配的消息"空态文案重叠 -->
+        <!-- 已有消息但没有更多历史时显示到底提示，避免与上方的无匹配空态重复 -->
         <div
           v-else-if="!hasMore && currentList.length > 0"
           class="py-3 text-12px text-center text-[var(--el-text-color-disabled)]"
@@ -241,14 +240,15 @@
 </template>
 
 <script lang="ts" setup>
+import { compareId, isPositiveId } from '@/utils/id'
+
 import { computed, inject, ref, watch } from 'vue'
 import dayjs from 'dayjs'
 import { formatHistoryTime } from '@/views/im/utils/time'
 
 import Icon from '@/components/Icon/src/Icon.vue'
+import { useMessage } from '@/hooks/web/useMessage'
 import { useUserStore } from '@/store/modules/user'
-import { getPrivateMessageList as apiGetPrivateMessageList } from '@/api/im/message/private'
-import { getGroupMessageList as apiGetGroupMessageList } from '@/api/im/message/group'
 import { useConversationStore } from '../../../../store/conversationStore'
 import { useMessageStore } from '../../../../store/messageStore'
 import { useGroupStore } from '../../../../store/groupStore'
@@ -267,8 +267,7 @@ import {
 import {
   buildFacePreviewText,
   buildRecallTip,
-  buildRecallTipSegments,
-  getConversationKey
+  buildRecallTipSegments
 } from '@/views/im/utils/conversation'
 import { useMessagePuller } from '@/views/im/home/composables/useMessagePuller'
 import { useVoicePlayer } from '@/views/im/home/composables/useVoicePlayer'
@@ -302,13 +301,14 @@ const emit = defineEmits<{
 }>()
 
 const userStore = useUserStore()
+const messageApi = useMessage()
 const conversationStore = useConversationStore()
 const messageStore = useMessageStore()
 const groupStore = useGroupStore()
 const friendStore = useFriendStore()
 const openMergeDetail = inject(IM_MERGE_DETAIL_DIALOG_KEY)
 const voicePlayer = useVoicePlayer()
-const { convertPrivateMessage, convertGroupMessage } = useMessagePuller()
+const { loadEarlierMessages } = useMessagePuller()
 
 const visible = ref(false)
 
@@ -540,73 +540,40 @@ const HISTORY_PAGE_SIZE = 50
 const loadingMore = ref(false)
 const hasMore = ref(true)
 
-/**
- * 加载更早消息：拿当前最早一条 id 作 maxId（不含），调 list 接口拉一页 + convert + prepend
- *
- * - 未对接 list 接口的 type / keyword / sender 过滤参数：后端只支持 maxId + limit 游标分页，
- *   tab 筛选在前端做（数据来回到本地后过滤）
- * - 本地占位跳过：后端没法按 messageId 查
- * - 返回数量 < limit 视为到顶
- */
+/** 加载更早消息：后端仅支持 maxId + limit 游标，筛选仍在本地完成 */
 async function loadEarlier() {
-  // 重入 / 到顶 / 无会话 早退：避免重复请求或在 conversation 切换间隙触发
+  // 防止重复请求，并避开会话尚未就绪的切换间隙
   if (loadingMore.value || !hasMore.value || !conversation.value) {
     return
   }
-  // 仅 PRIVATE / GROUP 走分页接口；CHANNEL 单向广播、没有 list 接口，落到 else 会误调私聊接口（receiverId 传 channelId）
+  // CHANNEL 没有历史消息接口
   const requestedType = conversation.value.type
   if (requestedType !== ImConversationType.PRIVATE && requestedType !== ImConversationType.GROUP) {
     return
   }
-  // 快照当前会话主键：await 期间用户切走 / 关闭面板时丢弃响应，避免旧会话历史被 prepend 到新会话造成串号
-  const requestedKey = getConversationKey(conversation.value)
   const requestedTargetId = conversation.value.targetId
-  const requestedIsGroup = requestedType === ImConversationType.GROUP
-
   loadingMore.value = true
   try {
-    // 算 maxId（不含，作为后端游标）：取当前会话本地缓存里最早一条服务端 id；
-    // 本地乐观占位消息没有服务端 id，要剔除
-    // 全是占位 / 列表为空时 reduce 不更新初值（POSITIVE_INFINITY），转成 undefined → 后端从最新拉
+    // 本地占位没有服务端 id，不参与历史游标
     const earliestId = allMessages.value
-      .filter((message) => !!message.id && message.id > 0)
-      .reduce((min, message) => Math.min(min, message.id || min), Number.POSITIVE_INFINITY)
-    const maxId = Number.isFinite(earliestId) ? earliestId : undefined
+      .map((message) => message.id)
+      .filter(isPositiveId)
+      .sort(compareId)[0]
+    const maxId = earliestId
 
-    // 调后端 list 接口：私聊 / 群聊接口签名不同，分支调度；返回结果用 useMessagePuller
-    // 暴露的 convert 函数转成本地 Message（与 puller 同一份字段映射，避免分歧）
-    let earlier: Message[] = []
-    let pageLength = 0
-    if (requestedIsGroup) {
-      const list = await apiGetGroupMessageList({
-        groupId: requestedTargetId,
-        maxId,
-        limit: HISTORY_PAGE_SIZE
-      })
-      earlier = (list || []).map(convertGroupMessage)
-      pageLength = list?.length ?? 0
-    } else {
-      const list = await apiGetPrivateMessageList({
-        receiverId: requestedTargetId,
-        maxId,
-        limit: HISTORY_PAGE_SIZE
-      })
-      earlier = (list || []).map(convertPrivateMessage)
-      pageLength = list?.length ?? 0
-    }
-
-    // await 期间 active 可能被外部置 null / 换主键：直接丢弃响应；不更新 hasMore（旧会话到顶不代表新会话到顶）也不 prepend
-    if (!conversation.value || getConversationKey(conversation.value) !== requestedKey) {
-      return
-    }
-
-    // 返回数量 < limit 视为到顶 —— 关闭"加载更早"按钮，避免后续点击空跑接口
+    const pageLength = await loadEarlierMessages(
+      requestedType,
+      requestedTargetId,
+      maxId,
+      HISTORY_PAGE_SIZE
+    )
+    // 返回数量 < limit 视为到顶；请求或落库失败时保留入口供重试
     if (pageLength < HISTORY_PAGE_SIZE) {
       hasMore.value = false
     }
-    // 合并到 messageStore：prependMessageList 内部去重 + 升序合并 + 落 IndexedDB；
-    // 主聊天面板的 messages 是同一份引用，老消息也会一起出现在主面板里（符合预期）
-    messageStore.prependMessageList(requestedType, requestedTargetId, earlier)
+  } catch (error) {
+    console.warn('[IM MessageHistory] 历史消息加载失败', error)
+    messageApi.warning('历史消息加载失败，请重试')
   } finally {
     loadingMore.value = false
   }
@@ -616,6 +583,7 @@ async function loadEarlier() {
 
 /** 弹窗打开时把上次的 chip / 搜索 / 加载状态都清干净，避免上次的状态残留迷惑 */
 function onDialogOpen() {
+  loadingMore.value = false
   activeFilter.value = null
   keyword.value = ''
   hasMore.value = true
@@ -632,6 +600,7 @@ function onDialogOpen() {
 /** 抽屉关闭时复位 + 停语音 */
 watch(visible, (value) => {
   if (!value) {
+    loadingMore.value = false
     activeFilter.value = null
     keyword.value = ''
     voicePlayer.stop()

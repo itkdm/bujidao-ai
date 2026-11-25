@@ -144,12 +144,11 @@ const resetForm = () => {
 }
 
 /** 校验 struct 不能为空 */
-const validateList = (_: any, __: any, callback: any) => {
+const validateList: any = (_: any, __: any) => {
   if (isEmpty(dataSpecsList.value)) {
-    callback(new Error('struct 不能为空'))
-    return
+    return Promise.reject(new Error('struct 不能为空'))
   }
-  callback()
+  return Promise.resolve()
 }
 
 /** 组件初始化 */

@@ -1,3 +1,4 @@
+import { isPositiveId, parseId, compareId } from '@/utils/id'
 import { toRaw } from 'vue'
 
 import { getCurrentUserId } from '@/utils/auth'
@@ -19,6 +20,18 @@ export type DbStoreName =
   | 'settings'
 
 export type DbTransaction = IDBTransaction
+
+/** 数据库消息分页游标 */
+export interface MessageDOPageCursor {
+  sendTime: number
+  messageKey: string
+}
+
+/** 数据库消息分页结果 */
+export interface MessageDOPageResult {
+  list: MessageDO[]
+  hasMore: boolean
+}
 
 /** IM 本地存储 key */
 export const StorageKeys = {
@@ -46,25 +59,25 @@ export const StorageKeys = {
     /** 加群申请增量拉取游标 */
     groupRequestPullCursor: 'groupRequestPullCursor',
     /** 会话读位置增量拉取游标 */
-    conversationReadPullCursor: 'conversationReadPullCursor'
+    conversationReadPullCursor: 'conversationReadPullCursor',
+    /** 单会话清理边界 */
+    conversationClearBeforePrefix: 'conversationClearBefore:',
+    /** 单会话本地删除消息 key */
+    conversationDeletedMessagesPrefix: 'conversationDeletedMessages:',
+    /** 单会话已撤回消息 key */
+    conversationRecalledMessagesPrefix: 'conversationRecalledMessages:'
   }
 } as const
 
-let currentDb: IDBDatabase | null = null
-let currentUserId: number | null = null
-let currentSession = 0
+let currentClient: DbClient | null = null
+let initialization:
+  | {
+      userId: number
+      promise: Promise<DbClient>
+    }
+  | undefined
 
-/** 校验当前 IM IndexedDB session 仍有效 */
-export function isCurrentDbSession(session: number): boolean {
-  return session === currentSession
-}
-
-/** 获取当前 IM IndexedDB session */
-export function getDbSession(): number {
-  return currentSession
-}
-
-/** 拼接当前用户 IM DB 名称 */
+/** 拼接当前身份 IM DB 名称 */
 function getDbName(userId: number): string {
   return `im:${userId}`
 }
@@ -164,40 +177,43 @@ function openDb(name: string): Promise<IDBDatabase> {
 }
 
 /** 初始化当前用户 IM DB */
-export async function initDb(): Promise<void> {
+export async function initDb(): Promise<DbClient> {
   const userId = getCurrentUserId()
-  if (!Number.isFinite(userId) || userId <= 0) {
+  if (!isPositiveId(userId)) {
     throw new Error('当前用户不存在，无法初始化 IM DB')
   }
-  if (currentDb && currentUserId === userId) {
-    return
+  if (currentClient?.userId === userId) {
+    return currentClient
   }
-  currentDb?.close()
-  currentSession++
-  currentUserId = userId
-  currentDb = await openDb(getDbName(userId))
+  if (initialization?.userId === userId) {
+    return initialization.promise
+  }
+  const promise = openDb(getDbName(userId)).then((nextDb) => {
+    if (initialization?.promise !== promise || getCurrentUserId() !== userId) {
+      nextDb.close()
+      throw new Error('IM DB 初始化已失效')
+    }
+    const nextClient = new DbClient(nextDb, userId)
+    currentClient?.close()
+    currentClient = nextClient
+    return nextClient
+  })
+  initialization = { userId, promise }
+  try {
+    return await promise
+  } finally {
+    if (initialization?.promise === promise) {
+      initialization = undefined
+    }
+  }
 }
 
 /** 关闭当前 IM DB 连接 */
-function closeDbConnection() {
-  currentDb?.close()
-  currentDb = null
-  currentUserId = null
-}
-
-/** 获取当前 IM DB */
-function getRawDb(): IDBDatabase {
-  if (!currentDb) {
-    throw new Error('IM DB 未初始化')
-  }
-  return currentDb
-}
-
-/** 校验单次写入 session */
-function guardSession(session: number) {
-  if (!isCurrentDbSession(session)) {
-    throw new Error('IM DB session 已失效')
-  }
+export function closeDb(): Promise<void> {
+  initialization = undefined
+  currentClient?.close()
+  currentClient = null
+  return Promise.resolve()
 }
 
 /** 克隆可入库对象 */
@@ -223,7 +239,17 @@ function cloneDbValue(value: unknown): unknown {
   )
 }
 
-class DbClient {
+export class DbClient {
+  constructor(
+    private readonly db: IDBDatabase,
+    readonly userId: number
+  ) {}
+
+  /** 关闭底层 IndexedDB 连接 */
+  close(): void {
+    this.db.close()
+  }
+
   /** 获取单条记录 */
   async get<T>(
     storeName: DbStoreName,
@@ -333,48 +359,45 @@ class DbClient {
   }
 
   /** 执行事务 */
-  async transaction<T>(
+  transaction<T>(
     storeNames: DbStoreName[],
     mode: IDBTransactionMode,
     runner: (tx: DbTransaction) => Promise<T>
   ): Promise<T> {
-    // 开启事务前校验 session
-    const session = getDbSession()
-    guardSession(session)
-    const tx = getRawDb().transaction(storeNames, mode)
-    const done = transactionDone(tx)
-    let result: T
-    try {
-      // 事务内只执行 IndexedDB request 链
-      result = await runner(tx)
-    } catch (e) {
+    return (async () => {
+      const tx = this.db.transaction(storeNames, mode)
+      const done = transactionDone(tx)
+      let result: T
       try {
-        tx.abort()
-      } catch {}
-      await done.catch(() => undefined)
-      throw e
-    }
-    // commit 后再次校验 session
-    await done
-    guardSession(session)
-    return result
+        result = await runner(tx)
+      } catch (e) {
+        try {
+          tx.abort()
+        } catch {}
+        await done.catch(() => undefined)
+        throw e
+      }
+      await done
+      return result
+    })()
   }
 
   /** 按会话分页获取消息 */
   async getMessageListByConversation(
     clientConversationId: string,
-    options?: { beforeSendTime?: number; limit?: number },
+    options?: { before?: MessageDOPageCursor; limit?: number },
     tx?: DbTransaction
-  ): Promise<MessageDO[]> {
+  ): Promise<MessageDOPageResult> {
     const limit = options?.limit ?? 50
-    const upper = options?.beforeSendTime ?? Number.MAX_SAFE_INTEGER
+    const before = options?.before
+    const upper = before?.sendTime ?? Number.MAX_SAFE_INTEGER
     const range = IDBKeyRange.bound(
       [clientConversationId, 0],
       [clientConversationId, upper],
       false,
-      true
+      !before
     )
-    const read = async (tx: DbTransaction): Promise<MessageDO[]> => {
+    const read = async (tx: DbTransaction): Promise<MessageDOPageResult> => {
       const index = tx.objectStore('messages').index('clientConversationId+sendTime')
       const out: MessageDO[] = []
       await new Promise<void>((resolve, reject) => {
@@ -383,21 +406,37 @@ class DbClient {
         request.onerror = () => reject(request.error)
         request.onsuccess = () => {
           const cursor = request.result
-          if (!cursor || out.length >= limit) {
+          if (!cursor) {
             resolve()
             return
           }
-          out.push(cursor.value as MessageDO)
+          const message = cursor.value as MessageDO
+          if (
+            before &&
+            message.sendTime === before.sendTime &&
+            message.messageKey >= before.messageKey
+          ) {
+            cursor.continue()
+            return
+          }
+          out.push(message)
+          if (out.length > limit) {
+            resolve()
+            return
+          }
           cursor.continue()
         }
       })
       // 气泡渲染需要按时间升序
-      return out.reverse()
+      return {
+        list: out.slice(0, limit).reverse(),
+        hasMore: out.length > limit
+      }
     }
     if (tx) {
       return read(tx)
     }
-    return this.transaction<MessageDO[]>(['messages'], 'readonly', read)
+    return this.transaction<MessageDOPageResult>(['messages'], 'readonly', read)
   }
 
   /** 读取设置 */
@@ -412,11 +451,12 @@ class DbClient {
   }
 }
 
-const dbClient = new DbClient()
-
-/** 获取当前 IM DB client */
+/** 获取当前用户 IM DB client */
 export function getDb(): DbClient {
-  return dbClient
+  if (!currentClient || currentClient.userId !== getCurrentUserId()) {
+    throw new Error('IM DB 未初始化，请先调用 initDb()')
+  }
+  return currentClient
 }
 
 /** 当前用户会话主键 */
@@ -430,8 +470,8 @@ export function parseClientConversationId(
 ): { type: number; targetId: number } | null {
   const [typeText, targetIdText] = clientConversationId.split(':')
   const type = Number(typeText)
-  const targetId = Number(targetIdText)
-  if (!Number.isFinite(type) || !Number.isFinite(targetId) || targetId <= 0) {
+  const targetId = parseId(targetIdText)
+  if (!Number.isFinite(type) || !isPositiveId(targetId)) {
     return null
   }
   return { type, targetId }
@@ -447,34 +487,12 @@ export function getClientMessageKey(clientMessageId: string): string {
   return `client:${clientMessageId}`
 }
 
-/** 解析本地消息主键 */
-export function parseMessageKey(
-  messageKey: string
-):
-  | { kind: 'client'; clientMessageId: string }
-  | { kind: 'server'; conversationType: number; id: number }
-  | null {
-  if (!messageKey) {
-    return null
-  }
-  if (messageKey.startsWith('client:')) {
-    const clientMessageId = messageKey.slice('client:'.length)
-    return clientMessageId ? { kind: 'client', clientMessageId } : null
-  }
-  const [conversationTypeText, idText] = messageKey.split(':')
-  const conversationType = Number(conversationTypeText)
-  const id = Number(idText)
-  if (!Number.isFinite(conversationType) || !Number.isFinite(id) || id <= 0) {
-    return null
-  }
-  return { kind: 'server', conversationType, id }
-}
-
 /** 更新消息拉取游标 */
 export async function setMessageMaxId(
   conversationType: number,
   maxId: number | undefined,
-  tx?: DbTransaction
+  tx?: DbTransaction,
+  db: DbClient = getDb()
 ): Promise<void> {
   if (!maxId) {
     return
@@ -493,39 +511,15 @@ export async function setMessageMaxId(
     default:
       throw new Error(`未知 IM 会话类型：${conversationType}`)
   }
-  const db = getDb()
-  const current = (await db.getSetting<number>(key, tx)) || 0
-  if (maxId > current) {
-    await db.setSetting(key, maxId, tx)
+  const updateMaxId = async (transaction: DbTransaction) => {
+    const current = (await db.getSetting<number>(key, transaction)) || 0
+    if (compareId(maxId, current) > 0) {
+      await db.setSetting(key, maxId, transaction)
+    }
   }
-}
-
-/** 停止当前 IM DB session */
-export async function stopRequests(): Promise<void> {
-  currentSession++
-  const [
-    { useMessageStoreWithOut },
-    { useConversationStoreWithOut },
-    { useFriendStoreWithOut },
-    { useGroupStoreWithOut },
-    { useChannelStoreWithOut },
-    { useGroupRequestStoreWithOut },
-    { useFaceStoreWithOut }
-  ] = await Promise.all([
-    import('../home/store/messageStore'),
-    import('../home/store/conversationStore'),
-    import('../home/store/friendStore'),
-    import('../home/store/groupStore'),
-    import('../home/store/channelStore'),
-    import('../home/store/groupRequestStore'),
-    import('../home/store/faceStore')
-  ])
-  useMessageStoreWithOut().clear()
-  useConversationStoreWithOut().clear()
-  useFriendStoreWithOut().clear()
-  useGroupStoreWithOut().clear()
-  useChannelStoreWithOut().clear()
-  useGroupRequestStoreWithOut().clear()
-  useFaceStoreWithOut().clear()
-  closeDbConnection()
+  if (tx) {
+    await updateMaxId(tx)
+    return
+  }
+  await db.transaction(['settings'], 'readwrite', updateMaxId)
 }

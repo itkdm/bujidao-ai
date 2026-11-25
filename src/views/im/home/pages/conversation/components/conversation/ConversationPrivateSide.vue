@@ -249,7 +249,10 @@ function handleMutedChange(value: boolean | string | number) {
   }
   friendStore.setFriendSilent(targetId, next).catch((error) => {
     console.error('[IM ConversationPrivateSide] 切换免打扰失败', { targetId }, error)
-    conversationStore.setConversationSilent(type, targetId, !next)
+    const conversation = conversationStore.getConversation(type, targetId)
+    if (conversation?.silent === next) {
+      conversationStore.setConversationSilent(type, targetId, !next)
+    }
   })
 }
 

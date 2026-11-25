@@ -160,6 +160,8 @@
 </template>
 
 <script lang="ts" setup>
+import { parseId } from '@/utils/id'
+
 import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 
 import Icon from '@/components/Icon/src/Icon.vue'
@@ -178,7 +180,12 @@ import {
 import { useMuteOverlay } from '@/views/im/home/composables/useMuteOverlay'
 import { isOpenableUrl } from '@/utils/url'
 import { getConversationKey } from '@/views/im/utils/conversation'
-import { ImConversationType, ImGroupMemberRole, ImContentType } from '@/views/im/utils/constants'
+import {
+  ImConversationType,
+  ImGroupMemberRole,
+  ImContentType,
+  IM_AT_ALL_USER_ID
+} from '@/views/im/utils/constants'
 import { DANGEROUS_FILE_EXTENSIONS, MESSAGE_GROUP_READ_ENABLED } from '@/views/im/utils/config'
 import {
   serializeMessage,
@@ -205,9 +212,7 @@ const {
   uploadAndSendMedia,
   insertMediaPlaceholder,
   markMediaFailed,
-  commitMediaPlaceholder,
   createUploadProgressHandler,
-  verifyMediaUploadStillAllowed,
   requireMediaHandler
 } = useMediaUploader()
 const muteOverlay = useMuteOverlay() // 禁言 / 封禁覆盖层
@@ -332,8 +337,9 @@ function collectFromEditor(root: HTMLElement): { text: string; atUserIds: number
     }
     if (tag === 'span' && el.dataset.id) {
       text += el.textContent || ''
-      const id = Number(el.dataset.id)
-      if (!Number.isNaN(id)) {
+      const id =
+        el.dataset.id === String(IM_AT_ALL_USER_ID) ? IM_AT_ALL_USER_ID : parseId(el.dataset.id)
+      if (id !== undefined) {
         userIds.push(id)
       }
       return
@@ -541,9 +547,13 @@ function onPaste(e: ClipboardEvent) {
         continue
       }
       if (item.type.startsWith('image/')) {
-        void uploadAndSendImage(file)
+        void uploadAndSendImage(file).catch((error) =>
+          console.warn('[IM MessageInput] 粘贴图片发送失败', error)
+        )
       } else {
-        void uploadAndSendFile(file)
+        void uploadAndSendFile(file).catch((error) =>
+          console.warn('[IM MessageInput] 粘贴文件发送失败', error)
+        )
       }
       return
     }
@@ -889,22 +899,26 @@ async function uploadAndSendFile(file: File) {
 }
 
 /** 图片选完即上传 + 发送 IMAGE 消息（不放入 editor，由 useMediaUploader 接管占位 / 进度 / ack） */
-async function onImagePicked(e: Event) {
+function onImagePicked(e: Event) {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
   input.value = ''
   if (file) {
-    await uploadAndSendImage(file)
+    void uploadAndSendImage(file).catch((error) => {
+      console.warn('[IM MessageInput] 发送图片失败', error)
+    })
   }
 }
 
 /** 文件选完即上传 + 发送 FILE 消息（携带原始 name / size 元数据） */
-async function onFilePicked(e: Event) {
+function onFilePicked(e: Event) {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
   input.value = ''
   if (file) {
-    await uploadAndSendFile(file)
+    void uploadAndSendFile(file).catch((error) => {
+      console.warn('[IM MessageInput] 发送文件失败', error)
+    })
   }
 }
 
@@ -916,7 +930,7 @@ function openVoice() {
   emojiVisible.value = false
 }
 /** VoiceRecorder 录完回传 blob，包成 File 后走通用 uploadAndSendMedia；duration 走 context */
-async function onVoiceSend(payload: {
+function onVoiceSend(payload: {
   blob: Blob
   duration: number
   extension: string
@@ -929,12 +943,14 @@ async function onVoiceSend(payload: {
   const file = new File([payload.blob], `voice-${Date.now()}.${payload.extension}`, {
     type: payload.mimeType
   })
-  await uploadAndSendMedia({
+  void uploadAndSendMedia({
     file,
     type: ImContentType.VOICE,
     quote: context.quote,
     conversation: context.conversation,
     context: { voiceDuration: payload.duration }
+  }).catch((error) => {
+    console.warn('[IM MessageInput] 发送语音失败', error)
   })
 }
 
@@ -1038,7 +1054,7 @@ async function probeVideoFile(file: File): Promise<VideoProbe> {
  * 2. probe 与视频上传同步起跑；封面上传等 probe 出 cover 后与视频上传竞速
  *    （probe 解码 + 封面上传通常被视频上传时长完全遮蔽，体感节省几百 ms 起步）
  * 3. 视频本体上传必须成功，拿不到 url 就把占位置 FAILED；封面是锦上添花，失败仅日志
- * 4. 视频链路耗时长，上传期间用户切会话则放弃发送（避免落到错误会话里）；切走再切回来不算变化（key 仍相等）
+ * 4. 视频链路始终使用开始上传时捕获的会话发送
  */
 async function uploadAndSendVideo(file: File) {
   if (!ensureMediaSizeWithinLimit(file, ImContentType.VIDEO, message.warning)) {
@@ -1050,7 +1066,6 @@ async function uploadAndSendVideo(file: File) {
   }
   const { conversation } = context
   const replyQuote = context.quote
-  const startKey = getConversationKey(conversation)
 
   // 1. 立即占位：url 走 blob 让 <video src> 拉首字节渲染；coverUrl 不设 blob
   //    （<video poster> 期待图片资源，传 video blob 在部分浏览器会退化成黑底，不是稳定行为）
@@ -1059,12 +1074,25 @@ async function uploadAndSendVideo(file: File) {
   const videoHandler = requireMediaHandler(ImContentType.VIDEO)
   const buildPlaceholderContent = (blobUrl: string): string =>
     serializeMessage(withQuotePayload(videoHandler.build(file, blobUrl, {}), replyQuote))
-  const { clientMessageId } = insertMediaPlaceholder({
-    file,
-    type: ImContentType.VIDEO,
-    conversation,
-    buildContent: buildPlaceholderContent
-  })
+  let clientMessageId: string
+  let commitPlaceholder: ((realContent: string) => Promise<void>) | undefined
+  try {
+    const placeholder = await insertMediaPlaceholder({
+      file,
+      type: ImContentType.VIDEO,
+      conversation,
+      buildContent: buildPlaceholderContent
+    })
+    if (!placeholder) {
+      return
+    }
+    clientMessageId = placeholder.clientMessageId
+    commitPlaceholder = placeholder.commit
+  } catch (error) {
+    console.error('[IM] 视频消息占位写入失败', error)
+    message.warning('消息保存失败，请重试')
+    return
+  }
 
   // 2. 三路并行起跑（probe 与两条上传无依赖，封面上传等 probe 出 cover 后立即接力）
   // 2.1 视频本体上传：async IIFE 包一层让 await 显式可见（lint 不再误判 floating promise），
@@ -1128,13 +1156,6 @@ async function uploadAndSendVideo(file: File) {
   if (coverUrl && !safeCoverUrl) {
     console.warn('[IM] 视频封面上传返回了不支持打开的 URL', { coverUrl })
   }
-  // 3.3 上传后会话校验 + muteOverlay 复查（与 useMediaUploader.uploadAndSendMedia 同一道）
-  if (
-    !verifyMediaUploadStillAllowed(conversation, startKey, ImContentType.VIDEO, clientMessageId)
-  ) {
-    return
-  }
-
   // 4. 拼真实 VideoMessage payload，patch 进占位 + 走 sendRaw 复用占位发送
   const realContent = serializeMessage(
     withQuotePayload(
@@ -1145,15 +1166,10 @@ async function uploadAndSendVideo(file: File) {
       replyQuote
     )
   )
-  await commitMediaPlaceholder({
-    type: ImContentType.VIDEO,
-    conversation,
-    clientMessageId,
-    realContent
-  })
+  await commitPlaceholder(realContent)
 }
 
-/** 视频选完即上传 + 发送 VIDEO 消息（不放入 editor，独立链路：probe + 双上传，最终走 commitMediaPlaceholder 收尾） */
+/** 视频选完即上传 + 发送 VIDEO 消息（不放入 editor，独立链路：probe + 双上传，最终由占位 handle 收尾） */
 async function onVideoPicked(e: Event) {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]

@@ -15,7 +15,7 @@
         element-loading-text="生成文件目录中..."
         shadow="hover"
       >
-        <el-scrollbar height="calc(100vh - 88px - 40px)">
+        <el-scrollbar height="100%">
           <el-tree
             ref="treeRef"
             :data="preview.fileTree"
@@ -42,7 +42,7 @@
             :label="item.filePath.substring(item.filePath.lastIndexOf('/') + 1)"
             :name="item.filePath"
           >
-            <el-button class="float-right" text type="primary" @click="copy(item.code)">
+            <el-button class="float-right" type="primary" @click="copy(item.code)">
               {{ t('common.copy') }}
             </el-button>
             <el-scrollbar height="600px">
@@ -214,6 +214,73 @@ onMounted(async () => {
 </script>
 <style lang="scss">
 .app-infra-codegen-preview-container {
+  display: flex;
+  height: 80%;
+  flex-direction: column;
+
+  > .el-dialog__header {
+    border: none;
+
+    > div {
+      padding-left: 0 !important;
+    }
+  }
+
+  > .el-dialog__body {
+    padding: 0 !important;
+    overflow: hidden;
+    flex: 1;
+
+    > div {
+      height: 100%;
+      overflow: hidden;
+
+      > div.flex {
+        height: 100%;
+        overflow: hidden;
+        box-sizing: border-box;
+
+        > .el-card {
+          .el-card__body {
+            padding: 5px !important;
+
+            .el-tabs.el-tabs--top {
+              display: flex;
+              height: 100%;
+              overflow: hidden;
+              flex-direction: column;
+
+              .el-tabs__content {
+                flex: 1;
+
+                .el-tab-pane {
+                  position: relative;
+                  height: 100%;
+
+                  > .el-button {
+                    position: absolute;
+                    top: 10px;
+                    right: 10px;
+                    z-index: 1;
+                  }
+
+                  .el-scrollbar {
+                    width: 100% !important;
+                    height: 100% !important;
+
+                    .el-scrollbar__wrap {
+                      height: 100% !important;
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
   .el-scrollbar .el-scrollbar__wrap .el-scrollbar__view {
     display: inline-block;
     white-space: nowrap;

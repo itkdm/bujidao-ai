@@ -33,25 +33,25 @@ const password = reactive({
 })
 
 // 表单校验
-const equalToPassword = (_rule, value, callback) => {
+const equalToPassword = (_rule, value) => {
   if (password.newPassword !== value) {
-    callback(new Error(t('profile.password.diffPwd')))
-  } else {
-    callback()
+    return Promise.reject(new Error(t('profile.password.diffPwd')))
   }
+  return Promise.resolve()
 }
 
+// 提示文案在校验时按当前语言取值，不刷新切换语言后同样生效
 const rules = reactive<FormRules>({
   oldPassword: [
-    { required: true, message: t('profile.password.oldPwdMsg'), trigger: 'blur' },
-    { min: 4, max: 16, message: t('profile.password.pwdRules'), trigger: 'blur' }
+    { required: true, message: () => t('profile.password.oldPwdMsg'), trigger: 'blur' },
+    { min: 4, max: 16, message: () => t('profile.password.pwdRules'), trigger: 'blur' }
   ],
   newPassword: [
-    { required: true, message: t('profile.password.newPwdMsg'), trigger: 'blur' },
-    { min: 4, max: 16, message: t('profile.password.pwdRules'), trigger: 'blur' }
+    { required: true, message: () => t('profile.password.newPwdMsg'), trigger: 'blur' },
+    { min: 4, max: 16, message: () => t('profile.password.pwdRules'), trigger: 'blur' }
   ],
   confirmPassword: [
-    { required: true, message: t('profile.password.cfPwdMsg'), trigger: 'blur' },
+    { required: true, message: () => t('profile.password.cfPwdMsg'), trigger: 'blur' },
     { required: true, validator: equalToPassword, trigger: 'blur' }
   ]
 })

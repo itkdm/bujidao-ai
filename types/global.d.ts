@@ -1,3 +1,4 @@
+import type { RawAxiosRequestHeaders } from 'axios'
 export {}
 declare global {
   interface Fn<T = any> {
@@ -10,9 +11,10 @@ declare global {
 
   type Recordable<T = any, K = string> = Record<K extends null | undefined ? string : K, T>
 
-  type ComponentRef<T> = InstanceType<T>
+  type ComponentRef<T extends abstract new (...args: any) => any> = InstanceType<T>
 
-  type LocaleType = 'zh-CN' | 'en'
+  // 支持的语言由 src/config/locale.ts 语言注册表推导
+  type LocaleType = import('@/config/locale').LocaleCode
 
   declare type TimeoutHandle = ReturnType<typeof setTimeout>
   declare type IntervalHandle = ReturnType<typeof setInterval>
@@ -42,6 +44,7 @@ declare global {
     data?: any
     url?: string
     method?: AxiosMethod
+    headers?: RawAxiosRequestHeaders
     headersType?: string
     responseType?: AxiosResponseType
   }

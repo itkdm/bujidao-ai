@@ -91,14 +91,13 @@ const duration = ref(0)
 const previewUrl = ref('')
 
 let mediaRecorder: MediaRecorder | null = null
-let audioChunks: Blob[] = []
 let mediaStream: MediaStream | null = null
 let timer: ReturnType<typeof setInterval> | null = null
 let recordedBlob: Blob | null = null
 let recordedMimeType = ''
 let recordedExtension = 'webm'
-/** 取消标记：录制中触发 resetAll 时让异步 'stop' 监听器丢弃数据，不进 preview */
-let discarding = false
+let recordOwner: object | null = null
+let disposed = false
 
 const VOICE_MIME_TYPE_OPTIONS = [
   { mimeType: 'audio/webm;codecs=opus', extension: 'webm' },
@@ -140,38 +139,51 @@ async function startRecord() {
     message.error('当前浏览器不支持录音（需要 HTTPS 或 localhost）')
     return
   }
+  const owner = {}
+  recordOwner = owner
   try {
-    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
-  } catch (e) {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    if (disposed || !visible.value || recordOwner !== owner) {
+      stream.getTracks().forEach((track) => track.stop())
+      return
+    }
+    mediaStream = stream
+  } catch {
+    if (recordOwner !== owner) {
+      return
+    }
+    recordOwner = null
     message.error('无法获取麦克风权限')
     return
   }
-  audioChunks = []
-  discarding = false
   const voiceMimeType = getSupportedVoiceMimeType()
   if (!voiceMimeType) {
+    recordOwner = null
     message.error('当前浏览器不支持录音格式')
     cleanupStream()
     return
   }
-  recordedMimeType = voiceMimeType.mimeType
-  recordedExtension = voiceMimeType.extension
-  mediaRecorder = new MediaRecorder(mediaStream, { mimeType: recordedMimeType })
-  mediaRecorder.addEventListener('dataavailable', (event: BlobEvent) => {
+  const chunks: Blob[] = []
+  const recorder = new MediaRecorder(mediaStream, { mimeType: voiceMimeType.mimeType })
+  mediaRecorder = recorder
+  recorder.addEventListener('dataavailable', (event: BlobEvent) => {
     if (event.data.size > 0) {
-      audioChunks.push(event.data)
+      chunks.push(event.data)
     }
   })
-  mediaRecorder.addEventListener('stop', () => {
-    // 中途取消时直接丢弃，不进 preview
-    if (discarding) {
+  recorder.addEventListener('stop', () => {
+    if (recordOwner !== owner || mediaRecorder !== recorder) {
       return
     }
-    recordedBlob = new Blob(audioChunks, { type: recordedMimeType })
+    recordOwner = null
+    mediaRecorder = null
+    recordedMimeType = voiceMimeType.mimeType
+    recordedExtension = voiceMimeType.extension
+    recordedBlob = new Blob(chunks, { type: recordedMimeType })
     previewUrl.value = URL.createObjectURL(recordedBlob)
     status.value = 'preview'
   })
-  mediaRecorder.start()
+  recorder.start()
   status.value = 'recording'
   duration.value = 0
   timer = setInterval(() => {
@@ -227,17 +239,17 @@ function handleCancel() {
 
 /** 全量重置：录制流 / 计时 / 预览资源全部清掉 */
 function resetAll() {
-  // 标记取消，避免 mediaRecorder.stop() 后异步 'stop' 监听器把状态切到 preview
-  discarding = true
-  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-    mediaRecorder.stop()
+  recordOwner = null
+  const recorder = mediaRecorder
+  mediaRecorder = null
+  if (recorder && recorder.state !== 'inactive') {
+    recorder.stop()
   }
   cleanupStream()
   if (timer) {
     clearInterval(timer)
     timer = null
   }
-  audioChunks = []
   recordedMimeType = ''
   recordedExtension = 'webm'
   duration.value = 0
@@ -274,7 +286,10 @@ onMounted(() => {
   }
 })
 
-onBeforeUnmount(resetAll)
+onBeforeUnmount(() => {
+  disposed = true
+  resetAll()
+})
 
 onUnmounted(() => {
   document.removeEventListener('click', handleDocumentClick)

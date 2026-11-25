@@ -14,7 +14,10 @@ const appStore = useAppStore()
 
 const layout = computed(() => appStore.getLayout)
 
-const layouts: { className: string; label: string; type: VbenLayoutType }[] = [
+type LayoutOption = { className: string; label: string; type: VbenLayoutType }
+
+// 文案随当前语言响应式更新（设置抽屉常驻，不刷新切换语言后仍需同步）
+const layouts = computed<LayoutOption[]>(() => [
   {
     className: 'sidebar-nav',
     label: t('setting.vertical'),
@@ -45,42 +48,55 @@ const layouts: { className: string; label: string; type: VbenLayoutType }[] = [
     label: t('setting.headerTwoColumn'),
     type: 'header-mixed-nav'
   }
-]
+])
 </script>
 
 <template>
   <div :class="prefixCls" class="grid grid-cols-3 gap-14px">
-    <div
+    <!-- 布局选项为原生 button，可键盘选择并带选中状态 -->
+    <button
       v-for="item in layouts"
       :key="item.type"
+      :aria-label="item.label"
+      :aria-pressed="layout === item.type"
+      :class="`${prefixCls}__option`"
       class="flex cursor-pointer flex-col items-center gap-6px"
+      type="button"
       @click="appStore.setLayout(item.type)"
     >
-      <div
-        :aria-label="item.label"
+      <span
         :class="[
           `${prefixCls}__${item.className}`,
-          'relative h-48px w-56px bg-gray-300',
+          'relative block h-48px w-56px bg-gray-300',
           {
             'is-acitve': layout === item.type
           }
         ]"
         :title="item.label"
       >
-        <div
+        <span
           v-if="item.type === 'sidebar-mixed-nav' || item.type === 'header-mixed-nav'"
-          class="absolute left-[10%] top-0 h-full w-[33%] bg-gray-200"
-        ></div>
-      </div>
+          class="absolute left-[10%] top-0 block h-full w-[33%] bg-gray-200"
+        ></span>
+      </span>
       <span class="max-w-76px truncate text-12px text-[var(--el-text-color-regular)]">
         {{ item.label }}
       </span>
-    </div>
+    </button>
   </div>
 </template>
 
 <style lang="scss" scoped>
 $prefix-cls: #{$namespace}-layout-radio-picker;
+
+// :where 不增加优先级，只重置原生 button 默认样式，保留 focus outline
+:where(.#{$prefix-cls}__option) {
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+}
 
 .#{$prefix-cls} {
   &__sidebar-nav {

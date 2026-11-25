@@ -189,16 +189,16 @@ const rules = {
   key: [
     { required: true, message: '流程标识不能为空', trigger: 'blur' },
     {
-      validator: (_rule: any, value: string, callback: any) => {
+      validator: (_rule: any, value: string) => {
         if (!value) {
-          callback()
-          return
+          return Promise.resolve()
         }
         if (!/^[a-zA-Z_][\-_.0-9_a-zA-Z$]*$/.test(value)) {
-          callback(new Error('只能包含字母、数字、下划线、连字符和点号，且必须以字母或下划线开头'))
-          return
+          return Promise.reject(
+            new Error('只能包含字母、数字、下划线、连字符和点号，且必须以字母或下划线开头')
+          )
         }
-        callback()
+        return Promise.resolve()
       },
       trigger: 'blur'
     }

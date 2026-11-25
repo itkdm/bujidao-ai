@@ -20,55 +20,18 @@ const props = defineProps({
   simpleJson: propTypes.string // Simple 模型结构数据 (json 格式)
 })
 const simpleModel = ref<any>({})
-// 用户任务
-const tasks = ref([])
-// 流程实例
-const processInstance = ref()
+const tasks = ref([]) // 用户任务
+const processInstance = ref() // 流程实例
 
-/** 监控模型视图 包括任务列表、进行中的活动节点编号等 */
-watch(
-  () => props.modelView,
-  async (newModelView) => {
-    if (newModelView) {
-      tasks.value = newModelView.tasks
-      processInstance.value = newModelView.processInstance
-      // 已经拒绝的活动节点编号集合，只包括 UserTask
-      const rejectedTaskActivityIds: string[] = newModelView.rejectedTaskActivityIds
-      // 进行中的活动节点编号集合， 只包括 UserTask
-      const unfinishedTaskActivityIds: string[] = newModelView.unfinishedTaskActivityIds
-      // 已经完成的活动节点编号集合， 包括 UserTask、Gateway 等
-      const finishedActivityIds: string[] = newModelView.finishedTaskActivityIds
-      // 已经完成的连线节点编号集合，只包括 SequenceFlow
-      const finishedSequenceFlowActivityIds: string[] = newModelView.finishedSequenceFlowActivityIds
-      setSimpleModelNodeTaskStatus(
-        newModelView.simpleModel,
-        newModelView.processInstance?.status,
-        rejectedTaskActivityIds,
-        unfinishedTaskActivityIds,
-        finishedActivityIds,
-        finishedSequenceFlowActivityIds
-      )
-      simpleModel.value = newModelView.simpleModel ? newModelView.simpleModel : {}
-    }
-  }
-)
-/** 监控模型结构数据 */
-watch(
-  () => props.simpleJson,
-  async (value) => {
-    if (value) {
-      simpleModel.value = JSON.parse(value)
-    }
-  }
-)
-const setSimpleModelNodeTaskStatus = (
+function setSimpleModelNodeTaskStatus(
   simpleModel: SimpleFlowNode | undefined,
   processStatus: number,
   rejectedTaskActivityIds: string[],
   unfinishedTaskActivityIds: string[],
   finishedActivityIds: string[],
-  finishedSequenceFlowActivityIds: string[]
-) => {
+  finishedSequenceFlowActivityIds: string[],
+  cancelledTaskActivityIds: string[]
+) {
   if (!simpleModel) {
     return
   }
@@ -93,10 +56,11 @@ const setSimpleModelNodeTaskStatus = (
       simpleModel.activityStatus = TaskStatusEnum.REJECT
     } else if (unfinishedTaskActivityIds.includes(simpleModel.id)) {
       simpleModel.activityStatus = TaskStatusEnum.RUNNING
+    } else if (cancelledTaskActivityIds.includes(simpleModel.id)) {
+      simpleModel.activityStatus = TaskStatusEnum.CANCEL
     } else if (finishedActivityIds.includes(simpleModel.id)) {
       simpleModel.activityStatus = TaskStatusEnum.APPROVE
     }
-    // TODO 是不是还缺一个 cancel 的状态
   }
   // 抄送节点
   if (simpleModel.type === NodeType.COPY_TASK_NODE) {
@@ -155,7 +119,8 @@ const setSimpleModelNodeTaskStatus = (
         rejectedTaskActivityIds,
         unfinishedTaskActivityIds,
         finishedActivityIds,
-        finishedSequenceFlowActivityIds
+        finishedSequenceFlowActivityIds,
+        cancelledTaskActivityIds
       )
     })
   }
@@ -166,9 +131,75 @@ const setSimpleModelNodeTaskStatus = (
     rejectedTaskActivityIds,
     unfinishedTaskActivityIds,
     finishedActivityIds,
-    finishedSequenceFlowActivityIds
+    finishedSequenceFlowActivityIds,
+    cancelledTaskActivityIds
   )
 }
+
+/**
+ * 获得已取消的活动节点编号集合，只包括 UserTask
+ *
+ * 判断规则：节点最近一次创建任务之后，没有任务被处理（即没有取消之外的结束状态）。
+ * 例如说：流程被取消、审批不通过时，其它进行中的节点
+ * 补充说明：1）或签等情况，一人通过、其它人被取消，通过的时间不早于任务的创建时间，所以仍为通过；
+ *         2）被撤回、退回后又重新执行的节点，以最近一次创建的任务为准
+ */
+function getCancelledTaskActivityIds(tasks: any[], finishedActivityIds: string[]): string[] {
+  const getTime = (time: any) => new Date(time).getTime()
+  return finishedActivityIds.filter((activityId) => {
+    const activityTasks = (tasks || []).filter((task) => task.taskDefinitionKey === activityId)
+    if (activityTasks.length === 0) {
+      return false
+    }
+    const lastCreateTime = Math.max(...activityTasks.map((task) => getTime(task.createTime)))
+    const handledEndTimes = activityTasks
+      .filter((task) => task.status !== TaskStatusEnum.CANCEL && task.endTime)
+      .map((task) => getTime(task.endTime))
+    return handledEndTimes.length === 0 || Math.max(...handledEndTimes) < lastCreateTime
+  })
+}
+
+/** 监控模型视图 包括任务列表、进行中的活动节点编号等 */
+watch(
+  () => props.modelView,
+  async (newModelView) => {
+    if (newModelView) {
+      tasks.value = newModelView.tasks
+      processInstance.value = newModelView.processInstance
+      const rejectedTaskActivityIds: string[] = newModelView.rejectedTaskActivityIds // 已经拒绝的活动节点编号集合，只包括 UserTask
+      const unfinishedTaskActivityIds: string[] = newModelView.unfinishedTaskActivityIds // 进行中的活动节点编号集合， 只包括 UserTask
+      const finishedActivityIds: string[] = newModelView.finishedTaskActivityIds // 已经完成的活动节点编号集合， 包括 UserTask、Gateway 等
+      const finishedSequenceFlowActivityIds: string[] = newModelView.finishedSequenceFlowActivityIds // 已经完成的连线节点编号集合，只包括 SequenceFlow
+      const cancelledTaskActivityIds = getCancelledTaskActivityIds(
+        newModelView.tasks,
+        finishedActivityIds
+      ) // 已经取消的活动节点编号集合，只包括 UserTask
+      setSimpleModelNodeTaskStatus(
+        newModelView.simpleModel,
+        newModelView.processInstance?.status,
+        rejectedTaskActivityIds,
+        unfinishedTaskActivityIds,
+        finishedActivityIds,
+        finishedSequenceFlowActivityIds,
+        cancelledTaskActivityIds
+      )
+      simpleModel.value = newModelView.simpleModel ? newModelView.simpleModel : {}
+    }
+  },
+  // 不加 immediate 会错过唯一一次赋值，导致流程图空白
+  { immediate: true }
+)
+/** 监控模型结构数据 */
+watch(
+  () => props.simpleJson,
+  async (value) => {
+    if (value) {
+      simpleModel.value = JSON.parse(value)
+    }
+  },
+  // immediate：同上，组件挂载时 simpleJson 可能已经传入
+  { immediate: true }
+)
 </script>
 
 <style lang="scss" scoped></style>

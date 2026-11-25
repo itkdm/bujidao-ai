@@ -47,7 +47,7 @@
           <el-button v-if="actionType === 'update'" type="success" @click="handleDeploy">
             发 布
           </el-button>
-          <el-button type="primary" @click="handleSave">
+          <el-button type="primary" :loading="saveLoading" @click="handleSave">
             <span v-if="actionType === 'definition'">恢 复</span>
             <span v-else>保 存</span>
           </el-button>
@@ -307,7 +307,10 @@ const validateAllSteps = async () => {
 }
 
 /** 保存操作 */
+const saveLoading = ref(false) // 保存加载中
 const handleSave = async () => {
+  if (saveLoading.value) return
+  saveLoading.value = true
   try {
     // 保存前校验所有步骤的数据
     await validateAllSteps()
@@ -346,6 +349,8 @@ const handleSave = async () => {
   } catch (error: any) {
     console.error('保存失败:', error)
     message.warning(error.message || '请完善所有步骤的必填信息')
+  } finally {
+    saveLoading.value = false
   }
 }
 
@@ -368,8 +373,7 @@ const handleDeploy = async () => {
     if (formData.value.id) {
       await ModelApi.updateModel(modelData)
     } else {
-      const result = await ModelApi.createModel(modelData)
-      formData.value.id = result.id
+      formData.value.id = await ModelApi.createModel(modelData)
     }
 
     // 发布

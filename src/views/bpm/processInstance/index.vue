@@ -187,7 +187,7 @@
           <el-button
             link
             type="primary"
-            v-hasPermi="['bpm:process-instance:cancel']"
+            v-hasPermi="['bpm:process-instance:query']"
             @click="handleDetail(scope.row)"
           >
             详情
@@ -196,7 +196,7 @@
             link
             type="primary"
             v-if="scope.row.status === 1"
-            v-hasPermi="['bpm:process-instance:query']"
+            v-hasPermi="['bpm:process-instance:cancel']"
             @click="handleCancel(scope.row)"
           >
             取消
@@ -234,7 +234,7 @@ const { t } = useI18n() // 国际化
 
 const loading = ref(true) // 列表的加载中
 const total = ref(0) // 列表的总页数
-const list = ref([]) // 列表的数据
+const list = ref<ProcessInstanceVO[]>([]) // 列表的数据
 const processDefinitionList = ref<any[]>([]) // 流程定义列表
 const queryParams = reactive({
   pageNo: 1,

@@ -30,7 +30,7 @@ provide('reload', reload)
 <template>
   <section
     :class="[
-      'p-[var(--app-content-padding)] w-full bg-[var(--app-content-bg-color)] dark:bg-[var(--el-bg-color)]',
+      'box-border p-[var(--app-content-padding)] w-full bg-[var(--app-content-bg-color)]',
       {
         '!min-h-[calc(100vh-var(--top-tool-height)-var(--tags-view-height)-var(--app-footer-height))] pb-0':
           footer
@@ -40,7 +40,7 @@ provide('reload', reload)
     <router-view v-if="routerAlive">
       <template #default="{ Component, route }">
         <keep-alive :include="getCaches">
-          <component :is="Component" :key="route.fullPath" />
+          <component :is="Component" :key="route.meta.viewKey || route.fullPath" />
         </keep-alive>
       </template>
     </router-view>

@@ -51,7 +51,7 @@
           v-model="queryParams.supplierId"
           clearable
           filterable
-          placeholder="请选择供供应商"
+          placeholder="请选择供应商"
           class="!w-240px"
         >
           <el-option

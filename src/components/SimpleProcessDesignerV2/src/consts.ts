@@ -108,6 +108,8 @@ export interface SimpleFlowNode {
   timeoutHandler?: TimeoutHandler
   // 审批任务拒绝处理
   rejectHandler?: RejectHandler
+  // 退回后的审批方式
+  returnApproveMode?: ReturnApproveMode
   // 审批人为空的处理
   assignEmptyHandler?: AssignEmptyHandler
   // 审批节点的审批人与发起人相同时，对应的处理类型
@@ -246,6 +248,8 @@ export type TimeoutHandler = {
   timeDuration?: string
   // 执行动作是自动提醒, 最大提醒次数
   maxRemindCount?: number
+  // 执行动作是自动跳转, 跳转的目标节点 Id
+  jumpNodeId?: string
 }
 
 /**
@@ -304,6 +308,18 @@ export enum RejectHandlerType {
    */
   RETURN_USER_TASK = 2
 }
+// 退回后的审批方式
+export enum ReturnApproveMode {
+  /**
+   * 重新依次审批：从退回的目标节点开始，重新依次审批（默认，与旧流程一致）
+   */
+  RESTART = 1,
+  /**
+   * 从当前节点审批：退回的目标节点审批人修改表单并重新提交后，回到当前节点审批
+   * 仅当前节点只有一位审批人时生效，否则仍重新依次审批
+   */
+  RESUME_SOURCE = 2
+}
 // 用户任务超时处理类型枚举
 export enum TimeoutHandlerType {
   /**
@@ -317,7 +333,11 @@ export enum TimeoutHandlerType {
   /**
    * 自动拒绝
    */
-  REJECT = 3
+  REJECT = 3,
+  /**
+   * 自动跳转：跳转到指定的审批节点，仅仿钉钉设计器支持
+   */
+  AUTO_JUMP = 4
 }
 // 用户任务的审批人为空时，处理类型枚举
 export enum AssignEmptyHandlerType {
@@ -587,10 +607,19 @@ export const TIMEOUT_HANDLER_TYPES: DictDataVO[] = [
   { label: '自动同意', value: 2 },
   { label: '自动拒绝', value: 3 }
 ]
+// 仿钉钉设计器的超时处理执行动作类型，比 BPMN 设计器多了【自动跳转】
+export const SIMPLE_TIMEOUT_HANDLER_TYPES: DictDataVO[] = [
+  ...TIMEOUT_HANDLER_TYPES,
+  { label: '自动跳转', value: TimeoutHandlerType.AUTO_JUMP }
+]
 export const REJECT_HANDLER_TYPES: DictDataVO[] = [
   { label: '终止流程', value: RejectHandlerType.FINISH_PROCESS },
   { label: '驳回到指定节点', value: RejectHandlerType.RETURN_USER_TASK }
   // { label: '结束任务', value: RejectHandlerType.FINISH_TASK }
+]
+export const RETURN_APPROVE_MODES: DictDataVO[] = [
+  { label: '重新依次审批', value: ReturnApproveMode.RESTART },
+  { label: '从当前节点审批', value: ReturnApproveMode.RESUME_SOURCE }
 ]
 export const ASSIGN_EMPTY_HANDLER_TYPES: DictDataVO[] = [
   { label: '自动通过', value: 1 },

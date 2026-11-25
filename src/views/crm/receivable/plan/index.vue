@@ -142,12 +142,7 @@
         width="180px"
         :formatter="dateFormatter2"
       />
-      <el-table-column
-        align="center"
-        label="实际回款金额（元）"
-        prop="receivable.price"
-        width="160"
-      >
+      <el-table-column align="center" label="未回款金额（元）" width="160">
         <template #default="scope">
           <el-text v-if="scope.row.receivable">
             {{ erpPriceInputFormatter(scope.row.price - scope.row.receivable.price) }}
@@ -177,7 +172,7 @@
             link
             type="success"
             @click="openReceivableForm(scope.row)"
-            :disabled="scope.row.receivableId"
+            :disabled="!!scope.row.receivableId"
           >
             创建回款
           </el-button>
@@ -232,7 +227,7 @@ const { t } = useI18n() // 国际化
 
 const loading = ref(true) // 列表的加载中
 const total = ref(0) // 列表的总页数
-const list = ref([]) // 列表的数据
+const list = ref<ReceivablePlanApi.ReceivablePlanVO[]>([]) // 列表的数据
 const queryParams = reactive({
   pageNo: 1,
   pageSize: 10,

@@ -38,6 +38,7 @@
               v-model="formData.customerId"
               placeholder="请选择客户"
               class="w-1/1"
+              @change="handleCustomerChange"
             >
               <el-option
                 v-for="item in customerList"
@@ -113,7 +114,12 @@
         </el-col>
         <el-col :span="12">
           <el-form-item label="直属上级" prop="parentId">
-            <el-select v-model="formData.parentId" placeholder="请选择直属上级" class="w-1/1">
+            <el-select
+              v-model="formData.parentId"
+              :disabled="!formData.customerId"
+              placeholder="请选择直属上级"
+              class="w-1/1"
+            >
               <el-option
                 v-for="item in contactList"
                 :key="item.id"
@@ -218,6 +224,21 @@ const userOptions = ref<UserApi.UserVO[]>([]) // 用户列表
 const customerList = ref<CustomerApi.CustomerVO[]>([]) // 客户列表
 const contactList = ref<ContactApi.ContactVO[]>([]) // 联系人列表
 
+/** 获得当前客户的联系人列表 */
+const getContactList = async () => {
+  if (!formData.value.customerId) {
+    contactList.value = []
+    return
+  }
+  contactList.value = await ContactApi.getContactListByCustomer(formData.value.customerId)
+}
+
+/** 客户切换时，清空并重新加载直属上级 */
+const handleCustomerChange = async () => {
+  formData.value.parentId = undefined
+  await getContactList()
+}
+
 /** 打开弹窗 */
 const open = async (type: string, id?: number, customerId?: number, businessId?: number) => {
   dialogVisible.value = true
@@ -242,8 +263,8 @@ const open = async (type: string, id?: number, customerId?: number, businessId?:
       formData.value.businessId = businessId
     }
   }
-  // 获得联系人列表
-  contactList.value = await ContactApi.getSimpleContactList()
+  // 获得当前客户的联系人列表
+  await getContactList()
   // 获得客户列表
   customerList.value = await CustomerApi.getCustomerSimpleList()
   // 获得地区列表

@@ -87,6 +87,11 @@ export const getSimpleContactList = async () => {
   return await request.get({ url: `/crm/contact/simple-all-list` })
 }
 
+// 获得 CRM 联系人列表，基于指定客户
+export const getContactListByCustomer = async (customerId: number) => {
+  return await request.get({ url: `/crm/contact/list-by-customer`, params: { customerId } })
+}
+
 // 批量新增联系人商机关联
 export const createContactBusinessList = async (data: ContactBusinessReqVO) => {
   return await request.post({ url: `/crm/contact/create-business-list`, data })

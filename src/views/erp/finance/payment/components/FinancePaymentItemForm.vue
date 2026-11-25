@@ -67,7 +67,7 @@
     ref="purchaseInPaymentEnableListRef"
     @success="handleAddPurchaseIn"
   />
-  <!-- 可付款的【采购入库单】列表 -->
+  <!-- 可退款的【采购退货单】列表 -->
   <PurchaseReturnRefundEnableList
     ref="purchaseReturnRefundEnableListRef"
     @success="handleAddPurchaseReturn"

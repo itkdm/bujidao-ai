@@ -103,46 +103,40 @@ const formData = ref<IotSceneRule>(createDefaultFormData()) // 表单数据
  * 触发器校验器（兜底，与主条件 UI 规则一致）
  * @param _rule 校验规则（未使用）
  * @param value 校验值
- * @param callback 回调函数
  */
-const validateTriggers = (_rule: any, value: Trigger[], callback: any) => {
+const validateTriggers = (_rule: any, value: Trigger[]) => {
   if (!value || !Array.isArray(value) || value.length === 0) {
-    callback(new Error('至少需要一个触发器'))
-    return
+    return Promise.reject(new Error('至少需要一个触发器'))
   }
 
   for (let i = 0; i < value.length; i++) {
     const error = validateTriggerItem(value[i], i)
     if (error) {
-      callback(new Error(error))
-      return
+      return Promise.reject(new Error(error))
     }
   }
 
-  callback()
+  return Promise.resolve()
 }
 
 /**
  * 执行器校验器
  * @param _rule 校验规则（未使用）
  * @param value 校验值
- * @param callback 回调函数
  */
-const validateActions = (_rule: any, value: Action[], callback: any) => {
+const validateActions = (_rule: any, value: Action[]) => {
   if (!value || !Array.isArray(value) || value.length === 0) {
-    callback(new Error('至少需要一个执行器'))
-    return
+    return Promise.reject(new Error('至少需要一个执行器'))
   }
 
   for (let i = 0; i < value.length; i++) {
     const error = validateActionItem(value[i], i)
     if (error) {
-      callback(new Error(error))
-      return
+      return Promise.reject(new Error(error))
     }
   }
 
-  callback()
+  return Promise.resolve()
 }
 
 const formRules = reactive({

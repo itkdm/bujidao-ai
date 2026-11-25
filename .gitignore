@@ -1,11 +1,34 @@
-node_modules
-.DS_Store
-dist
-dist-ssr
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+dist-*/
 /dist*
-pnpm-debug
-auto-*.d.ts
-.idea
+coverage/
+*.tsbuildinfo
+
+# Tool caches
+**/.vitepress/cache/
+
+# Logs
+*.log
+*-debug.log*
+*-error.log*
+
+# Local overrides（.env.local 为芋道已跟踪的本地环境模式文件，保留跟踪）
+*.local
+!.env.local
+
+# OS and IDE files
+.DS_Store
+Thumbs.db
+.idea/
 .history
-output/
-.playwright-cli/
+
+# Generated / local tooling
+auto-*.d.ts
+output
+.playwright-cli
+.playwright-mcp

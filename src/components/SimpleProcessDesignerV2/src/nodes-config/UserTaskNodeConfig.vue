@@ -212,7 +212,6 @@
                 />
               </el-select>
             </el-form-item>
-            <!-- TODO @jason：后续要支持选择已经存好的表达式 -->
             <el-form-item
               v-if="configForm.candidateStrategy === CandidateStrategy.EXPRESSION"
               label="流程表达式"
@@ -223,6 +222,19 @@
                 v-model="configForm.expression"
                 clearable
                 style="width: 100%"
+              />
+              <el-button
+                class="mt-5px"
+                type="success"
+                size="small"
+                @click="processExpressionDialogRef.open()"
+              >
+                <Icon icon="ep:select" class="mr-1px" /> 选择表达式
+              </el-button>
+              <ProcessExpressionDialog
+                ref="processExpressionDialogRef"
+                append-to-body
+                @select="selectProcessExpression"
               />
             </el-form-item>
             <el-form-item :label="`多人${nodeTypeName}方式`" prop="approveMethod">
@@ -286,6 +298,28 @@
               </el-form-item>
             </div>
 
+            <!-- 仅流程表单支持：修改人只能修改目标节点有编辑权限的表单字段 -->
+            <div v-if="currentNode.type === NodeType.USER_TASK_NODE && formType === 10">
+              <el-divider content-position="left">退回后的审批方式</el-divider>
+              <el-form-item prop="returnApproveMode">
+                <div>
+                  <el-radio-group v-model="configForm.returnApproveMode">
+                    <div class="flex-col">
+                      <div v-for="(item, index) in RETURN_APPROVE_MODES" :key="index">
+                        <el-radio :key="item.value" :value="item.value" :label="item.label" />
+                      </div>
+                    </div>
+                  </el-radio-group>
+                  <div class="text-12px text-gray-500">
+                    从当前节点审批：退回后由目标节点审批通过的处理人修改表单并重新提交，再回到当前节点审批
+                  </div>
+                  <div class="text-12px text-gray-500">
+                    仅当前节点只有一位审批人时生效；多人审批（会签、或签、依次审批）、加签中的任务，或目标节点没有处理人（例如自动通过）时，仍重新依次审批
+                  </div>
+                </div>
+              </el-form-item>
+            </div>
+
             <div v-if="currentNode.type === NodeType.USER_TASK_NODE">
               <el-divider content-position="left">审批人超时未处理时</el-divider>
               <el-form-item label="启用开关" prop="timeoutHandlerEnable">
@@ -306,12 +340,43 @@
                   @change="timeoutHandlerTypeChanged"
                 >
                   <el-radio-button
-                    v-for="item in TIMEOUT_HANDLER_TYPES"
+                    v-for="item in timeoutHandlerTypes"
                     :key="item.value"
                     :value="item.value"
                     :label="item.label"
                   />
                 </el-radio-group>
+              </el-form-item>
+              <el-form-item
+                v-if="
+                  configForm.timeoutHandlerEnable &&
+                  configForm.timeoutHandlerType === TimeoutHandlerType.AUTO_JUMP
+                "
+                label="跳转节点"
+                prop="timeoutJumpNodeId"
+              >
+                <div class="w-full">
+                  <el-select
+                    filterable
+                    v-model="configForm.timeoutJumpNodeId"
+                    clearable
+                    placeholder="请选择跳转的审批节点"
+                    style="width: 100%"
+                  >
+                    <el-option
+                      v-for="item in timeoutJumpNodeList"
+                      :key="item.id"
+                      :label="item.name"
+                      :value="item.id"
+                    />
+                  </el-select>
+                  <div v-if="!timeoutJumpSupported" class="text-12px text-red-500">
+                    当前节点位于并行分支、包容分支内，不支持自动跳转，请修改执行动作
+                  </div>
+                  <div class="text-12px text-gray-500">
+                    可跳转到其它条件分支的人工审批节点；不支持并行、包容分支内的节点，以及审批人自选、发起人自选的节点
+                  </div>
+                </div>
               </el-form-item>
               <el-form-item label="超时时间设置" v-if="configForm.timeoutHandlerEnable">
                 <span class="mr-2">当超过</span>
@@ -455,59 +520,7 @@
         </div>
       </el-tab-pane>
       <el-tab-pane label="表单字段权限" name="fields" v-if="formType === 10">
-        <div class="field-setting-pane">
-          <div class="field-setting-desc">字段权限</div>
-          <div class="field-permit-title">
-            <div class="setting-title-label first-title"> 字段名称 </div>
-            <div class="other-titles">
-              <span class="setting-title-label cursor-pointer" @click="updatePermission('READ')">
-                只读
-              </span>
-              <span class="setting-title-label cursor-pointer" @click="updatePermission('WRITE')">
-                可编辑
-              </span>
-              <span class="setting-title-label cursor-pointer" @click="updatePermission('NONE')">
-                隐藏
-              </span>
-            </div>
-          </div>
-          <div
-            class="field-setting-item"
-            v-for="(item, index) in fieldsPermissionConfig"
-            :key="index"
-          >
-            <div class="field-setting-item-label"> {{ item.title }} </div>
-            <el-radio-group class="field-setting-item-group" v-model="item.permission">
-              <div class="item-radio-wrap">
-                <el-radio
-                  :value="FieldPermissionType.READ"
-                  size="large"
-                  :label="FieldPermissionType.READ"
-                >
-                  <span></span>
-                </el-radio>
-              </div>
-              <div class="item-radio-wrap">
-                <el-radio
-                  :value="FieldPermissionType.WRITE"
-                  size="large"
-                  :label="FieldPermissionType.WRITE"
-                >
-                  <span></span>
-                </el-radio>
-              </div>
-              <div class="item-radio-wrap">
-                <el-radio
-                  :value="FieldPermissionType.NONE"
-                  size="large"
-                  :label="FieldPermissionType.NONE"
-                >
-                  <span></span>
-                </el-radio>
-              </div>
-            </el-radio-group>
-          </div>
-        </div>
+        <FieldsPermissionSetting v-model="fieldsPermissionConfig" title="字段权限" />
       </el-tab-pane>
       <el-tab-pane label="监听器" name="listener">
         <UserTaskListener
@@ -538,9 +551,12 @@ import {
   ApproveMethodType,
   TimeUnitType,
   RejectHandlerType,
+  ReturnApproveMode,
   TIMEOUT_HANDLER_TYPES,
+  SIMPLE_TIMEOUT_HANDLER_TYPES,
   TIME_UNIT_TYPES,
   REJECT_HANDLER_TYPES,
+  RETURN_APPROVE_MODES,
   DEFAULT_BUTTON_SETTING,
   OPERATION_BUTTON_NAME,
   ButtonSetting,
@@ -566,7 +582,10 @@ import {
 import { defaultProps } from '@/utils/tree'
 import { cloneDeep } from 'lodash-es'
 import { convertTimeUnit, getApproveTypeText } from '../utils'
+import FieldsPermissionSetting from './components/FieldsPermissionSetting.vue'
 import UserTaskListener from './components/UserTaskListener.vue'
+import ProcessExpressionDialog from '@/components/bpmnProcessDesigner/package/penal/task/task-components/ProcessExpressionDialog.vue'
+import { ProcessExpressionVO } from '@/api/bpm/processExpression'
 defineOptions({
   name: 'UserTaskNodeConfig'
 })
@@ -592,6 +611,8 @@ const deptLevelLabel = computed(() => {
 })
 // 监控节点的变化
 const currentNode = useWatchNode(props)
+// 整个流程的节点树，用于选择超时自动跳转的节点
+const processNodeTree = inject<Ref<SimpleFlowNode | undefined>>('processNodeTree', ref())
 // 抽屉配置
 const { settingVisible, closeDrawer, openDrawer } = useDrawer()
 // 节点名称配置
@@ -599,8 +620,13 @@ const { nodeName, showInput, clickIcon, blurEvent } = useNodeName(NodeType.USER_
 // 激活的 Tab 标签页
 const activeTabName = ref('user')
 // 表单字段权限设置
-const { formType, fieldsPermissionConfig, formFieldOptions, getNodeConfigFormFields } =
-  useFormFieldsPermission(FieldPermissionType.READ)
+const {
+  formType,
+  fieldsPermissionConfig,
+  formFieldOptions,
+  getNodeConfigFormFields,
+  getFieldsPermission
+} = useFormFieldsPermission(FieldPermissionType.READ)
 // 表单内用户字段选项, 必须是必填和用户选择器
 const userFieldOnFormOptions = computed(() => {
   // 固定添加发起人 ID 字段
@@ -638,6 +664,23 @@ const formRules = reactive({
   returnNodeId: [{ required: true, message: '驳回节点不能为空', trigger: 'change' }],
   timeoutHandlerEnable: [{ required: true }],
   timeoutHandlerType: [{ required: true }],
+  timeoutJumpNodeId: [
+    { required: true, message: '跳转节点不能为空', trigger: 'change' },
+    {
+      validator: () => {
+        if (
+          configForm.value.timeoutHandlerType === TimeoutHandlerType.AUTO_JUMP &&
+          !timeoutJumpSupported.value
+        ) {
+          return Promise.reject(
+            new Error('当前节点位于并行分支、包容分支内，不支持自动跳转')
+          )
+        }
+        return Promise.resolve()
+      },
+      trigger: 'change'
+    }
+  ],
   timeDuration: [{ required: true, message: '超时时间不能为空', trigger: 'blur' }],
   maxRemindCount: [{ required: true, message: '提醒次数不能为空', trigger: 'blur' }],
   assignEmptyHandlerType: [{ required: true }],
@@ -689,10 +732,21 @@ const {
   timeUnit,
   timeUnitChange,
   isoTimeDuration,
-  cTimeoutMaxRemindCount
+  cTimeoutMaxRemindCount,
+  timeoutHandlerTypes,
+  timeoutJumpNodeList,
+  timeoutJumpSupported,
+  loadTimeoutJumpNodes,
+  cTimeoutJumpNodeId
 } = useTimeoutHandler()
 
 const userTaskListenerRef = ref()
+
+/** 选择已保存的流程表达式 */
+const processExpressionDialogRef = ref()
+const selectProcessExpression = (expression: ProcessExpressionVO) => {
+  configForm.value.expression = expression.expression
+}
 
 /** 节点类型名称 */
 const nodeTypeName = computed(() => {
@@ -708,6 +762,10 @@ const saveConfig = async () => {
   currentNode.value.approveType = approveType.value
   // 如果不是人工审批。返回
   if (approveType.value !== ApproveType.USER) {
+    // 自动跳转仅对人工审批生效，切换为自动通过/拒绝时清除；原有的提醒/同意/拒绝配置保持不变
+    if (currentNode.value.timeoutHandler?.type === TimeoutHandlerType.AUTO_JUMP) {
+      currentNode.value.timeoutHandler = { enable: false }
+    }
     currentNode.value.showText = getApproveTypeText(approveType.value)
     settingVisible.value = false
     return true
@@ -733,12 +791,15 @@ const saveConfig = async () => {
     type: configForm.value.rejectHandlerType!,
     returnNodeId: configForm.value.returnNodeId
   }
+  currentNode.value.returnApproveMode =
+    configForm.value.returnApproveMode ?? ReturnApproveMode.RESTART
   // 设置超时处理
   currentNode.value.timeoutHandler = {
     enable: configForm.value.timeoutHandlerEnable!,
     type: cTimeoutType.value,
     timeDuration: isoTimeDuration.value,
-    maxRemindCount: cTimeoutMaxRemindCount.value
+    maxRemindCount: cTimeoutMaxRemindCount.value,
+    jumpNodeId: cTimeoutJumpNodeId.value
   }
   // 设置审批人为空时
   currentNode.value.assignEmptyHandler = {
@@ -751,7 +812,7 @@ const saveConfig = async () => {
   // 设置审批人与发起人相同时
   currentNode.value.assignStartUserHandlerType = configForm.value.assignStartUserHandlerType
   // 设置表单权限
-  currentNode.value.fieldsPermission = fieldsPermissionConfig.value
+  currentNode.value.fieldsPermission = getFieldsPermission()
   // 设置按钮权限
   currentNode.value.buttonsSetting = buttonsSetting.value
   // 创建任务监听器
@@ -792,6 +853,19 @@ const showUserTaskNodeConfig = (node: SimpleFlowNode) => {
   nodeName.value = node.name
   // 1 审批类型
   approveType.value = node.approveType ? node.approveType : ApproveType.USER
+  // 1.1 设置审批超时处理：先于非人工审批的提前返回，从节点回填，避免取消的草稿在切换为人工审批后复活
+  configForm.value.timeoutHandlerEnable = node.timeoutHandler?.enable
+  if (node.timeoutHandler?.enable && node.timeoutHandler?.timeDuration) {
+    const strTimeDuration = node.timeoutHandler.timeDuration
+    let parseTime = strTimeDuration.match(/\d+/)?.[0] ?? ''
+    let parseTimeUnit = strTimeDuration.slice(strTimeDuration.length - 1)
+    configForm.value.timeDuration = parseInt(parseTime)
+    timeUnit.value = convertTimeUnit(parseTimeUnit)
+  }
+  configForm.value.timeoutHandlerType = node.timeoutHandler?.type
+  configForm.value.maxRemindCount = node.timeoutHandler?.maxRemindCount
+  configForm.value.timeoutJumpNodeId = node.timeoutHandler?.jumpNodeId
+  loadTimeoutJumpNodes()
   // 如果审批类型不是人工审批返回
   if (approveType.value !== ApproveType.USER) {
     return
@@ -808,21 +882,11 @@ const showUserTaskNodeConfig = (node: SimpleFlowNode) => {
   }
   // 2.3 设置审批拒绝处理
   configForm.value.rejectHandlerType = node.rejectHandler?.type
+  configForm.value.returnApproveMode = node.returnApproveMode ?? ReturnApproveMode.RESTART
   configForm.value.returnNodeId = node.rejectHandler?.returnNodeId
   const matchNodeList = []
   emits('find:returnTaskNodes', matchNodeList)
   returnTaskList.value = matchNodeList
-  // 2.4 设置审批超时处理
-  configForm.value.timeoutHandlerEnable = node.timeoutHandler?.enable
-  if (node.timeoutHandler?.enable && node.timeoutHandler?.timeDuration) {
-    const strTimeDuration = node.timeoutHandler.timeDuration
-    let parseTime = strTimeDuration.match(/\d+/)?.[0] ?? ''
-    let parseTimeUnit = strTimeDuration.slice(strTimeDuration.length - 1)
-    configForm.value.timeDuration = parseInt(parseTime)
-    timeUnit.value = convertTimeUnit(parseTimeUnit)
-  }
-  configForm.value.timeoutHandlerType = node.timeoutHandler?.type
-  configForm.value.maxRemindCount = node.timeoutHandler?.maxRemindCount
   // 2.5 设置审批人为空时
   configForm.value.assignEmptyHandlerType = node.assignEmptyHandler?.type
   configForm.value.assignEmptyHandlerUserIds = node.assignEmptyHandler?.userIds
@@ -962,6 +1026,53 @@ function useTimeoutHandler() {
     return configForm.value.maxRemindCount
   })
 
+  // 自动跳转可选的目标节点。与后端的校验一致：其它人工审批的审批节点，并且当前节点、目标节点都不能位于并行分支、包容分支内
+  // 原因是：并行分支、包容分支内可能有多个任务同时进行，跳转后其它分支的任务会挂起，或者在聚合时重复执行后续节点
+  // 目标节点的审批人不能是自选：跨分支跳转时，没有经过选择审批人的环节
+  const timeoutJumpNodeList = ref<SimpleFlowNode[]>([])
+  // 当前节点是否支持自动跳转
+  const timeoutJumpSupported = ref(true)
+  const loadTimeoutJumpNodes = () => {
+    const jumpNodes: SimpleFlowNode[] = []
+    let supported = true
+    traverseNodeWithConcurrent(processNodeTree.value, false, (node, concurrent) => {
+      if (node.id === currentNode.value.id) {
+        supported = !concurrent
+      } else if (
+        !concurrent &&
+        node.type === NodeType.USER_TASK_NODE &&
+        node.approveType === ApproveType.USER &&
+        node.candidateStrategy !== CandidateStrategy.APPROVE_USER_SELECT &&
+        node.candidateStrategy !== CandidateStrategy.START_USER_SELECT
+      ) {
+        jumpNodes.push(node)
+      }
+    })
+    timeoutJumpNodeList.value = jumpNodes
+    timeoutJumpSupported.value = supported
+    // 目标节点已经被删除、或者不再满足条件时，需要重新选择
+    if (!jumpNodes.some((node) => node.id === configForm.value.timeoutJumpNodeId)) {
+      configForm.value.timeoutJumpNodeId = undefined
+    }
+  }
+  // 超时执行动作的选项：不支持时，不展示【自动跳转】；已经配置的，仍然展示，便于修改
+  const timeoutHandlerTypes = computed(() => {
+    if (
+      timeoutJumpSupported.value ||
+      configForm.value.timeoutHandlerType === TimeoutHandlerType.AUTO_JUMP
+    ) {
+      return SIMPLE_TIMEOUT_HANDLER_TYPES
+    }
+    return TIMEOUT_HANDLER_TYPES
+  })
+  // 超时自动跳转的目标节点
+  const cTimeoutJumpNodeId = computed(() => {
+    if (cTimeoutType.value !== TimeoutHandlerType.AUTO_JUMP) {
+      return undefined
+    }
+    return configForm.value.timeoutJumpNodeId
+  })
+
   return {
     timeoutHandlerChange,
     cTimeoutType,
@@ -969,20 +1080,37 @@ function useTimeoutHandler() {
     timeUnit,
     timeUnitChange,
     isoTimeDuration,
-    cTimeoutMaxRemindCount
+    cTimeoutMaxRemindCount,
+    timeoutHandlerTypes,
+    timeoutJumpNodeList,
+    timeoutJumpSupported,
+    loadTimeoutJumpNodes,
+    cTimeoutJumpNodeId
   }
 }
 
-/** 批量更新权限 */
-const updatePermission = (type: string) => {
-  fieldsPermissionConfig.value.forEach((field) => {
-    field.permission =
-      type === 'READ'
-        ? FieldPermissionType.READ
-        : type === 'WRITE'
-          ? FieldPermissionType.WRITE
-          : FieldPermissionType.NONE
-  })
+/** 遍历节点，并标记节点是否位于并行分支、包容分支内 */
+function traverseNodeWithConcurrent(
+  node: SimpleFlowNode | undefined,
+  concurrent: boolean,
+  callback: (node: SimpleFlowNode, concurrent: boolean) => void
+) {
+  if (!node || !node.id) {
+    return
+  }
+  callback(node, concurrent)
+  // 分支节点：遍历每个分支。并行分支、包容分支的分支内，可能同时执行
+  if (node.conditionNodes && node.conditionNodes.length > 0) {
+    const branchConcurrent =
+      concurrent ||
+      node.type === NodeType.PARALLEL_BRANCH_NODE ||
+      node.type === NodeType.INCLUSIVE_BRANCH_NODE
+    node.conditionNodes.forEach((item) =>
+      traverseNodeWithConcurrent(item.childNode, branchConcurrent, callback)
+    )
+  }
+  // 子节点：分支节点的子节点，在分支聚合之后执行，与分支节点自身一致
+  traverseNodeWithConcurrent(node.childNode, concurrent, callback)
 }
 </script>
 

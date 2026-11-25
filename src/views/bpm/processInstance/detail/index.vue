@@ -76,7 +76,7 @@
           </el-tab-pane>
 
           <!-- 流程图 -->
-          <el-tab-pane label="流程图" name="diagram">
+          <el-tab-pane label="流程图" name="diagram" lazy>
             <div class="form-scroll-area">
               <ProcessInstanceSimpleViewer
                 v-show="
@@ -104,10 +104,16 @@
             </div>
           </el-tab-pane>
 
-          <!-- 流转评论 TODO 待开发 -->
-          <el-tab-pane label="流转评论" name="comment" v-if="false">
+          <!-- 流程评论 -->
+          <el-tab-pane label="流程评论" name="comment">
             <div class="form-scroll-area">
-              <el-scrollbar> 流转评论 </el-scrollbar>
+              <el-scrollbar>
+                <ProcessInstanceCommentList
+                  ref="commentListRef"
+                  :loading="processInstanceLoading"
+                  :id="id"
+                />
+              </el-scrollbar>
             </div>
           </el-tab-pane>
         </el-tabs>
@@ -115,6 +121,7 @@
         <div class="b-t-solid border-t-1px border-[var(--el-border-color)]">
           <!-- 操作栏按钮 -->
           <ProcessInstanceOperationButton
+            v-show="!revisionTaskId"
             ref="operationButtonRef"
             :process-instance="processInstance"
             :process-definition="processDefinition"
@@ -124,6 +131,15 @@
             :writable-fields="writableFields"
             @success="refresh"
           />
+          <!-- 退回修改：当前用户是修改人时，修改表单后重新提交。按钮权限和后端 /bpm/task/resubmit 一致 -->
+          <div
+            v-if="revisionTaskId && checkPermi(['bpm:task:update', 'bpm:process-instance:query'])"
+            class="h-50px flex items-center"
+          >
+            <el-button type="primary" :loading="resubmitLoading" @click="handleResubmit">
+              <Icon icon="ep:promotion" />&nbsp; 重新提交
+            </el-button>
+          </div>
         </div>
       </el-scrollbar>
     </div>
@@ -137,16 +153,26 @@ import { formatDate } from '@/utils/formatTime'
 import { DICT_TYPE } from '@/utils/dict'
 import { BpmModelType, BpmModelFormType } from '@/utils/constants'
 import { setConfAndFields2 } from '@/utils/formCreate'
+import { useFormCreate } from '@/plugins/formCreate'
 import { registerComponent } from '@/utils/routerHelper'
+import { checkPermi } from '@/utils/permission'
+import { useTagsViewStore } from '@/store/modules/tagsView'
 import type { Api as FormCreateApi } from '@form-create/element-ui'
 import * as ProcessInstanceApi from '@/api/bpm/processInstance'
+import * as TaskApi from '@/api/bpm/task'
 import * as UserApi from '@/api/system/user'
 import ProcessInstanceBpmnViewer from './ProcessInstanceBpmnViewer.vue'
 import ProcessInstanceSimpleViewer from './ProcessInstanceSimpleViewer.vue'
 import ProcessInstanceTaskList from './ProcessInstanceTaskList.vue'
+import ProcessInstanceCommentList from './ProcessInstanceCommentList.vue'
 import ProcessInstanceOperationButton from './ProcessInstanceOperationButton.vue'
 import ProcessInstanceTimeline from './ProcessInstanceTimeline.vue'
 import { FieldPermissionType } from '@/components/SimpleProcessDesignerV2/src/consts'
+import {
+  applySubFormsPermission,
+  hasSubForm,
+  isSubFieldPermissionField
+} from '@/components/SimpleProcessDesignerV2/src/utils'
 import { TaskStatusEnum } from '@/api/bpm/task'
 import runningSvg from '@/assets/svgs/bpm/running.svg'
 import approveSvg from '@/assets/svgs/bpm/approve.svg'
@@ -155,17 +181,24 @@ import cancelSvg from '@/assets/svgs/bpm/cancel.svg'
 import PrintDialog from './PrintDialog.vue'
 
 defineOptions({ name: 'BpmProcessInstanceDetail' })
+useFormCreate() // 按需安装 form-create，需在渲染表单之前
 const props = defineProps<{
   id: string // 流程实例的编号
   taskId?: string // 任务编号
   activityId?: string //流程活动编号，用于抄送查看
 }>()
 const message = useMessage() // 消息弹窗
+const { push, currentRoute } = useRouter() // 路由
+const { delView } = useTagsViewStore() // 视图操作
+const revisionTaskId = ref<string>() // 退回修改中的任务编号：当前用户是修改人时，由后端返回
+const revisionId = ref<string>() // 退回修改的批次编号：重新提交时传递，避免过期的页面提交
+const resubmitLoading = ref(false) // 重新提交的加载中
 const processInstanceLoading = ref(false) // 流程实例的加载中
 const processInstance = ref<any>({}) // 流程实例
 const processDefinition = ref<any>({}) // 流程定义
 const processModelView = ref<any>({}) // 流程模型视图
 const operationButtonRef = ref() // 操作按钮组件 ref
+const commentListRef = ref() // 评论列表组件 ref
 const auditIconsMap = {
   [TaskStatusEnum.RUNNING]: runningSvg,
   [TaskStatusEnum.APPROVE]: approveSvg,
@@ -182,6 +215,7 @@ const detailForm = ref({
 }) // 流程实例的表单详情
 
 const writableFields: Array<string> = [] // 表单可以编辑的字段
+const fieldsPermission = ref<Record<string, string>>() // 表单字段权限，打印时沿用
 
 /** 获得详情 */
 const getDetail = () => {
@@ -214,14 +248,18 @@ const getApprovalDetail = async () => {
     }
     processInstance.value = data.processInstance
     processDefinition.value = data.processDefinition
+    revisionTaskId.value = data.revisionTaskId
+    revisionId.value = data.revisionId
 
     // 设置表单信息
     if (processDefinition.value.formType === BpmModelFormType.NORMAL) {
       // 获取表单字段权限
       const formFieldsPermission = data.formFieldsPermission
+      fieldsPermission.value = formFieldsPermission
       // 清空可编辑字段为空
       writableFields.splice(0)
-      if (detailForm.value.rule?.length > 0) {
+      // 子表单的子字段权限需要在渲染前写入规则，所以包含子表单时，重新设置表单
+      if (detailForm.value.rule?.length > 0 && !hasSubForm(detailForm.value.rule)) {
         // 避免刷新 form-create 显示不了
         detailForm.value.value = processInstance.value.formVariables
       } else {
@@ -231,6 +269,7 @@ const getApprovalDetail = async () => {
           processDefinition.value.formFields,
           processInstance.value.formVariables
         )
+        applySubFormsPermission(detailForm.value.rule, formFieldsPermission)
       }
       nextTick().then(() => {
         fApi.value?.btn.show(false)
@@ -238,9 +277,11 @@ const getApprovalDetail = async () => {
         fApi.value?.disabled(true)
         // 设置表单字段权限
         if (formFieldsPermission) {
-          Object.keys(data.formFieldsPermission).forEach((item) => {
-            setFieldPermission(item, formFieldsPermission[item])
-          })
+          Object.keys(data.formFieldsPermission)
+            .filter((item) => !isSubFieldPermissionField(item)) // 子表单的子字段权限，已写入规则
+            .forEach((item) => {
+              setFieldPermission(item, formFieldsPermission[item])
+            })
         }
       })
     } else {
@@ -279,8 +320,10 @@ const setFieldPermission = (field: string, permission: string) => {
   }
   if (permission === FieldPermissionType.WRITE) {
     fApi.value?.disabled(false, field)
-    // 加入可以编辑的字段
-    writableFields.push(field)
+    // 加入可以编辑的字段。子字段全部隐藏的子表单已经隐藏，不加入，避免提交看不到的值
+    if (!fApi.value?.getRule(field)?.hidden) {
+      writableFields.push(field)
+    }
   }
   if (permission === FieldPermissionType.NONE) {
     fApi.value?.hidden(true, field)
@@ -291,12 +334,52 @@ const setFieldPermission = (field: string, permission: string) => {
 const refresh = () => {
   // 重新获取详情
   getDetail()
+  // 重新获取评论
+  commentListRef.value?.getList()
+}
+
+/** 退回修改后，重新提交 */
+const handleResubmit = async () => {
+  if (!revisionTaskId.value) {
+    return
+  }
+  // 校验流程表单
+  try {
+    await fApi.value?.validate()
+  } catch {
+    message.warning('表单校验不通过，请先完善表单!!')
+    return
+  }
+  resubmitLoading.value = true
+  try {
+    // 只提交可编辑的字段，后端会按退回目标节点的表单字段权限校验
+    const variables: Record<string, any> = {}
+    writableFields.forEach((field) => {
+      variables[field] = fApi.value?.getValue(field)
+    })
+    await TaskApi.resubmitTask({
+      taskId: revisionTaskId.value,
+      revisionId: revisionId.value!,
+      variables
+    })
+    message.success('重新提交成功，等待审批人继续审批')
+    // 只有待办权限的修改人，提交后不能再查看该流程详情，所以关闭当前页，回到待办列表
+    if (!checkPermi(['bpm:process-instance:query'])) {
+      delView(unref(currentRoute))
+      await push({ name: 'BpmTodoTask' })
+      return
+    }
+    // 刷新后，后端不再返回 revisionTaskId，切换回普通的操作栏
+    refresh()
+  } finally {
+    resubmitLoading.value = false
+  }
 }
 
 /** 处理打印 */
 const printRef = ref()
 const handlePrint = async () => {
-  printRef.value.open(props.id)
+  printRef.value.open(props.id, fieldsPermission.value)
 }
 
 /** 当前的 Tab */

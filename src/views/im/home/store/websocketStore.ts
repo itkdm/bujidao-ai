@@ -1,5 +1,4 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
-import { store } from '@/store'
 import { getCurrentUserId, getRefreshToken } from '@/utils/auth'
 
 import {
@@ -46,6 +45,7 @@ import { readGroupMessages as apiReadGroupMessages } from '@/api/im/message/grou
 import { readChannelMessages as apiReadChannelMessages } from '@/api/im/message/channel'
 import type { ImChannelMessageRespVO } from '@/api/im/message/channel'
 import { buildChannelConversationStub } from '../../utils/channel'
+import { getDb } from '../../utils/db'
 import type {
   WebSocketFrame,
   ImNotificationWebSocketDTO,
@@ -207,7 +207,7 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
       return msgs
     },
 
-    /** 直接丢弃缓冲帧不回放（cancelPull / 离开 IM 调用，防止下次进 IM 把旧 session 帧回放进新 store） */
+    /** 直接丢弃缓冲帧不回放（cancelPull / 离开 IM 调用） */
     discardBuffer() {
       this.messageBuffer = []
     },
@@ -216,14 +216,14 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
      * 连接 WebSocket
      * 复用 yudao 内置 /infra/ws 通道，后端通过 sendObject(type, content) 下发
      *
-     * 调用契约：切账号 / token 刷新前必须先 `disconnect()` 再 `connect()`；
-     * 本方法不感知 token 变化，旧 socket 在 CONNECTING / OPEN 状态会直接复用旧 token，可能拿到错误身份
+     * socket 实例即连接 owner，旧连接回调不得进入新连接
      */
     connect() {
       // 鉴权用 refreshToken（生命周期更长；access token 过期后服务端会通过 frame 通知重登）
       const refreshToken = getRefreshToken()
-      if (!refreshToken) {
-        console.warn('[IM WS] refreshToken 为空，跳过连接')
+      const currentUserId = getCurrentUserId()
+      if (!refreshToken || !currentUserId) {
+        console.warn('[IM WS] 登录信息不完整，跳过连接')
         return
       }
       // 旧 socket 还在 CONNECTING / OPEN 直接复用，避免叠加多份 onmessage 监听导致重复消息 / 提示音 / 已读上报
@@ -237,17 +237,16 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
       }
       // 旧 socket 已 CLOSING / CLOSED：解绑回调 + 清引用再 new，避免老 handler 仍持有 store 引用阻碍 GC
       if (existingSocket) {
-        existingSocket.onopen = null
-        existingSocket.onmessage = null
-        existingSocket.onerror = null
-        existingSocket.onclose = null
-        this.socket = null
+        this.disconnect()
       }
       const url = `${this.buildWsUrl()}/infra/ws?token=${refreshToken}`
-      this.socket = new WebSocket(url)
+      const socket = new WebSocket(url)
+      this.socket = socket
+      const isActive = () => this.socket === socket
 
       // 连接建立：标记上线 + 启动心跳保活；重连退避计数归零
-      this.socket.onopen = () => {
+      socket.onopen = () => {
+        if (!isActive()) return
         this.isConnected = true
         this.reconnectAttempts = 0
         console.log('[IM WS] connected')
@@ -255,7 +254,8 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
       }
 
       // 收到帧：'pong' 是心跳应答直接吞掉；其余按 WebSocketFrame 解析后交给 dispatchFrame 分流
-      this.socket.onmessage = (event) => {
+      socket.onmessage = (event) => {
+        if (!isActive()) return
         if (event.data === 'pong') {
           return
         }
@@ -268,7 +268,9 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
       }
 
       // 服务端关闭 / 网络断：标记下线，按指数退避自动重连
-      this.socket.onclose = () => {
+      socket.onclose = () => {
+        if (!isActive()) return
+        this.socket = null
         this.isConnected = false
         console.log('[IM WS] disconnected')
         this.reconnect()
@@ -277,10 +279,11 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
       // 异常时不主动 reconnect，主动 close() 让 onclose 成为唯一重连入口：
       // 1）避免 onerror / onclose 双触把 reconnectAttempts 一次断连 +2
       // 2）兜底某些平台 onerror 后 onclose 延迟 / 丢失导致重连卡住
-      this.socket.onerror = (error) => {
+      socket.onerror = (error) => {
+        if (!isActive()) return
         console.error('[IM WS] error:', error)
         this.isConnected = false
-        this.socket?.close()
+        socket.close()
       }
     },
 
@@ -395,6 +398,7 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
         })
         return Promise.resolve()
       }
+      const db = getDb()
       const sendTimeMs =
         typeof websocketMessage.sendTime === 'number'
           ? websocketMessage.sendTime
@@ -421,7 +425,8 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
           targetId: websocketMessage.channelId,
           selfSend: false,
           materialId: websocketMessage.materialId
-        }
+        },
+        db
       )
       if (isActive) {
         // 窗口打开 = 已读：本端清未读 + 上报服务端读位置，避免读位置滞后
@@ -433,17 +438,19 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
         conversationStore.markConversationRead(
           ImConversationType.CHANNEL,
           websocketMessage.channelId,
-          websocketMessage.id
+          websocketMessage.id,
+          db
         )
         if (!readReported) {
           apiReadChannelMessages(websocketMessage.channelId, websocketMessage.id)
-            .then(() =>
+            .then(() => {
               conversationStore.markConversationReadReported(
                 ImConversationType.CHANNEL,
                 websocketMessage.channelId,
-                websocketMessage.id
+                websocketMessage.id,
+                db
               )
-            )
+            })
             .catch((e) => {
               console.warn(
                 '[IM WS] 频道自动已读上报失败',
@@ -461,7 +468,7 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
         // 非当前会话且未免打扰：响一下提示音
         playAudioTip()
       }
-      return persistPromise
+      return persistPromise.then(() => undefined)
     },
 
     /** content 既可能已是对象也可能是 JSON 字符串（后端用 Map 序列化下发） */
@@ -572,7 +579,8 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
     handlePrivateMessage(websocketMessage: ImPrivateMessageNotification): Promise<void> {
       const conversationStore = useConversationStore()
       const friendStore = useFriendStore()
-      const currentUserId = getCurrentUserId()
+      const db = getDb()
+      const currentUserId = db.userId
 
       // 0. 防御层：senderId / receiverId 均不含当前用户的私聊帧直接丢弃，避免后端路由 / 多端串号污染会话
       //    （FRIEND_* 等系统通知也走这条通道，但 fromUserId=senderId、toUserId=receiverId 仍是当前用户视角）
@@ -611,7 +619,8 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
         return useMessageStore().recallMessage(
           ImConversationType.PRIVATE,
           peerId,
-          websocketMessage.content
+          websocketMessage.content,
+          db
         )
       }
 
@@ -625,7 +634,8 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
           avatar: friend?.avatar || '',
           silent: friend?.silent
         },
-        message
+        message,
+        db
       )
 
       // 5. 仅对方消息才走「自动已读 / 提示音」分支：自己发的不会触发
@@ -645,17 +655,19 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
           conversationStore.markConversationRead(
             ImConversationType.PRIVATE,
             peerId,
-            websocketMessage.id
+            websocketMessage.id,
+            db
           )
           if (MESSAGE_PRIVATE_READ_ENABLED && !readReported) {
             apiReadPrivateMessages(peerId, websocketMessage.id)
-              .then(() =>
+              .then(() => {
                 conversationStore.markConversationReadReported(
                   ImConversationType.PRIVATE,
                   peerId,
-                  websocketMessage.id
+                  websocketMessage.id,
+                  db
                 )
-              )
+              })
               .catch((e) => {
                 console.warn(
                   '[IM WS] 私聊自动已读上报失败',
@@ -675,7 +687,7 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
           playAudioTip()
         }
       }
-      return persistPromise
+      return persistPromise.then(() => undefined)
     },
 
     /** 私聊 READ 事件：自己的其它终端在对方会话里标为已读，本端同步清零未读；私聊已读关闭时兜底忽略 */
@@ -713,11 +725,13 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
       if (!websocketMessage.senderId) {
         return
       }
-      useMessageStore().applyMessageReadReceipt({
-        conversationType: ImConversationType.PRIVATE,
-        targetId: websocketMessage.senderId,
-        privateReadMaxId: websocketMessage.id
-      })
+      void useMessageStore()
+        .applyMessageReadReceipt({
+          conversationType: ImConversationType.PRIVATE,
+          targetId: websocketMessage.senderId,
+          privateReadMaxId: websocketMessage.id
+        })
+        .catch((e) => console.warn('[IM WS] 私聊回执同步失败', e))
     },
 
     /**
@@ -733,7 +747,8 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
     handleGroupMessage(websocketMessage: ImGroupMessageNotification): Promise<void> {
       const conversationStore = useConversationStore()
       const groupStore = useGroupStore()
-      const currentUserId = getCurrentUserId()
+      const db = getDb()
+      const currentUserId = db.userId
       const selfSend = websocketMessage.senderId === currentUserId
 
       // 0. 防御层：定向群消息 receiverUserIds 非空且未包含当前用户时丢弃
@@ -762,7 +777,7 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
       // 2. 未知群时自动拉群详情 + 成员（被拉入群但还没收到 GROUP_CREATE 时的兜底）
       const group = groupStore.getGroup(websocketMessage.groupId)
       if (!group) {
-        groupStore.fetchGroupInfo(websocketMessage.groupId, true).catch(() => undefined)
+        groupStore.fetchGroupInfo(websocketMessage.groupId, true, db).catch(() => undefined)
       }
 
       // 3. 后端撤回：下发一条 RECALL 消息，content 为 `{"messageId": xxx}`
@@ -771,7 +786,8 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
         return useMessageStore().recallMessage(
           ImConversationType.GROUP,
           websocketMessage.groupId,
-          websocketMessage.content
+          websocketMessage.content,
+          db
         )
       }
 
@@ -785,7 +801,8 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
           avatar: group?.avatar || '',
           silent: group?.silent
         },
-        message
+        message,
+        db
       )
 
       // 5. 仅对方消息才走「自动已读 / 提示音」（与私聊对称）
@@ -807,17 +824,19 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
           conversationStore.markConversationRead(
             ImConversationType.GROUP,
             websocketMessage.groupId,
-            websocketMessage.id
+            websocketMessage.id,
+            db
           )
           if (MESSAGE_GROUP_READ_ENABLED && !readReported) {
             apiReadGroupMessages(websocketMessage.groupId, websocketMessage.id)
-              .then(() =>
+              .then(() => {
                 conversationStore.markConversationReadReported(
                   ImConversationType.GROUP,
                   websocketMessage.groupId,
-                  websocketMessage.id
+                  websocketMessage.id,
+                  db
                 )
-              )
+              })
               .catch((e) => {
                 console.warn(
                   '[IM WS] 群聊自动已读上报失败',
@@ -837,7 +856,7 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
           playAudioTip()
         }
       }
-      return persistPromise
+      return persistPromise.then(() => undefined)
     },
 
     // ==================== 群聊已读 / 回执 ====================
@@ -871,13 +890,15 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
       if (!websocketMessage.id || !websocketMessage.groupId) {
         return
       }
-      useMessageStore().applyMessageReadReceipt({
-        conversationType: ImConversationType.GROUP,
-        targetId: websocketMessage.groupId,
-        groupMessageId: websocketMessage.id,
-        readCount: websocketMessage.readCount,
-        receiptStatus: websocketMessage.receiptStatus
-      })
+      void useMessageStore()
+        .applyMessageReadReceipt({
+          conversationType: ImConversationType.GROUP,
+          targetId: websocketMessage.groupId,
+          groupMessageId: websocketMessage.id,
+          readCount: websocketMessage.readCount,
+          receiptStatus: websocketMessage.receiptStatus
+        })
+        .catch((e) => console.warn('[IM WS] 群聊回执同步失败', e))
     },
 
     // ==================== 好友通知（1201-1210 段位） ====================
@@ -999,11 +1020,14 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
 
     /** GROUP_MEMBER_NICKNAME_UPDATE：同步成员在群里的昵称 */
     handleGroupMemberNicknameUpdate(websocketMessage: ImGroupMessageNotification) {
-      useGroupStore().applyGroupNotification(
-        websocketMessage.groupId,
-        websocketMessage.type,
-        websocketMessage.content
-      )
+      void useGroupStore()
+        .applyGroupNotification(
+          websocketMessage.groupId,
+          websocketMessage.type,
+          websocketMessage.content,
+          websocketMessage.id
+        )
+        .catch((e) => console.warn('[IM WS] 群成员昵称同步失败', e))
     },
 
     // ==================== 心跳 / 重连 ====================
@@ -1186,10 +1210,6 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
     }
   }
 })
-
-export const useImWebSocketStoreWithOut = () => {
-  return useImWebSocketStore(store)
-}
 
 // dev: 让 Pinia 的 actions / state 改动支持 HMR，避免每次改 store 都得硬刷
 // 否则 Vite 把新模块推下来后，老 store 实例的 action 闭包仍指向旧函数体

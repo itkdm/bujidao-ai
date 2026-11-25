@@ -161,6 +161,17 @@
           />
         </div>
 
+        <!-- 定位未读 @ 消息 -->
+        <transition name="message-panel__jump-fade">
+          <div
+            v-if="conversationStore.activeMentionMessageId"
+            class="message-panel__jump-mention sticky bottom-12 left-1/2 inline-flex gap-1.5 items-center w-fit mx-auto px-3.5 py-1.5 text-xs text-[#f56c6c] bg-[var(--el-bg-color-overlay)] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.12)] cursor-pointer hover:text-white hover:bg-[#f56c6c]"
+            @click="handleLocateMention"
+          >
+            <span>查看 @消息</span>
+          </div>
+        </transition>
+
         <!-- 回到底部浮动按钮（滚动不在底部时显示） -->
         <transition name="message-panel__jump-fade">
           <div
@@ -255,7 +266,7 @@ import type { GroupMemberLite } from '../../../../components/group/GroupMember.v
 import GroupMuteMemberDialog from '../../../../components/group/GroupMuteMemberDialog.vue'
 import RtcCallMemberPickerDialog from '../../../../components/rtc/RtcCallMemberPickerDialog.vue'
 import RtcGroupCallBanner from '../../../../components/rtc/RtcGroupCallBanner.vue'
-import { createCall } from '@/api/im/rtc'
+import { createCall, leaveCall } from '@/api/im/rtc'
 import { ImRtcCallMediaType, ImRtcCallStatus, ImConversationType } from '@/views/im/utils/constants'
 import { resolveCallEndReasonText } from '@/views/im/utils/message'
 import { getClientConversationId } from '@/views/im/utils/db'
@@ -471,8 +482,10 @@ function reloadGroupData() {
   if (!conversation || conversation.type !== ImConversationType.GROUP) {
     return
   }
-  groupStore.fetchGroupInfo(conversation.targetId, true)
-  groupStore.fetchGroupMemberList(conversation.targetId, true)
+  void groupStore.fetchGroupInfo(conversation.targetId, true)
+  void groupStore.fetchGroupMemberList(conversation.targetId, true).catch((error) => {
+    console.warn('[IM MessagePanel] 强制刷新群成员失败', error)
+  })
 }
 
 /** 历史消息抽屉 ref：「聊天历史」icon / 抽屉「查找聊天内容」入口都调 open() 触发 */
@@ -550,8 +563,15 @@ async function doInvite(reqVO: {
     return
   }
   callInviting.value = true
+  const userId = getCurrentUserId()
   try {
     const data = await createCall(reqVO)
+    if (getCurrentUserId() !== userId || (rtcStore.isActive && rtcStore.call?.room !== data.room)) {
+      if (getCurrentUserId() === userId) {
+        await leaveCall(data.room).catch(() => undefined)
+      }
+      return
+    }
     // 后端已 INSERT + 立即 end（如忙线）：toast 提示，不进 INVITING 阶段；chat tip 由 RTC_CALL_END 推送写入消息流
     if (data.status === ImRtcCallStatus.ENDED) {
       message.warning(resolveCallEndReasonText(data.endReason))
@@ -559,6 +579,8 @@ async function doInvite(reqVO: {
     }
     // 正常进入 INVITING 阶段：走 store 逻辑发起通话，后续状态更新 / 消息流更新由 RTC 模块监听推送处理
     rtcStore.startInviting(data)
+  } catch (error) {
+    console.warn('[IM MessagePanel] 发起通话失败', error)
   } finally {
     callInviting.value = false
   }
@@ -669,6 +691,30 @@ function waitMediaSettled(): Promise<void> {
   return Promise.race([loadAll, timeout])
 }
 
+/** 加载并定位当前会话的未读 @ 消息 */
+async function handleLocateMention() {
+  const messageId = conversationStore.consumeActiveMentionMessageId()
+  const conversation = conversationStore.activeConversation
+  if (!messageId || !conversation) {
+    return
+  }
+  const clientConversationId = getClientConversationId(conversation.type, conversation.targetId)
+  for (let guard = 0; guard < 50; guard++) {
+    const loadedMessages = messageStore.getMessages(clientConversationId)
+    if (loadedMessages.some((item) => item.id === messageId)) {
+      break
+    }
+    const { hasMore } = await messageStore.loadMoreMessageList(clientConversationId, 50)
+    if (messageStore.getMessages(clientConversationId).some((item) => item.id === messageId)) {
+      break
+    }
+    if (!hasMore) {
+      break
+    }
+  }
+  await handleLocate(messageId)
+}
+
 /**
  * 定位到聊天位置：MessageHistory 行上"定位"按钮 / 气泡内引用块点击触发
  *
@@ -765,7 +811,8 @@ watch(
 }
 
 /* sticky + translate 居中：fit-content 宽度不会撑满，transform 水平 -50% 偏移；同时 transition opacity 和 transform 两个属性 */
-.message-panel__jump-bottom {
+.message-panel__jump-bottom,
+.message-panel__jump-mention {
   transform: translateX(-50%);
   transition:
     opacity 0.2s,

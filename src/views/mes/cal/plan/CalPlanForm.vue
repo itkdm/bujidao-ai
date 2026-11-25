@@ -9,7 +9,7 @@
       :disabled="isDetail"
     >
       <el-row>
-        <el-col :span="8">
+        <el-col :span="24">
           <el-form-item label="计划编码" prop="code">
             <el-input v-model="formData.code" placeholder="请输入计划编码">
               <template #append>
@@ -191,6 +191,27 @@ const formRules = reactive({
   shiftType: [{ required: true, message: '轮班方式不能为空', trigger: 'change' }]
 })
 const formRef = ref()
+
+/** 轮班方式变化：单白班不倒班，清空倒班方式和倒班天数 */
+watch(
+  () => formData.value.shiftType,
+  (newVal) => {
+    if (newVal === MesCalShiftTypeEnum.SINGLE) {
+      formData.value.shiftMethod = undefined
+      formData.value.shiftCount = undefined
+    }
+  }
+)
+
+/** 倒班方式变化：仅按天倒班需要倒班天数，其他情况清空 */
+watch(
+  () => formData.value.shiftMethod,
+  (newVal) => {
+    if (newVal !== MesCalShiftMethodEnum.DAY) {
+      formData.value.shiftCount = undefined
+    }
+  }
+)
 
 /** 生成计划编码 */
 const generateCode = async () => {

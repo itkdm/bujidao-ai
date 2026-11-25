@@ -17,14 +17,14 @@
           </el-form-item>
         </template>
       </el-table-column>
-      <el-table-column label="应付金额" prop="totalPrice" fixed="right" min-width="100">
+      <el-table-column label="应收金额" prop="totalPrice" fixed="right" min-width="100">
         <template #default="{ row }">
           <el-form-item class="mb-0px!">
             <el-input disabled v-model="row.totalPrice" :formatter="erpPriceInputFormatter" />
           </el-form-item>
         </template>
       </el-table-column>
-      <el-table-column label="已付金额" prop="receiptedPrice" fixed="right" min-width="100">
+      <el-table-column label="已收金额" prop="receiptedPrice" fixed="right" min-width="100">
         <template #default="{ row }">
           <el-form-item class="mb-0px!">
             <el-input disabled v-model="row.receiptedPrice" :formatter="erpPriceInputFormatter" />
@@ -64,7 +64,7 @@
 
   <!-- 可收款的【销售出库单】列表 -->
   <SaleOutReceiptEnableList ref="saleOutReceiptEnableListRef" @success="handleAddSaleOut" />
-  <!-- 可收款的【销售出库单】列表 -->
+  <!-- 可退款的【销售退货单】列表 -->
   <SaleReturnRefundEnableList ref="saleReturnRefundEnableListRef" @success="handleAddSaleReturn" />
 </template>
 <script setup lang="ts">

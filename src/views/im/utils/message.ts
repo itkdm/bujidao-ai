@@ -1,3 +1,4 @@
+import { parseId } from '@/utils/id'
 import { generateUUID } from '@/utils'
 import { useUserStore } from '@/store/modules/user'
 import {
@@ -35,8 +36,7 @@ export const generateClientMessageId = (): string => {
 /**
  * 私聊消息 / DTO 的对端 userId：自己发的对端是 receiver，别人发的对端是 sender
  *
- * 收口 4 处旧 inline（websocketStore.convertPrivateMessage / handlePrivateMessage / computeFriendPeerId
- * 和 useMessagePuller.getPrivatePeerId），结构类型只要 senderId / receiverId 两个字段，REST 与 WS DTO 都满足
+ * WebSocket 与 HTTP pull 共用；结构类型只要求 senderId / receiverId，REST 与 WS DTO 都满足
  */
 export function getPrivateMessagePeerId(
   message: { senderId: number; receiverId: number },
@@ -63,7 +63,7 @@ export const tipMention = (userId: number, text: string): TipSegment => ({
   text
 })
 
-export const tipLink = (href: string, text: string): TipSegment => ({
+const tipLink = (href: string, text: string): TipSegment => ({
   type: 'link',
   href,
   text
@@ -73,7 +73,7 @@ export const segmentsToText = (segments: TipSegment[]): string =>
   segments.map((s) => s.text).join('')
 
 /** 多个 userId 用同一个分隔符插值成 segments，每个 user 单独成 mention 段 */
-export function joinMentionSegments(
+function joinMentionSegments(
   userIds: number[],
   separator: string,
   resolveName: (userId: number) => string
@@ -315,7 +315,7 @@ export interface FaceMessage extends Quotable {
 }
 
 /** 合并转发的单条内嵌消息快照（对齐后端 MergeMessage.Item） */
-export interface MergeMessageItem {
+interface MergeMessageItem {
   /** 原消息编号；仅做溯源标识 */
   messageId: number
   /** 发送人编号 */
@@ -419,7 +419,7 @@ function mapMessageToMergeItem(
 }
 
 /** 合并转发标题：私聊「{对方} 和 {自己} 的聊天记录」；群聊「{群名} 的聊天记录」 */
-export function buildMergeTitle(conversation: Conversation): string {
+function buildMergeTitle(conversation: Conversation): string {
   if (conversation.type === ImConversationType.GROUP) {
     return `${conversation.name || '群聊'} 的聊天记录`
   }
@@ -441,7 +441,7 @@ export function buildMergeMessagePayload(
 }
 
 /** 「添加到表情」的可发起源：FACE / IMAGE 都允许（GIF 图片也常被收藏） */
-export interface AddableFacePayload {
+interface AddableFacePayload {
   url: string
   width: number
   height: number
@@ -575,7 +575,7 @@ export const getQuoteFromMessage = (content: string): QuoteMessage | null => {
 export const parseRecallMessageId = (content: string): number => {
   try {
     const parsed = JSON.parse(content)
-    return parsed?.messageId != null ? Number(parsed.messageId) : 0
+    return parsed?.messageId != null ? (parseId(parsed.messageId) ?? 0) : 0
   } catch {
     return 0
   }
@@ -713,7 +713,7 @@ export function resolveGroupNotificationSegments(
   resolveName: (userId: number) => string,
   operatorNameOverride?: string
 ): TipSegment[] {
-  let payload: GroupNotificationPayload = {}
+  let payload: GroupNotificationPayload
   try {
     payload = JSON.parse(message.content || '{}')
   } catch {
@@ -956,15 +956,6 @@ export function resolveRtcCallPrivateBubbleText(payload: RtcCallEndPayload | nul
     default:
       return hasDuration ? `通话时长 ${formatCallDuration(duration)}` : '通话已结束'
   }
-}
-
-/** 会话内通话事件文案 */
-export function resolveRtcCallTipText(message: {
-  type?: number
-  content?: string
-  selfSend?: boolean
-}): string {
-  return segmentsToText(resolveRtcCallTipSegments(message))
 }
 
 /**

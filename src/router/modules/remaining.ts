@@ -1,6 +1,7 @@
 import { Layout } from '@/utils/routerHelper'
 
-const { t } = useI18n()
+// 静态路由 meta.title 直接写语言 key，由菜单、页签、面包屑、页面标题展示时再翻译，
+// 随语言切换更新，不依赖模块加载时 i18n 是否已初始化；中文原文标题原样展示
 /**
  * redirect: noredirect        当设置 noredirect 的时候该路由在面包屑导航中不可被点击
  * name:'router-name'          设定路由的名字，一定要填写不然使用<keep-alive>时会出现各种问题
@@ -62,7 +63,7 @@ const remainingRouter: AppRouteRecordRaw[] = [
         component: () => import('@/views/Home/Index.vue'),
         name: 'Index',
         meta: {
-          title: t('router.home'),
+          title: 'router.home',
           icon: 'ep:home-filled',
           noCache: false,
           affix: true
@@ -87,7 +88,8 @@ const remainingRouter: AppRouteRecordRaw[] = [
           hidden: true,
           noTagsView: false,
           icon: 'ep:user',
-          title: t('common.profile')
+          title: 'common.profile',
+          viewKey: 'Profile' // 社交绑定回调后会去掉地址中的 code 等参数，使用稳定的页面实例标识，避免重建页面
         }
       },
       {
@@ -123,6 +125,32 @@ const remainingRouter: AppRouteRecordRaw[] = [
           canTo: true,
           icon: '',
           activeMenu: '/system/dict'
+        }
+      }
+    ]
+  },
+  {
+    path: '/fms/auxiliary',
+    component: Layout,
+    name: 'FmsAuxiliaryRoot',
+    meta: {
+      hidden: true
+    },
+    children: [
+      {
+        path: 'type/item/:auxiliaryTypeId',
+        redirect: (to) => ({
+          path: '/fms/config/auxiliary',
+          query: { auxiliaryTypeId: to.params.auxiliaryTypeId }
+        }),
+        name: 'FmsAuxiliaryItem',
+        meta: {
+          title: '辅助核算项目',
+          noCache: true,
+          hidden: true,
+          canTo: true,
+          icon: '',
+          activeMenu: '/fms/config/auxiliary'
         }
       }
     ]
@@ -179,7 +207,17 @@ const remainingRouter: AppRouteRecordRaw[] = [
     name: 'Login',
     meta: {
       hidden: true,
-      title: t('router.login'),
+      title: 'router.login',
+      noTagsView: true
+    }
+  },
+  {
+    path: '/pms/kb/document/share/:token',
+    component: () => import('@/views/pms/kb/document/share/index.vue'),
+    name: 'PmsKnowledgeDocumentShare',
+    meta: {
+      hidden: true,
+      title: '知识文档分享',
       noTagsView: true
     }
   },
@@ -189,7 +227,7 @@ const remainingRouter: AppRouteRecordRaw[] = [
     name: 'SSOLogin',
     meta: {
       hidden: true,
-      title: t('router.login'),
+      title: 'router.login',
       noTagsView: true
     }
   },
@@ -199,7 +237,7 @@ const remainingRouter: AppRouteRecordRaw[] = [
     name: 'SocialLogin',
     meta: {
       hidden: true,
-      title: t('router.socialLogin'),
+      title: 'router.socialLogin',
       noTagsView: true
     }
   },
@@ -505,6 +543,141 @@ const remainingRouter: AppRouteRecordRaw[] = [
     ]
   },
   {
+    path: '/oa',
+    component: Layout,
+    name: 'OaDetail',
+    meta: { hidden: true },
+    children: [
+      {
+        path: 'reimbursement/detail/:id',
+        name: 'OaReimbursementDetail',
+        component: () => import('@/views/oa/reimbursement/detail/index.vue'),
+        meta: {
+          title: '费用报销',
+          hidden: true,
+          noCache: true,
+          activeMenu: '/oa/process/reimbursement'
+        }
+      },
+      {
+        path: 'overtime/detail/:id',
+        name: 'OaOvertimeApplyDetail',
+        component: () => import('@/views/oa/overtime/detail/index.vue'),
+        meta: { title: '加班申请', hidden: true, noCache: true, activeMenu: '/oa/process/overtime' }
+      },
+      {
+        path: 'leave/detail/:id',
+        name: 'OaLeaveApplyDetail',
+        component: () => import('@/views/oa/leave/detail/index.vue'),
+        meta: { title: '请假申请', hidden: true, noCache: true, activeMenu: '/oa/process/leave' }
+      },
+      {
+        path: 'regular/detail/:id',
+        name: 'OaRegularApplyDetail',
+        component: () => import('@/views/oa/regular/detail/index.vue'),
+        meta: { title: '转正申请', hidden: true, noCache: true, activeMenu: '/oa/process/regular' }
+      },
+      {
+        path: 'resign/detail/:id',
+        name: 'OaResignApplyDetail',
+        component: () => import('@/views/oa/resign/detail/index.vue'),
+        meta: { title: '离职申请', hidden: true, noCache: true, activeMenu: '/oa/process/resign' }
+      },
+      {
+        path: 'discussion/detail/:id',
+        name: 'OaDiscussionDetail',
+        component: () => import('@/views/oa/discussion/detail/index.vue'),
+        meta: {
+          title: '讨论详情',
+          hidden: true,
+          noCache: true,
+          activeMenu: '/oa/discussion/list'
+        }
+      }
+    ]
+  },
+  {
+    path: '/pms',
+    component: Layout,
+    name: 'PmsCenter',
+    meta: { hidden: true },
+    children: [
+      {
+        path: 'pm/iteration/detail/:id(\\d+)',
+        name: 'PmsIterationDetail',
+        meta: {
+          title: '迭代详情',
+          noCache: true,
+          hidden: true,
+          activeMenu: '/pms/pm/project/list'
+        },
+        component: () => import('@/views/pms/pm/iteration/detail/index.vue')
+      },
+      {
+        path: 'pm/project/detail/:id(\\d+)',
+        name: 'PmsProjectDetail',
+        meta: {
+          title: '项目详情',
+          noCache: true,
+          hidden: true,
+          viewKey: 'PmsProjectDetail',
+          activeMenu: '/pms/pm/project/list'
+        },
+        component: () => import('@/views/pms/pm/project/detail/index.vue')
+      },
+      {
+        path: 'pm/project/config/:id(\\d+)',
+        name: 'PmsProjectConfig',
+        meta: {
+          title: '项目设置',
+          noCache: true,
+          hidden: true,
+          activeMenu: '/pms/pm/project/list'
+        },
+        component: () => import('@/views/pms/pm/project/config/index.vue')
+      },
+      {
+        path: 'kb/library/:libraryId(\\d+)',
+        name: 'PmsKnowledgeLibraryDetail',
+        meta: {
+          title: '知识库详情',
+          noCache: true,
+          hidden: true,
+          canTo: true,
+          viewKey: 'PmsKnowledgeDocument',
+          activeMenu: '/pms/kb/library'
+        },
+        component: () => import('@/views/pms/kb/document/index.vue')
+      },
+      {
+        path: 'kb/library/:libraryId(\\d+)/folder/:folderId(\\d+)',
+        name: 'PmsKnowledgeFolderDetail',
+        meta: {
+          title: '文件夹详情',
+          noCache: true,
+          hidden: true,
+          canTo: true,
+          viewKey: 'PmsKnowledgeDocument',
+          activeMenu: '/pms/kb/library'
+        },
+        component: () => import('@/views/pms/kb/document/index.vue')
+      },
+      {
+        path: 'kb/library/:libraryId(\\d+)/document/:documentId(\\d+)',
+        name: 'PmsKnowledgeDocumentDetail',
+        meta: {
+          title: '文档详情',
+          noCache: true,
+          hidden: true,
+          canTo: true,
+          viewKey: 'PmsKnowledgeDocument',
+          activeMenu: '/pms/kb/library'
+        },
+        component: () => import('@/views/pms/kb/document/index.vue')
+      }
+    ]
+  },
+  {
     path: '/crm',
     component: Layout,
     name: 'CrmCenter',
@@ -601,6 +774,169 @@ const remainingRouter: AppRouteRecordRaw[] = [
     ]
   },
   {
+    path: '/hrm',
+    component: Layout,
+    name: 'HrmCenter',
+    meta: { hidden: true },
+    children: [
+      {
+        path: 'portal/opening-guide',
+        name: 'HrmPortalOpeningGuide',
+        meta: {
+          title: '员工端开通引导',
+          noCache: true,
+          hidden: true,
+          activeMenu: '/hrm/portal/home'
+        },
+        component: () => import('@/views/hrm/portal/opening-guide/index.vue')
+      },
+      {
+        path: 'recruit/post/detail/:id',
+        name: 'HrmRecruitPostDetail',
+        meta: {
+          title: '招聘职位详情',
+          noCache: true,
+          hidden: true,
+          activeMenu: '/hrm/recruit/post'
+        },
+        component: () => import('@/views/hrm/recruit/post/detail/index.vue')
+      },
+      {
+        path: 'recruit/candidate/detail/:id',
+        name: 'HrmRecruitCandidateDetail',
+        meta: {
+          title: '招聘候选人详情',
+          noCache: true,
+          hidden: true,
+          activeMenu: '/hrm/recruit/candidate'
+        },
+        component: () => import('@/views/hrm/recruit/candidate/detail/index.vue')
+      },
+      {
+        path: 'employee/detail/:id',
+        name: 'HrmEmployeeDetail',
+        meta: {
+          title: '员工档案详情',
+          noCache: true,
+          hidden: true,
+          activeMenu: '/hrm/employee/list'
+        },
+        component: () => import('@/views/hrm/employee/detail/index.vue')
+      },
+      {
+        path: 'dept/detail/:id',
+        name: 'HrmDeptDetail',
+        meta: {
+          title: '组织详情',
+          noCache: true,
+          hidden: true,
+          activeMenu: '/hrm/dept'
+        },
+        component: () => import('@/views/hrm/dept/detail/index.vue')
+      },
+      {
+        path: 'attendance/month/detail/:employeeId',
+        name: 'HrmAttendanceMonthDetail',
+        meta: {
+          title: '月度考勤详情',
+          noCache: true,
+          hidden: true,
+          activeMenu: '/hrm/attendance/month'
+        },
+        component: () => import('@/views/hrm/attendance/month/detail/index.vue')
+      },
+      {
+        path: 'performance/plan/detail/:id',
+        name: 'HrmPerformancePlanDetail',
+        meta: {
+          title: '绩效计划详情',
+          noCache: true,
+          hidden: true,
+          activeMenu: '/hrm/performance/plan'
+        },
+        component: () => import('@/views/hrm/performance/plan/detail/index.vue')
+      },
+      {
+        path: 'performance/plan/form',
+        name: 'HrmPerformancePlanForm',
+        meta: {
+          title: 'KPI 考核配置',
+          noCache: true,
+          hidden: true,
+          canTo: true,
+          activeMenu: '/hrm/performance/plan'
+        },
+        component: () => import('@/views/hrm/performance/plan/form/index.vue')
+      },
+      {
+        path: 'performance/assessment/employee/:employeeId',
+        name: 'HrmPerformanceAssessmentEmployee',
+        meta: {
+          title: '员工绩效档案',
+          noCache: true,
+          hidden: true,
+          activeMenu: '/hrm/performance/assessment'
+        },
+        component: () => import('@/views/hrm/performance/assessment/employee/index.vue')
+      },
+      {
+        path: 'performance/assessment/detail/:id',
+        name: 'HrmPerformanceAssessmentDetail',
+        meta: {
+          title: '员工考核详情',
+          noCache: true,
+          hidden: true,
+          activeMenu: '/hrm/performance/assessment'
+        },
+        component: () => import('@/views/hrm/performance/assessment/detail/index.vue')
+      },
+      {
+        path: 'insurance/month-record/detail/:id',
+        name: 'HrmInsuranceMonthRecordDetail',
+        meta: {
+          title: '月度社保详情',
+          noCache: true,
+          hidden: true,
+          activeMenu: '/hrm/insurance/month-record'
+        },
+        component: () => import('@/views/hrm/insurance/month-record/detail/index.vue')
+      },
+      {
+        path: 'salary/employee-info/detail/:id',
+        name: 'HrmSalaryEmployeeInfoDetail',
+        meta: {
+          title: '薪资档案详情',
+          noCache: true,
+          hidden: true,
+          activeMenu: '/hrm/salary/employee-info'
+        },
+        component: () => import('@/views/hrm/salary/employee-info/detail/index.vue')
+      },
+      {
+        path: 'salary/history/detail/:id',
+        name: 'HrmSalaryHistoryDetail',
+        meta: {
+          title: '历史工资详情',
+          noCache: true,
+          hidden: true,
+          activeMenu: '/hrm/salary/history'
+        },
+        component: () => import('@/views/hrm/salary/month-record/detail/index.vue')
+      },
+      {
+        path: 'salary/slip/detail/:id',
+        name: 'HrmSalarySlipSendRecordDetail',
+        meta: {
+          title: '工资条发放详情',
+          noCache: true,
+          hidden: true,
+          activeMenu: '/hrm/salary/slip'
+        },
+        component: () => import('@/views/hrm/salary/slip/send-record/detail/index.vue')
+      }
+    ]
+  },
+  {
     path: '/ai',
     component: Layout,
     name: 'Ai',
@@ -608,16 +944,6 @@ const remainingRouter: AppRouteRecordRaw[] = [
       hidden: true
     },
     children: [
-      {
-        path: 'image/square',
-        component: () => import('@/views/ai/image/square/index.vue'),
-        name: 'AiImageSquare',
-        meta: {
-          title: '绘图作品',
-          icon: 'ep:home-filled',
-          noCache: false
-        }
-      },
       {
         path: 'knowledge/document',
         component: () => import('@/views/ai/knowledge/document/index.vue'),
@@ -699,6 +1025,98 @@ const remainingRouter: AppRouteRecordRaw[] = [
           canTo: true,
           title: '设计 AI 工作流',
           activeMenu: '/ai/console/workflow'
+        }
+      },
+      {
+        path: 'console/skill/file/:skillId',
+        component: () => import('@/views/ai/skill/file/index.vue'),
+        name: 'AiSkillFile',
+        meta: {
+          title: '技能文件',
+          noCache: true,
+          hidden: true,
+          activeMenu: '/ai/console/skill'
+        }
+      },
+      {
+        path: 'drama/project/create',
+        component: () => import('@/views/ai/drama/project/form/index.vue'),
+        name: 'AiDramaProjectCreate',
+        meta: {
+          title: '新建短剧',
+          noCache: true,
+          hidden: true,
+          canTo: true,
+          activeMenu: '/ai/drama'
+        }
+      },
+      {
+        path: 'drama/project/:id',
+        component: () => import('@/views/ai/drama/project/form/index.vue'),
+        name: 'AiDramaProject',
+        meta: {
+          title: '短剧项目',
+          noCache: true,
+          hidden: true,
+          canTo: true,
+          activeMenu: '/ai/drama'
+        }
+      }
+    ]
+  },
+  {
+    path: '/ai1',
+    component: Layout,
+    name: 'Ai1Center',
+    meta: {
+      hidden: true
+    },
+    children: [
+      {
+        path: 'provider/model/:providerId',
+        component: () => import('@/views/ai1/model/index.vue'),
+        name: 'Ai1ProviderModel',
+        meta: {
+          title: '模型管理',
+          noCache: true,
+          hidden: true,
+          activeMenu: '/ai1/provider'
+        }
+      },
+      {
+        path: 'knowledge/document/:knowledgeBaseId',
+        component: () => import('@/views/ai1/knowledge/document/index.vue'),
+        name: 'Ai1KnowledgeDocument',
+        meta: {
+          title: '知识库文档',
+          noCache: true,
+          hidden: true,
+          activeMenu: '/ai1/knowledge'
+        }
+      },
+      {
+        path: 'skill/file/:skillId',
+        component: () => import('@/views/ai1/skill/file/index.vue'),
+        name: 'Ai1SkillFile',
+        meta: {
+          title: 'SKILL 内容',
+          noCache: true,
+          hidden: true,
+          activeMenu: '/ai1/skill'
+        }
+      },
+      {
+        path: 'agent/session/:agentId',
+        redirect: (to) => ({
+          path: '/ai1/conversation/session',
+          query: { agentId: to.params.agentId }
+        }),
+        name: 'Ai1AgentSession',
+        meta: {
+          title: '会话记录',
+          noCache: true,
+          hidden: true,
+          activeMenu: '/ai1/agent'
         }
       }
     ]

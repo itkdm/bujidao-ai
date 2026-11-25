@@ -39,7 +39,10 @@
             <span class="text-20px font-bold">{{ underlineToHump(appStore.getTitle) }}</span>
           </div>
           <div class="flex items-center justify-end space-x-10px h-48px">
-            <ThemeSwitch />
+            <ThemeSwitch
+              :model-value="appStore.getIsDark"
+              @update:model-value="appStore.setIsDark($event)"
+            />
             <LocaleDropdown class="dark:text-white lt-xl:text-white" />
           </div>
         </div>
@@ -93,7 +96,7 @@
                       :prefix-icon="iconLock"
                       show-password
                       type="password"
-                      @keyup.enter="getCode()"
+                      @keyup.enter.stop="getCode()"
                     />
                   </el-form-item>
                 </el-col>
@@ -152,26 +155,32 @@
 
 <script lang="ts" setup>
 import { underlineToHump } from '@/utils'
+import { clearSocialCallback, getSocialCallback } from '@/utils/social'
 
 import { ElLoading } from 'element-plus'
+// 仅本页使用 animate.css 的进场动画，局部引入，不再全局加载
+import 'animate.css'
 
 import { useDesign } from '@/hooks/web/useDesign'
 import { useAppStore } from '@/store/modules/app'
 import { useIcon } from '@/hooks/web/useIcon'
-import { usePermissionStore } from '@/store/modules/permission'
 
 import * as LoginApi from '@/api/login'
 import * as authUtil from '@/utils/auth'
 import { ThemeSwitch } from '@/layout/components/ThemeSwitch'
 import { LocaleDropdown } from '@/layout/components/LocaleDropdown'
-import { LoginStateEnum, useFormValid, useLoginState } from './components/useLogin'
+import {
+  LoginStateEnum,
+  resolveLoginRedirect,
+  useFormValid,
+  useLoginState
+} from './components/useLogin'
 import LoginFormTitle from './components/LoginFormTitle.vue'
 import router from '@/router'
 
 defineOptions({ name: 'SocialLogin' })
 
 const { t } = useI18n()
-const route = useRoute()
 
 const appStore = useAppStore()
 const { getPrefixCls } = useDesign()
@@ -183,7 +192,6 @@ const formLogin = ref<any>()
 const { validForm } = useFormValid(formLogin)
 const { getLoginState } = useLoginState()
 const { push } = useRouter()
-const permissionStore = usePermissionStore()
 const loginLoading = ref(false)
 const verify = ref()
 const captchaType = ref('blockPuzzle') // blockPuzzle 滑块 clickWord 点击文字 pictureWord 文字验证码
@@ -208,8 +216,14 @@ const loginData = reactive({
   }
 })
 
+// 登录进行中的同步锁：Enter 与点击、验证码 success 重复回调只触发一次登录；
+// 不复用 loginLoading，避免其它流程未复位 loginLoading 时阻塞账号登录
+let loginPending = false
 // 获取验证码
 const getCode = async () => {
+  if (loginPending) {
+    return
+  }
   // 情况一，未开启：则直接登录
   if (!loginData.captchaEnable) {
     await handleLogin({})
@@ -233,12 +247,20 @@ const getCookie = () => {
     loginData.loginForm = {
       ...loginData.loginForm,
       username: loginForm.username ? loginForm.username : loginData.loginForm.username,
-      password: loginForm.password ? loginForm.password : loginData.loginForm.password,
       rememberMe: loginForm.rememberMe ? true : false,
       tenantName: loginForm.tenantName ? loginForm.tenantName : loginData.loginForm.tenantName
     }
   }
 }
+// 取消记住我时，立即清除已缓存的登录信息
+watch(
+  () => loginData.loginForm.rememberMe,
+  (rememberMe) => {
+    if (!rememberMe) {
+      authUtil.removeLoginForm()
+    }
+  }
+)
 const loading = ref() // ElLoading.service 返回的实例
 
 // tricky: 配合LoginForm.vue中redirectUri需要对参数进行encode，需要在回调后进行decode
@@ -247,23 +269,29 @@ function getUrlValue(key: string): string {
   return url.searchParams.get(key) ?? ''
 }
 
+// 第三方登录回调的参数：读取后清理地址栏，避免 code 泄露或重复使用
+const socialType = getUrlValue('type')
+const socialRedirect = getUrlValue('redirect')
+const { code: socialCode, state: socialState } = getSocialCallback()
+clearSocialCallback(router.options.history)
+
 // 尝试登录: 当账号已经绑定，socialLogin会直接获得token
 const tryLogin = async () => {
   try {
-    const type = getUrlValue('type')
-    const redirect = getUrlValue('redirect')
-    const code = route?.query?.code as string
-    const state = route?.query?.state as string
-
-    const res = await LoginApi.socialLogin(type, code, state)
+    const res = await LoginApi.socialLogin(socialType, socialCode, socialState)
     authUtil.setToken(res)
 
-    router.push({ path: redirect || '/' })
+    // redirect 可能带 query、hash，所以使用字符串跳转；只接受站内绝对路径
+    router.push(resolveLoginRedirect(socialRedirect))
   } catch (err) {}
 }
 
 // 登录
 const handleLogin = async (params) => {
+  if (loginPending) {
+    return
+  }
+  loginPending = true
   loginLoading.value = true
   try {
     await getTenantId()
@@ -272,11 +300,7 @@ const handleLogin = async (params) => {
       return
     }
 
-    let redirect = getUrlValue('redirect')
-
-    const type = getUrlValue('type')
-    const code = route?.query?.code as string
-    const state = route?.query?.state as string
+    let redirect = socialRedirect
 
     const loginDataLoginForm = { ...loginData.loginForm }
     const res = await LoginApi.login({
@@ -285,9 +309,9 @@ const handleLogin = async (params) => {
       password: loginDataLoginForm.password,
       captchaVerification: params.captchaVerification,
       // 社交登录
-      socialCode: code,
-      socialState: state,
-      socialType: type
+      socialCode,
+      socialState,
+      socialType
     })
     if (!res) {
       return
@@ -310,15 +334,24 @@ const handleLogin = async (params) => {
     if (redirect.indexOf('sso') !== -1) {
       window.location.href = window.location.href.replace('/login?redirect=', '')
     } else {
-      push({ path: redirect || permissionStore.addRouters[0].path })
+      // 与账号登录一致：整串交给路由解析，原样保留 query、hash；只接受站内绝对路径
+      push(resolveLoginRedirect(redirect))
     }
   } finally {
+    loginPending = false
     loginLoading.value = false
-    loading.value.close()
+    // 校验失败、接口无返回或异常时，尚未创建 loading 实例
+    loading.value?.close()
+    loading.value = undefined
   }
 }
 
 onMounted(() => {
+  // 缺少回调参数（例如说，清理地址栏后刷新、直接访问），无法社交登录，退回登录页，并保留 redirect
+  if (!socialType || !socialCode || !socialState) {
+    router.replace({ path: '/login', query: socialRedirect ? { redirect: socialRedirect } : {} })
+    return
+  }
   getCookie()
   tryLogin()
 })

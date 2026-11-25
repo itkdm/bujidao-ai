@@ -110,6 +110,8 @@ export interface Conversation {
   silent?: boolean // 是否免打扰（不展示未读徽标 + 不响提示音）
   atMe?: boolean // 群聊：是否有人 @我
   atAll?: boolean // 群聊：是否有人 @全体成员
+  atMessageId?: number // 最近一次未读 @我的消息编号，用于点击提醒后定位
+  atAllMessageId?: number // 最近一次未读 @全体成员的消息编号，用于点击提醒后定位
   reportedReadMessageId?: number // 已上报到服务端的最大已读消息编号
   draft?: {
     html: string // 输入框 HTML
@@ -141,7 +143,7 @@ export interface Message {
   selfSend: boolean // 是否自己发送（前端按 senderId 计算）
   uploadProgress?: number // 媒体消息上传进度（0-100）；status=SENDING 期间持续更新；ack 后置 undefined
   // 媒体消息内存中保留的原始 File；下划线前缀表示不进 JSON / 不持久化（IDB 恢复后必为 undefined）
-  // 失败重试时按它重走上传；页面刷新后该字段丢失，恢复阶段直接 drop 整条消息
+  // 失败重试时按它重走上传；页面刷新后该字段丢失，恢复阶段标记本地临时文件失效
   _localFile?: File
   _ackMerging?: boolean // ack 合并中标记，不持久化
 }
