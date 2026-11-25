@@ -41,7 +41,12 @@ const shortcuts = [
   },
   {
     text: '本月',
-    value: () => [dayjs().startOf('M'), dayjs().subtract(1, 'd')]
+    value: () => {
+      const date = dayjs()
+      // 统计默认截止昨天；每月 1 日兜底为当天，避免逆序范围
+      const endDate = date.date() === 1 ? date : date.subtract(1, 'day')
+      return DateUtil.getDateRange(date.startOf('month'), endDate)
+    }
   },
   {
     text: '最近30天',

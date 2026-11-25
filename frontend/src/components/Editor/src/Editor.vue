@@ -2,33 +2,42 @@
 import { PropType } from 'vue'
 import { Editor, Toolbar } from '@wangeditor-next/editor-for-vue'
 import { i18nChangeLanguage, IDomEditor, IEditorConfig } from '@wangeditor-next/editor'
-import { propTypes } from '@/utils/propTypes'
 import { isNumber } from '@/utils/is'
 import { ElMessage } from 'element-plus'
 import { useLocaleStore } from '@/store/modules/locale'
 import { useUpload } from '@/components/UploadFile/src/useUpload'
 import merge from 'lodash-es/merge'
+import { setupWangEditorPlugin } from '@/views/bpm/model/form/PrintTemplate'
 
 defineOptions({ name: 'Editor' })
 
+// wangEditor 插件注册：需在创建编辑器之前完成
+setupWangEditorPlugin()
+
 type InsertFnType = (url: string, alt: string, href: string) => void
+type InsertVideoFnType = (src: string, poster: string) => void // 视频插入回调：视频地址、封面地址
 
 const localeStore = useLocaleStore()
 
-const currentLocale = computed(() => localeStore.getCurrentLocale)
-
-i18nChangeLanguage(unref(currentLocale).lang)
+// wangEditor 界面语言跟随无刷新语言切换：immediate 保持初始化时设置一次
+watch(
+  () => localeStore.getCurrentLocale.lang,
+  (lang) => i18nChangeLanguage(lang),
+  { immediate: true }
+)
 
 const props = defineProps({
-  editorId: propTypes.string.def('wangEditor-1'),
-  height: propTypes.oneOfType([Number, String]).def('500px'),
+  editorId: { type: String, default: 'wangEditor-1' },
+  height: { type: [Number, String], default: '500px' },
   editorConfig: {
     type: Object as PropType<Partial<IEditorConfig>>,
     default: () => undefined
   },
-  readonly: propTypes.bool.def(false),
-  modelValue: propTypes.string.def(''),
-  directory: propTypes.string.def('editor-default')
+  readonly: { type: Boolean, default: false },
+  modelValue: { type: String, default: '' },
+  directory: { type: String, default: 'editor-default' },
+  uploadImage: Function as PropType<(file: File) => Promise<string>>,
+  uploadVideo: Function as PropType<(file: File) => Promise<string>>
 })
 
 const emit = defineEmits(['change', 'update:modelValue'])
@@ -56,6 +65,20 @@ watch(
   }
 )
 
+// 外部清空兜底：内层 Editor 仅在 modelValue 与其 onChange 记录的值不同时才 setHtml，而初值经 createEditor 渲染、
+// 不触发 onChange，导致初值后的首次外部清空被内层跳过。post 回调在本组件及内层 Editor（含其 watch）更新后执行，
+// 此时编辑器仍非空才补一次清空；内层已正常清空时 isEmpty() 为 true，不会重复操作
+watch(
+  () => props.modelValue,
+  (val) => {
+    if (val) return
+    const editor = editorRef.value
+    if (!editor || editor.isEmpty()) return
+    editor.setHtml('')
+  },
+  { flush: 'post' }
+)
+
 // 监听
 watch(
   () => valueHtml.value,
@@ -78,8 +101,19 @@ watch(
   }
 )
 
+// 内层 Editor 在其 onMounted 中按当时的 modelValue 同步 createEditor，本组件 onMounted 紧随其后，记录创建所用内容
+let createdHtml: string | undefined
+onMounted(() => {
+  createdHtml = valueHtml.value
+})
+
 const handleCreated = (editor: IDomEditor) => {
   editorRef.value = editor
+  // onCreated 为异步触发：期间 modelValue 若已变化，内层 watch 因实例未就绪丢弃了 setHtml，这里补同步一次；
+  // 初值未变化时不调用 setHtml，避免写入撤销栈、抢占焦点和多余的 change
+  if (createdHtml !== undefined && valueHtml.value !== createdHtml) {
+    editor.setHtml(valueHtml.value)
+  }
 }
 
 // 编辑器配置
@@ -127,14 +161,15 @@ const editorConfig = computed((): IEditorConfig => {
           // 使用 customUpload 实现逐个文件上传，复用项目的 httpRequest
           async customUpload(file: File, insertFn: InsertFnType) {
             try {
-              const res = await imageHttpRequest({
-                file: file as any,
-                onProgress: () => {},
-                onSuccess: () => {},
-                onError: () => {}
-              } as any)
-              // 兼容前端直连上传和后端上传两种模式的返回格式
-              const url = (res as any).data?.data || (res as any).data
+              const url = props.uploadImage
+                ? await props.uploadImage(file)
+                : await imageHttpRequest({
+                    file: file as any,
+                    onProgress: () => {},
+                    onSuccess: () => {},
+                    onError: () => {}
+                  } as any).then((res: any) => res.data?.data || res.data)
+              // 兼容前端直连上传和后端上传两种模式的返回格式（res.data?.data || res.data）
               insertFn(url, 'image', url)
             } catch (error: any) {
               ElMessage.error(error.msg || '图片上传失败')
@@ -151,17 +186,19 @@ const editorConfig = computed((): IEditorConfig => {
           allowedFileTypes: ['video/*'],
 
           // 使用 customUpload 实现逐个文件上传，复用项目的 httpRequest
-          async customUpload(file: File, insertFn: InsertFnType) {
+          async customUpload(file: File, insertFn: InsertVideoFnType) {
             try {
-              const res = await videoHttpRequest({
-                file: file as any,
-                onProgress: () => {},
-                onSuccess: () => {},
-                onError: () => {}
-              } as any)
-              // 兼容前端直连上传和后端上传两种模式的返回格式
-              const url = (res as any).data?.data || (res as any).data
-              insertFn(url, 'mp4', url)
+              const url = props.uploadVideo
+                ? await props.uploadVideo(file)
+                : await videoHttpRequest({
+                    file: file as any,
+                    onProgress: () => {},
+                    onSuccess: () => {},
+                    onError: () => {}
+                  } as any).then((res: any) => res.data?.data || res.data)
+              // 兼容前端直连上传和后端上传两种模式的返回格式（res.data?.data || res.data）
+              // 上传的视频没有封面，封面地址传空
+              insertFn(url, '')
             } catch (error: any) {
               ElMessage.error(error.msg || '视频上传失败')
               console.error('Upload error:', error)
@@ -177,7 +214,8 @@ const editorConfig = computed((): IEditorConfig => {
 
 const editorStyle = computed(() => {
   return {
-    height: isNumber(props.height) ? `${props.height}px` : props.height
+    height: isNumber(props.height) ? `${props.height}px` : props.height,
+    width: '100%'
   }
 })
 
@@ -205,12 +243,12 @@ defineExpose({
 </script>
 
 <template>
-  <div class="border-1 border-solid border-[var(--tags-view-border-color)] z-10">
+  <div class="w-full min-w-0 border-1 border-solid border-[var(--el-border-color)] z-10">
     <!-- 工具栏 -->
     <Toolbar
       :editor="editorRef"
       :editorId="editorId"
-      class="border-0 b-b-1 border-solid border-[var(--tags-view-border-color)]"
+      class="border-0 b-b-1 border-solid border-[var(--el-border-color)]"
     />
     <!-- 编辑器 -->
     <Editor

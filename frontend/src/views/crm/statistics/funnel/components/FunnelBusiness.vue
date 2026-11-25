@@ -5,8 +5,12 @@
     <el-row>
       <el-col :span="24">
         <el-button-group class="mb-10px">
-          <el-button type="primary" @click="handleActive(true)">客户视角</el-button>
-          <el-button type="primary" @click="handleActive(false)">动态视角</el-button>
+          <el-button :type="active ? 'primary' : 'default'" @click="handleActive(true)">
+            阶段视角
+          </el-button>
+          <el-button :type="!active ? 'primary' : 'default'" @click="handleActive(false)">
+            金额视角
+          </el-button>
         </el-button-group>
         <el-skeleton :loading="loading" animated>
           <Echart :height="500" :options="echartsOption" />
@@ -19,27 +23,35 @@
   <el-card class="mt-16px" shadow="never">
     <el-table v-loading="loading" :data="list">
       <el-table-column align="center" label="序号" type="index" width="80" />
-      <el-table-column align="center" label="阶段" prop="endStatus" width="200">
-        <template #default="scope">
-          <dict-tag :type="DICT_TYPE.CRM_BUSINESS_END_STATUS_TYPE" :value="scope.row.endStatus" />
-        </template>
+      <el-table-column align="center" label="阶段" prop="statusName" min-width="160" />
+      <el-table-column align="center" label="赢单率" prop="statusPercent" min-width="120">
+        <template #default="{ row }">{{ row.statusPercent || 0 }}%</template>
       </el-table-column>
       <el-table-column align="center" label="商机数" min-width="200" prop="businessCount" />
-      <el-table-column align="center" label="商机总金额(元)" min-width="200" prop="totalPrice" />
+      <el-table-column
+        align="right"
+        label="商机总金额(元)"
+        min-width="200"
+        prop="totalPrice"
+        :formatter="erpPriceTableColumnFormatter"
+      />
     </el-table>
   </el-card>
 </template>
 <script lang="ts" setup>
-import { CrmStatisticFunnelRespVO, StatisticFunnelApi } from '@/api/crm/statistics/funnel'
+import {
+  CrmStatisticsBusinessSummaryByStatusRespVO,
+  StatisticFunnelApi
+} from '@/api/crm/statistics/funnel'
 import { EChartsOption } from 'echarts'
-import { DICT_TYPE } from '@/utils/dict'
+import { erpPriceInputFormatter, erpPriceTableColumnFormatter } from '@/utils'
 
 defineOptions({ name: 'FunnelBusiness' })
 const props = defineProps<{ queryParams: any }>() // 搜索参数
 
-const active = ref(true)
+const active = ref(true) // 是否为阶段视角
 const loading = ref(false) // 加载中
-const list = ref<CrmStatisticFunnelRespVO[]>([]) // 列表的数据
+const list = ref<CrmStatisticsBusinessSummaryByStatusRespVO[]>([]) // 列表的数据
 
 /** 销售漏斗 */
 const echartsOption = reactive<EChartsOption>({
@@ -48,7 +60,15 @@ const echartsOption = reactive<EChartsOption>({
   },
   tooltip: {
     trigger: 'item',
-    formatter: '{a} <br/>{b}'
+    formatter: (params: any) => {
+      const data = params.data || {}
+      return [
+        data.statusName || params.name,
+        `商机数：${data.businessCount || 0} 个`,
+        `商机金额：${erpPriceInputFormatter(data.totalPrice || 0)} 元`,
+        `赢单率：${data.statusPercent || 0}%`
+      ].join('<br/>')
+    }
   },
   toolbox: {
     feature: {
@@ -58,7 +78,7 @@ const echartsOption = reactive<EChartsOption>({
     }
   },
   legend: {
-    data: ['客户', '商机', '赢单']
+    data: []
   },
   series: [
     {
@@ -72,7 +92,7 @@ const echartsOption = reactive<EChartsOption>({
       max: 100,
       minSize: '0%',
       maxSize: '100%',
-      sort: 'descending',
+      sort: 'none',
       gap: 2,
       label: {
         show: true,
@@ -94,51 +114,44 @@ const echartsOption = reactive<EChartsOption>({
           fontSize: 20
         }
       },
-      data: [
-        { value: 60, name: '客户-0个' },
-        { value: 40, name: '商机-0个' },
-        { value: 20, name: '赢单-0个' }
-      ]
+      data: []
     }
   ]
 }) as EChartsOption
 
 const handleActive = async (val: boolean) => {
   active.value = val
-  await loadData()
+  fillChart(list.value)
+}
+
+/** 填充漏斗图 */
+const fillChart = (data: CrmStatisticsBusinessSummaryByStatusRespVO[]) => {
+  if (!echartsOption.series || !echartsOption.series[0]) {
+    return
+  }
+  const chartData = data.map((item) => ({
+    value: active.value ? Number(item.businessCount || 0) : Number(item.totalPrice || 0),
+    name: `${item.statusName}-${item.businessCount || 0}个`,
+    statusName: item.statusName,
+    statusPercent: item.statusPercent,
+    businessCount: item.businessCount,
+    totalPrice: item.totalPrice
+  }))
+  const maxValue = Math.max(...chartData.map((item) => Number(item.value || 0)), 1)
+  echartsOption.legend = { data: chartData.map((item) => item.name) }
+  echartsOption.series[0]['max'] = maxValue
+  echartsOption.series[0]['data'] = chartData
 }
 
 /** 获取统计数据 */
 const loadData = async () => {
   loading.value = true
-  // 1. 加载漏斗数据
-  const data = (await StatisticFunnelApi.getFunnelSummary(
-    props.queryParams
-  )) as CrmStatisticFunnelRespVO
-  // 2.1 更新 Echarts 数据
-  if (
-    !!data &&
-    echartsOption.series &&
-    echartsOption.series[0] &&
-    echartsOption.series[0]['data']
-  ) {
-    // tips：写死 value 值是为了保持漏斗顺序不变
-    const list: { value: number; name: string }[] = []
-    if (active.value) {
-      list.push({ value: 60, name: `客户-${data.customerCount || 0}个` })
-      list.push({ value: 40, name: `商机-${data.businessCount || 0}个` })
-      list.push({ value: 20, name: `赢单-${data.businessWinCount || 0}个` })
-    } else {
-      list.push({ value: data.customerCount || 0, name: `客户-${data.customerCount || 0}个` })
-      list.push({ value: data.businessCount || 0, name: `商机-${data.businessCount || 0}个` })
-      list.push({ value: data.businessWinCount || 0, name: `赢单-${data.businessWinCount || 0}个` })
-    }
-
-    echartsOption.series[0]['data'] = list
+  try {
+    list.value = await StatisticFunnelApi.getBusinessSummaryByStatus(props.queryParams)
+    fillChart(list.value)
+  } finally {
+    loading.value = false
   }
-  // 2.2 获取商机结束状态统计
-  list.value = await StatisticFunnelApi.getBusinessSummaryByEndStatus(props.queryParams)
-  loading.value = false
 }
 defineExpose({ loadData })
 

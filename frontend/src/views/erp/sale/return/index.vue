@@ -35,9 +35,9 @@
           />
         </el-select>
       </el-form-item>
-      <el-form-item label="退货时间" prop="outTime">
+      <el-form-item label="退货时间" prop="returnTime">
         <el-date-picker
-          v-model="queryParams.outTime"
+          v-model="queryParams.returnTime"
           value-format="YYYY-MM-DD HH:mm:ss"
           type="daterange"
           start-placeholder="开始日期"
@@ -51,7 +51,7 @@
           v-model="queryParams.customerId"
           clearable
           filterable
-          placeholder="请选择供客户"
+          placeholder="请选择客户"
           class="!w-240px"
         >
           <el-option
@@ -334,7 +334,6 @@ const queryParams = reactive({
   customerId: undefined,
   productId: undefined,
   warehouseId: undefined,
-  outTime: [],
   returnTime: [],
   orderNo: undefined,
   accountId: undefined,

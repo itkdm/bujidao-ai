@@ -7,7 +7,15 @@ export interface StatisticsPerformanceRespVO {
   lastYearCount: number
 }
 
-// 排行 API
+export interface StatisticsPerformanceSummaryRespVO {
+  time: string
+  contractCount: number
+  contractPrice: number
+  receivablePrice: number
+  unreceivedPrice: number
+}
+
+// 员工业绩分析 API
 export const StatisticsPerformanceApi = {
   // 员工获得合同金额统计
   getContractPricePerformance: (params: any) => {
@@ -23,10 +31,17 @@ export const StatisticsPerformanceApi = {
       params
     })
   },
-  //员工获得签约合同数量统计
+  // 员工获得签约合同数量统计
   getContractCountPerformance: (params: any) => {
     return request.get({
       url: '/crm/statistics-performance/get-contract-count-performance',
+      params
+    })
+  },
+  // 获得合同汇总表
+  getContractSummary: (params: any) => {
+    return request.get({
+      url: '/crm/statistics-performance/get-contract-summary',
       params
     })
   }

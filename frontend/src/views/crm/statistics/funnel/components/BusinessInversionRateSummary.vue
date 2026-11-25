@@ -1,4 +1,4 @@
-<!-- 客户总量统计 -->
+<!-- 商机转化率分析 -->
 <template>
   <!-- Echarts图 -->
   <el-card shadow="never">
@@ -117,21 +117,13 @@ const queryParams0 = reactive({
 })
 const loading = ref(false) // 加载中
 const list = ref([]) // 列表的数据
-const total = ref(0)
-/** 将传进来的值赋值给 queryParams0 */
-watch(
-  () => props.queryParams,
-  (data) => {
-    if (!data) {
-      return
-    }
-    const newObj = { ...queryParams0, ...data }
-    Object.assign(queryParams0, newObj)
-  },
-  {
-    immediate: true
-  }
-)
+const total = ref(0) // 列表总数
+
+/** 同步搜索参数 */
+const syncQueryParams = () => {
+  Object.assign(queryParams0, props.queryParams)
+}
+
 /** 柱状图配置：纵向 */
 const echartsOption = reactive<EChartsOption>({
   color: ['#6ca2ff', '#6ac9d7', '#ff7474'],
@@ -239,10 +231,10 @@ const echartsOption = reactive<EChartsOption>({
 
 /** 获取数据并填充图表 */
 const fetchAndFill = async () => {
+  syncQueryParams()
   // 1. 加载统计数据
-  const businessSummaryByDate = await StatisticFunnelApi.getBusinessInversionRateSummaryByDate(
-    props.queryParams
-  )
+  const businessSummaryByDate =
+    await StatisticFunnelApi.getBusinessInversionRateSummaryByDate(queryParams0)
   // 2.1 更新 Echarts 数据
   if (echartsOption.xAxis && echartsOption.xAxis[0] && echartsOption.xAxis[0]['data']) {
     echartsOption.xAxis[0]['data'] = businessSummaryByDate.map(
@@ -267,15 +259,19 @@ const fetchAndFill = async () => {
   }
 
   // 2.2 更新列表数据
+  queryParams0.pageNo = 1
   await getList()
 }
+
 /** 获取商机列表 */
 const getList = async () => {
-  const data = await StatisticFunnelApi.getBusinessPageByDate(props.queryParams)
+  syncQueryParams()
+  const data = await StatisticFunnelApi.getBusinessPageByDate(queryParams0)
   list.value = data.list
   total.value = data.total
 }
-/** 打开客户详情 */
+
+/** 打开商机详情 */
 const { push } = useRouter()
 const openDetail = (id: number) => {
   push({ name: 'CrmBusinessDetail', params: { id } })

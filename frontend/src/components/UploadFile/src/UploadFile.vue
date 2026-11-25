@@ -28,7 +28,7 @@
         <div style="font-size: 8px">
           大小不超过 <b style="color: #f56c6c">{{ fileSize }}MB</b>
         </div>
-        <div style="font-size: 8px">
+        <div v-if="fileType.length" style="font-size: 8px">
           格式为 <b style="color: #f56c6c">{{ fileType.join('/') }}</b> 的文件
         </div>
       </template>
@@ -67,62 +67,73 @@
   </div>
 </template>
 <script lang="ts" setup>
-import { propTypes } from '@/utils/propTypes'
+import type { PropType } from 'vue'
 import type { UploadProps, UploadRawFile, UploadUserFile } from 'element-plus'
 import { isString } from '@/utils/is'
+import { getFileNameFromUrl } from '@/utils/file'
 import { useUpload } from '@/components/UploadFile/src/useUpload'
 import { UploadFile } from 'element-plus/es/components/upload/src/upload'
 
 defineOptions({ name: 'UploadFile' })
 
 const message = useMessage() // 消息弹窗
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue', 'update:fileSize'])
 
 const props = defineProps({
-  modelValue: propTypes.oneOfType<string | string[]>([String, Array<String>]).isRequired,
-  fileType: propTypes.array.def(['doc', 'xls', 'ppt', 'txt', 'pdf']), // 文件类型, 例如['png', 'jpg', 'jpeg']
-  fileSize: propTypes.number.def(5), // 大小限制(MB)
-  limit: propTypes.number.def(5), // 数量限制
-  autoUpload: propTypes.bool.def(true), // 自动上传
-  drag: propTypes.bool.def(false), // 拖拽上传
-  isShowTip: propTypes.bool.def(true), // 是否显示提示
-  disabled: propTypes.bool.def(false), // 是否禁用上传组件 ==> 非必传（默认为 false）
-  directory: propTypes.string.def(undefined) // 上传目录 ==> 非必传（默认为 undefined）
+  modelValue: { type: [String, Array] as PropType<string | string[]>, required: true },
+  fileType: { type: Array, default: () => ['doc', 'xls', 'ppt', 'txt', 'pdf'] }, // 文件类型，空数组表示不限制格式
+  fileSize: { type: Number, default: 5 }, // 大小限制(MB)
+  limit: { type: Number, default: 5 }, // 数量限制
+  autoUpload: { type: Boolean, default: true }, // 自动上传
+  drag: { type: Boolean, default: false }, // 拖拽上传
+  isShowTip: { type: Boolean, default: true }, // 是否显示提示
+  disabled: { type: Boolean, default: false }, // 是否禁用上传组件 ==> 非必传（默认为 false）
+  directory: { type: String } // 上传目录 ==> 非必传（默认为 undefined）
 })
 
 // ========== 上传相关 ==========
-const uploadList = ref<UploadUserFile[]>([])
 const fileList = ref<UploadUserFile[]>([])
-const uploadNumber = ref<number>(0)
+let emittedModelValue: string | string[] | undefined // 区分自身回写与切换表单后的外部重置
 
 const { uploadUrl, httpRequest } = useUpload(props.directory)
+
+// 移除校验未通过的待上传文件
+const removeRejectedFile = (file: UploadRawFile) => {
+  const index = fileList.value.findIndex((item) => item.uid === file.uid)
+  if (index > -1) {
+    fileList.value.splice(index, 1)
+  }
+}
 
 // 文件上传之前判断
 const beforeUpload: UploadProps['beforeUpload'] = (file: UploadRawFile) => {
   if (fileList.value.length >= props.limit) {
     message.error(`上传文件数量不能超过${props.limit}个!`)
+    removeRejectedFile(file)
     return false
   }
   let fileExtension = ''
   if (file.name.lastIndexOf('.') > -1) {
     fileExtension = file.name.slice(file.name.lastIndexOf('.') + 1)
   }
-  const isImg = props.fileType.some((type: string) => {
-    if (file.type.indexOf(type) > -1) return true
-    return !!(fileExtension && fileExtension.indexOf(type) > -1)
-  })
+  const isAllowedType =
+    props.fileType.length === 0 ||
+    props.fileType.some((type: string) => {
+      if (file.type.indexOf(type) > -1) return true
+      return !!(fileExtension && fileExtension.indexOf(type) > -1)
+    })
   const isLimit = file.size < props.fileSize * 1024 * 1024
-  if (!isImg) {
+  if (!isAllowedType) {
     message.error(`文件格式不正确, 请上传${props.fileType.join('/')}格式!`)
+    removeRejectedFile(file)
     return false
   }
   if (!isLimit) {
     message.error(`上传文件大小不能超过${props.fileSize}MB!`)
+    removeRejectedFile(file)
     return false
   }
   message.success('正在上传文件，请稍候...')
-  // 只有在验证通过后才增加计数器
-  uploadNumber.value++
   return true
 }
 // 处理上传的文件发生变化
@@ -130,21 +141,23 @@ const beforeUpload: UploadProps['beforeUpload'] = (file: UploadRawFile) => {
 //   uploadRef.value.data.path = uploadFile.name
 // }
 // 文件上传成功
-const handleFileSuccess: UploadProps['onSuccess'] = (res: any): void => {
-  message.success('上传成功')
-  const response = res as { data: string }
-  // 删除自身
-  const index = fileList.value.findIndex(
-    (item) => (item.response as { data?: string } | undefined)?.data === response.data
-  )
-  fileList.value.splice(index, 1)
-  uploadList.value.push({ name: response.data, url: response.data })
-  if (uploadList.value.length == uploadNumber.value) {
-    fileList.value.push(...uploadList.value)
-    uploadList.value = []
-    uploadNumber.value = 0
-    emitUpdateModelValue()
+const handleFileSuccess: UploadProps['onSuccess'] = (res: any, uploadFile): void => {
+  // 按上传文件定位；表单切换或文件删除后到达的旧回调不能写入新列表。
+  const index = fileList.value.findIndex((item) => item.uid === uploadFile.uid)
+  if (index < 0) {
+    return
   }
+  const response = res as { data: string }
+  const fileSize = uploadFile.raw?.size
+  fileList.value[index] = {
+    ...fileList.value[index],
+    name: uploadFile.name || getFileNameFromUrl(response.data),
+    url: response.data,
+    status: 'success'
+  }
+  message.success('上传成功')
+  emitUpdateModelValue()
+  emit('update:fileSize', fileSize)
 }
 // 文件数超出提示
 const handleExceed: UploadProps['onExceed'] = (): void => {
@@ -153,15 +166,14 @@ const handleExceed: UploadProps['onExceed'] = (): void => {
 // 上传错误提示
 const excelUploadError: UploadProps['onError'] = (): void => {
   message.error('导入数据失败，请您重新上传！')
-  // 上传失败时减少计数器，避免后续上传被阻塞
-  uploadNumber.value = Math.max(0, uploadNumber.value - 1)
 }
 // 删除上传文件
 const handleRemove = (file: UploadFile) => {
-  const index = fileList.value.map((f) => f.name).indexOf(file.name)
+  const index = fileList.value.findIndex((item) => item.uid === file.uid)
   if (index > -1) {
     fileList.value.splice(index, 1)
     emitUpdateModelValue()
+    emit('update:fileSize', undefined)
   }
 }
 const handlePreview: UploadProps['onPreview'] = (uploadFile) => {
@@ -172,6 +184,11 @@ const handlePreview: UploadProps['onPreview'] = (uploadFile) => {
 watch(
   () => props.modelValue,
   (val: string | string[]) => {
+    if (toRaw(val) === emittedModelValue) {
+      emittedModelValue = undefined
+      return // 保留同一批次尚未完成的上传文件
+    }
+    emittedModelValue = undefined
     if (!val) {
       fileList.value = [] // fix：处理掉缓存，表单重置后上传组件的内容并没有重置
       return
@@ -180,26 +197,25 @@ watch(
     fileList.value = [] // 保障数据为空
     // 情况1：字符串
     if (isString(val)) {
-      fileList.value.push(
-        ...val.split(',').map((url) => ({ name: url.substring(url.lastIndexOf('/') + 1), url }))
-      )
+      fileList.value.push(...val.split(',').map((url) => ({ name: getFileNameFromUrl(url), url })))
       return
     }
     // 情况2：数组
-    fileList.value.push(
-      ...(val as string[]).map((url) => ({ name: url.substring(url.lastIndexOf('/') + 1), url }))
-    )
+    fileList.value.push(...(val as string[]).map((url) => ({ name: getFileNameFromUrl(url), url })))
   },
   { immediate: true, deep: true }
 )
 // 发送文件链接列表更新
 const emitUpdateModelValue = () => {
   // 情况1：数组结果
-  let result: string | string[] = fileList.value.map((file) => file.url!)
+  let result: string | string[] = fileList.value
+    .filter((file) => !file.status || file.status === 'success')
+    .map((file) => file.url!)
   // 情况2：逗号分隔的字符串
   if (props.limit === 1 || isString(props.modelValue)) {
     result = result.join(',')
   }
+  emittedModelValue = result
   emit('update:modelValue', result)
 }
 </script>

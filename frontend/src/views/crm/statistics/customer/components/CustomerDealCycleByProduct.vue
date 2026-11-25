@@ -111,7 +111,7 @@ const fetchAndFill = async () => {
   ).map((s: CrmStatisticsCustomerDealCycleByProductRespVO) => {
     return {
       productName: s.productName ?? '未知',
-      customerDealCycle: s.customerDealCount,
+      customerDealCycle: s.customerDealCycle,
       customerDealCount: s.customerDealCount
     }
   })

@@ -64,6 +64,15 @@
       <el-table-column label="提示词" align="center" prop="prompt" width="180" />
       <el-table-column label="思维导图" align="center" prop="generatedContent" min-width="300" />
       <el-table-column label="模型" align="center" prop="model" width="180" />
+      <el-table-column label="输入 Token" align="center" prop="inputTokens" width="110">
+        <template #default="scope">{{ formatTokenCount(scope.row.inputTokens) }}</template>
+      </el-table-column>
+      <el-table-column label="输出 Token" align="center" prop="outputTokens" width="110">
+        <template #default="scope">{{ formatTokenCount(scope.row.outputTokens) }}</template>
+      </el-table-column>
+      <el-table-column label="合计 Token" align="center" prop="totalTokens" width="110">
+        <template #default="scope">{{ formatTokenCount(scope.row.totalTokens) }}</template>
+      </el-table-column>
       <el-table-column
         label="创建时间"
         align="center"
@@ -99,10 +108,11 @@
   <el-drawer v-model="previewVisible" :with-header="false" size="800px">
     <Right
       v-if="previewVisible2"
-      :generatedContent="previewContent"
-      :isEnd="true"
-      :isGenerating="false"
-      :isStart="false"
+      :content="previewContent"
+      :input-tokens="previewRow?.inputTokens"
+      :output-tokens="previewRow?.outputTokens"
+      :total-tokens="previewRow?.totalTokens"
+      :show-usage="true"
     />
   </el-drawer>
 </template>
@@ -112,6 +122,7 @@ import { dateFormatter } from '@/utils/formatTime'
 import { AiMindMapApi, MindMapVO } from '@/api/ai/mindmap'
 import * as UserApi from '@/api/system/user'
 import Right from '@/views/ai/mindmap/index/components/Right.vue'
+import { formatTokenCount } from '@/views/ai/utils/format'
 
 /** AI 思维导图 列表 */
 defineOptions({ name: 'AiMindMapManager' })
@@ -173,7 +184,9 @@ const handleDelete = async (id: number) => {
 const previewVisible = ref(false) // drawer 的显示隐藏
 const previewVisible2 = ref(false) // right 的显示隐藏
 const previewContent = ref('')
+const previewRow = ref<MindMapVO>() // 预览的记录，用于展示 Token 业务快照
 const openPreview = async (row: MindMapVO) => {
+  previewRow.value = row
   previewVisible2.value = false
   previewVisible.value = true
   // 在 drawer 渲染完后，再渲染 right 预览，不然会报错，需要保证 width 宽度先出来

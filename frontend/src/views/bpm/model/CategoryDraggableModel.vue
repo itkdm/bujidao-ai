@@ -37,7 +37,13 @@
             <Icon icon="fa:sort-amount-desc" class="mr-5px" />
             排序
           </el-button>
-          <el-button v-else link type="info" class="mr-20px" @click.stop="openModelForm('create')">
+          <el-button
+            v-else-if="hasPermiCreate"
+            link
+            type="info"
+            class="mr-20px"
+            @click.stop="openModelForm('create')"
+          >
             <Icon icon="fa:plus" class="mr-5px" />
             新建
           </el-button>
@@ -183,6 +189,7 @@
               修改
             </el-button>
             <el-button
+              v-if="hasPermiCreate"
               link
               type="primary"
               @click="openModelForm('copy', scope.row.id)"
@@ -209,6 +216,9 @@
                 <el-dropdown-menu>
                   <el-dropdown-item command="handleDefinitionList" v-if="hasPermiPdQuery">
                     历史
+                  </el-dropdown-item>
+                  <el-dropdown-item command="handleExport" v-if="hasPermiExport">
+                    导出
                   </el-dropdown-item>
                   <el-dropdown-item
                     command="handleReport"
@@ -282,6 +292,7 @@ import { formatDate } from '@/utils/formatTime'
 import * as ModelApi from '@/api/bpm/model'
 import * as FormApi from '@/api/bpm/form'
 import { setConfAndFields2 } from '@/utils/formCreate'
+import { useFormCreate } from '@/plugins/formCreate'
 import { BpmModelFormType } from '@/utils/constants'
 import { checkPermi } from '@/utils/permission'
 import { getCurrentUserId } from '@/utils/auth'
@@ -289,8 +300,11 @@ import { useAppStore } from '@/store/modules/app'
 import { cloneDeep, isEqual } from 'lodash-es'
 import { useDebounceFn } from '@vueuse/core'
 import { subString } from '@/utils/index'
+import download from '@/utils/download'
 
 defineOptions({ name: 'BpmModel' })
+
+useFormCreate() // 按需安装 form-create，需在渲染表单之前
 
 // 优化 Props 类型定义
 interface UserInfo {
@@ -352,6 +366,9 @@ const tableCellStyle = computed(() => ({
 }))
 
 /** 权限校验：通过 computed 解决列表的卡顿问题 */
+const hasPermiCreate = computed(() => {
+  return checkPermi(['bpm:model:create'])
+})
 const hasPermiUpdate = computed(() => {
   return checkPermi(['bpm:model:update'])
 })
@@ -361,8 +378,18 @@ const hasPermiDelete = computed(() => {
 const hasPermiDeploy = computed(() => {
   return checkPermi(['bpm:model:deploy'])
 })
+const hasPermiExport = computed(() => {
+  return checkPermi(['bpm:model:export'])
+})
 const hasPermiMore = computed(() => {
-  return checkPermi(['bpm:process-definition:query', 'bpm:model:update', 'bpm:model:delete'])
+  return checkPermi([
+    'bpm:process-definition:query',
+    'bpm:model:update',
+    'bpm:model:delete',
+    'bpm:model:export',
+    'bpm:process-instance:manager-query',
+    'bpm:model:clean'
+  ])
 })
 const hasPermiPdQuery = computed(() => {
   return checkPermi(['bpm:process-definition:query'])
@@ -376,6 +403,9 @@ const handleModelCommand = (command: string, row: any) => {
       break
     case 'handleDelete':
       handleDelete(row)
+      break
+    case 'handleExport':
+      handleExport(row)
       break
     case 'handleChangeState':
       handleChangeState(row)
@@ -395,6 +425,12 @@ const handleModelCommand = (command: string, row: any) => {
     default:
       break
   }
+}
+
+const handleExport = async (row: any) => {
+  const data = await ModelApi.exportModel(row.id)
+  download.json(new Blob([JSON.stringify(data, null, 2)]), `${row.key || row.name || 'model'}.json`)
+  message.success('导出成功')
 }
 
 /** '分类'操作按钮 */
@@ -540,7 +576,7 @@ const initSort = useDebounceFn(() => {
   const table = document.querySelector(`.${props.categoryInfo.name} .el-table__body-wrapper tbody`)
   if (!table) return
 
-  Sortable.create(table, {
+  Sortable.create(table as HTMLElement, {
     group: 'shared',
     animation: 150,
     draggable: '.el-table__row',
@@ -548,9 +584,9 @@ const initSort = useDebounceFn(() => {
     onEnd: ({ newDraggableIndex, oldDraggableIndex }) => {
       if (oldDraggableIndex !== newDraggableIndex) {
         modelList.value.splice(
-          newDraggableIndex,
+          newDraggableIndex ?? 0,
           0,
-          modelList.value.splice(oldDraggableIndex, 1)[0]
+          modelList.value.splice(oldDraggableIndex ?? 0, 1)[0]
         )
       }
     }

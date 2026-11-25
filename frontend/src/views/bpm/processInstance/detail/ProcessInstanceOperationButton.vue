@@ -50,7 +50,6 @@
               :limit="10"
               :file-type="APPROVAL_ATTACHMENT_FILE_TYPES"
               :file-size="APPROVAL_ATTACHMENT_FILE_SIZE"
-              directory="bpm/task-attachment"
               :is-show-tip="false"
             />
           </el-form-item>
@@ -106,7 +105,7 @@
       v-if="runningTask && isHandleTaskStatus() && isShowButton(OperationButtonType.REJECT)"
     >
       <template #reference>
-        <el-button class="mr-20px" plain type="danger" @click="openPopover('reject')">
+        <el-button plain type="danger" @click="openPopover('reject')">
           <Icon icon="ep:close" />&nbsp; {{ getButtonDisplayName(OperationButtonType.REJECT) }}
         </el-button>
       </template>
@@ -134,7 +133,6 @@
               :limit="10"
               :file-type="APPROVAL_ATTACHMENT_FILE_TYPES"
               :file-size="APPROVAL_ATTACHMENT_FILE_SIZE"
-              directory="bpm/task-attachment"
               :is-show-tip="false"
             />
           </el-form-item>
@@ -147,6 +145,49 @@
               {{ getButtonDisplayName(OperationButtonType.REJECT) }}
             </el-button>
             <el-button @click="closePopover('reject', rejectFormRef)"> 取消 </el-button>
+          </el-form-item>
+        </el-form>
+      </div>
+    </el-popover>
+
+    <!-- 【评论】按钮 -->
+    <el-popover
+      :visible="popOverVisible.comment"
+      placement="top-start"
+      :width="420"
+      trigger="click"
+      v-if="runningTask && isHandleTaskStatus()"
+    >
+      <template #reference>
+        <el-button plain type="primary" @click="openPopover('comment')">
+          <Icon icon="ep:chat-line-round" />&nbsp; 评论
+        </el-button>
+      </template>
+      <div class="flex flex-col flex-1 pt-20px px-20px" v-loading="formLoading">
+        <el-form
+          label-position="top"
+          class="mb-auto"
+          ref="commentFormRef"
+          :model="commentForm"
+          :rules="commentFormRule"
+          label-width="100px"
+        >
+          <el-form-item label="评论内容" prop="message">
+            <el-input
+              v-model="commentForm.message"
+              clearable
+              placeholder="请输入评论内容"
+              type="textarea"
+              :rows="4"
+              maxlength="500"
+              show-word-limit
+            />
+          </el-form-item>
+          <el-form-item>
+            <el-button :disabled="formLoading" type="primary" @click="handleComment">
+              提交
+            </el-button>
+            <el-button @click="closePopover('comment', commentFormRef)"> 取消 </el-button>
           </el-form-item>
         </el-form>
       </div>
@@ -375,7 +416,7 @@
       placement="top-start"
       :width="420"
       trigger="click"
-      v-if="runningTask?.children.length > 0"
+      v-if="runningTask?.children?.length > 0"
     >
       <template #reference>
         <div @click="openPopover('deleteSign')" class="hover-bg-gray-100 rounded-xl p-6px">
@@ -535,7 +576,9 @@
 <script lang="ts" setup>
 import { getCurrentUserId } from '@/utils/auth'
 import { setConfAndFields2 } from '@/utils/formCreate'
+import { useFormCreate } from '@/plugins/formCreate'
 import * as TaskApi from '@/api/bpm/task'
+import * as CommentApi from '@/api/bpm/comment'
 import * as ProcessInstanceApi from '@/api/bpm/processInstance'
 import * as UserApi from '@/api/system/user'
 import {
@@ -553,6 +596,8 @@ import { isEmpty } from '@/utils/is'
 import { UploadFile } from '@/components/UploadFile'
 
 defineOptions({ name: 'ProcessInstanceBtnContainer' })
+
+useFormCreate() // 按需安装 form-create，需在渲染表单之前
 
 const router = useRouter() // 路由
 const message = useMessage() // 消息弹窗
@@ -578,6 +623,7 @@ const popOverVisible = ref({
   addSign: false,
   return: false,
   copy: false,
+  comment: false,
   cancel: false,
   deleteSign: false
 }) // 气泡卡是否展示
@@ -619,7 +665,7 @@ const approveReasonForm = reactive({
   reason: '',
   signPicUrl: '',
   attachments: [] as string[],
-  nextAssignees: {}
+  nextAssignees: {} as Record<string, number[]>
 })
 const approveReasonRule = computed(() => {
   return {
@@ -655,6 +701,15 @@ const copyForm = reactive({
 })
 const copyFormRule = reactive<FormRules<typeof copyForm>>({
   copyUserIds: [{ required: true, message: '抄送人不能为空', trigger: 'change' }]
+})
+
+// 评论表单
+const commentFormRef = ref<FormInstance>()
+const commentForm = reactive({
+  message: ''
+})
+const commentFormRule = reactive<FormRules<typeof commentForm>>({
+  message: [{ required: true, message: '评论内容不能为空', trigger: 'blur' }]
 })
 
 // 转办表单
@@ -783,11 +838,13 @@ const closePopover = (type: string, formRef: FormInstance | undefined) => {
     rejectReasonForm.attachments = []
   }
   popOverVisible.value[type] = false
+  resetNextAssignees()
+}
+
+/** 重置下一个节点的自选审批人：节点清空后 Timeline 不再渲染，其中已选择的审批人随之清空 */
+const resetNextAssignees = () => {
   nextAssigneesActivityNode.value = []
-  // 清理 Timeline 组件中的自定义审批人数据
-  if (nextAssigneesTimelineRef.value) {
-    nextAssigneesTimelineRef.value.batchSetCustomApproveUsers({})
-  }
+  approveReasonForm.nextAssignees = {}
 }
 
 /** 流程通过时，根据表单变量查询新的流程节点，判断下一个节点类型是否为自选审批人 */
@@ -834,6 +891,13 @@ const initNextAssigneesFormField = async () => {
       nextAssigneesTimelineRef.value.batchSetCustomApproveUsers(customApproveUsersData)
     }
   }
+  // 分支重新计算后，清理不在最新节点中的自选审批人（包括 Timeline 中已选择的），避免提交无效的 nextAssignees
+  Object.keys(approveReasonForm.nextAssignees)
+    .filter((id) => !nextAssigneesActivityNode.value.some((node) => String(node.id) === id))
+    .forEach((id) => {
+      delete approveReasonForm.nextAssignees[id]
+      nextAssigneesTimelineRef.value?.setCustomApproveUsers(id, [])
+    })
 }
 
 /** onChange 高频触发时合并 300ms 内的连续按键，减少网关查询请求 */
@@ -886,7 +950,8 @@ const handleAudit = async (pass: boolean, formRef: FormInstance | undefined) => 
         reason: approveReasonForm.reason,
         attachments: approveReasonForm.attachments,
         variables, // 审批通过, 把修改的字段值赋于流程实例变量
-        nextAssignees: approveReasonForm.nextAssignees // 下个自选节点选择的审批人信息
+        nextAssignees: approveReasonForm.nextAssignees, // 下个自选节点选择的审批人信息
+        revisionId: runningTask.value.revisionId // 退回修改的批次，避免使用修改前的页面审批
       } as any
       // 签名
       if (runningTask.value.signEnable) {
@@ -899,18 +964,15 @@ const handleAudit = async (pass: boolean, formRef: FormInstance | undefined) => 
       }
       await TaskApi.approveTask(data)
       popOverVisible.value.approve = false
-      nextAssigneesActivityNode.value = []
-      // 清理 Timeline 组件中的自定义审批人数据
-      if (nextAssigneesTimelineRef.value) {
-        nextAssigneesTimelineRef.value.batchSetCustomApproveUsers({})
-      }
+      resetNextAssignees()
       message.success('审批通过成功')
     } else {
       // 审批不通过数据
       const data = {
         id: runningTask.value.id,
         reason: rejectReasonForm.reason,
-        attachments: rejectReasonForm.attachments
+        attachments: rejectReasonForm.attachments,
+        revisionId: runningTask.value.revisionId // 退回修改的批次，避免使用修改前的页面审批
       }
       await TaskApi.rejectTask(data)
       popOverVisible.value.reject = false
@@ -944,6 +1006,30 @@ const handleCopy = async () => {
     copyFormRef.value.resetFields()
     popOverVisible.value.copy = false
     message.success('操作成功')
+  } finally {
+    formLoading.value = false
+  }
+}
+
+/** 处理评论 */
+const handleComment = async () => {
+  formLoading.value = true
+  try {
+    // 1. 校验表单
+    if (!commentFormRef.value) return
+    await commentFormRef.value.validate()
+    const content = commentForm.message.trim()
+    if (!content) {
+      message.warning('评论内容不能为空')
+      return
+    }
+    // 2. 提交评论
+    await CommentApi.createComment(runningTask.value.id, content)
+    commentFormRef.value.resetFields()
+    popOverVisible.value.comment = false
+    message.success('评论成功')
+    // 3. 加载最新数据
+    reload()
   } finally {
     formLoading.value = false
   }
@@ -1060,7 +1146,7 @@ const handleCancel = async () => {
       props.processInstance.id,
       cancelForm.cancelReason
     )
-    popOverVisible.value.return = false
+    popOverVisible.value.cancel = false
     message.success('操作成功')
     cancelFormRef.value.resetFields()
     // 2 重新加载数据
@@ -1159,6 +1245,7 @@ const loadTodoTask = (task: any) => {
   // 切换任务时重置请求序号与 pending 重算，避免旧任务飞行中的请求/Promise 串到新任务
   nextApprovalRequestId += 1
   pendingNextNodesTask = null
+  resetNextAssignees()
   reasonRequire.value = task?.reasonRequire ?? false
   nodeTypeName.value = task?.nodeType === NodeType.TRANSACTOR_NODE ? '办理' : '审批'
   // 处理 approve 表单

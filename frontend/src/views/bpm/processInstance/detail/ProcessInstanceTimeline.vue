@@ -129,43 +129,31 @@
             </div>
             <teleport defer :to="`#activity-task-${activity.id}-${index}`">
               <div
-                v-if="shouldShowReasonAndAttachment(task, activity.nodeType, index)"
+                v-if="shouldShowTaskEvidence(task, activity.nodeType, index)"
                 class="text-#a5a5a5 text-13px mt-1 w-full bg-#f8f8fa p2 rounded-md"
               >
-                <!-- TODO lesan：这里如果是办理，需要是办理意见 -->
-                <div v-if="task.reason">审批意见：{{ task.reason }}</div>
-                <div v-if="task.attachments?.length" class="mt-2 flex flex-wrap gap-2">
-                  <template v-for="attachment in task.attachments" :key="attachment">
-                    <el-image
-                      v-if="isImageAttachment(attachment)"
-                      class="h-40px w-40px rounded"
-                      :src="attachment"
-                      :preview-src-list="[attachment]"
-                      fit="cover"
-                      preview-teleported
-                    />
-                    <el-link
-                      v-else
-                      :href="attachment"
-                      :underline="false"
-                      target="_blank"
-                      type="primary"
-                    >
-                      <Icon class="mr-1" icon="ep:document" />
-                      {{ getAttachmentName(attachment) }}
-                    </el-link>
-                  </template>
+                <div
+                  v-if="task.status === TaskStatusEnum.WAIT_REVISION"
+                  class="mb-1 text-orange-600"
+                >
+                  已退回至 【{{ task.revisionTargetNodeName || '目标' }}】 节点
+                  <span v-if="task.revisionAssigneeUser?.nickname"
+                    >，等待 {{ task.revisionAssigneeUser.nickname }} 修改</span
+                  >
+                  <span v-else>，等待目标处理人修改</span>
                 </div>
-              </div>
-              <div
-                v-if="task.signPicUrl && activity.nodeType === NodeType.USER_TASK_NODE"
-                class="text-#a5a5a5 text-13px mt-1 w-full bg-#f8f8fa p2 rounded-md"
-              >
-                签名：
-                <el-image
-                  class="w-90px h-40px ml-5px"
-                  :src="task.signPicUrl"
-                  :preview-src-list="[task.signPicUrl]"
+                <div v-if="task.reason">
+                  {{
+                    task.status === TaskStatusEnum.WAIT_REVISION
+                      ? '退回原因'
+                      : getTaskEvidenceReasonLabel(activity.nodeType)
+                  }}：{{ task.reason }}
+                </div>
+                <TaskEvidenceCell
+                  v-if="task.attachments?.length || task.signPicUrl"
+                  class="mt-2 !justify-start"
+                  :attachments="task.attachments"
+                  :sign-pic-url="task.signPicUrl"
                 />
               </div>
             </teleport>
@@ -207,6 +195,7 @@ import { TaskStatusEnum } from '@/api/bpm/task'
 import { NodeType, CandidateStrategy } from '@/components/SimpleProcessDesignerV2/src/consts'
 import { isEmpty } from '@/utils/is'
 import { Check, Close, Loading, Clock, Minus, Delete, ArrowDown } from '@element-plus/icons-vue'
+import TaskEvidenceCell from '@/views/bpm/task/components/TaskEvidenceCell.vue'
 import starterSvg from '@/assets/svgs/bpm/starter.svg'
 import auditorSvg from '@/assets/svgs/bpm/auditor.svg'
 import copySvg from '@/assets/svgs/bpm/copy.svg'
@@ -251,7 +240,9 @@ const statusIconMap2 = {
   // 委派中
   '6': { color: '#448ef7', icon: 'ep:loading' },
   // 审批通过中
-  '7': { color: '#00b32a', icon: 'ep:circle-check-filled' }
+  '7': { color: '#00b32a', icon: 'ep:circle-check-filled' },
+  // 已退回，等待退回目标处理人修改
+  '8': { color: '#f46b6c', icon: 'ep:remove-filled' }
 }
 
 const statusIconMap = {
@@ -273,7 +264,9 @@ const statusIconMap = {
   // 委派中
   '6': { color: '#448ef7', icon: Loading },
   // 审批通过中
-  '7': { color: '#00b32a', icon: Check }
+  '7': { color: '#00b32a', icon: Check },
+  // 已退回，等待退回目标处理人修改
+  '8': { color: '#f46b6c', icon: Loading }
 }
 
 const nodeTypeSvgMap = {
@@ -295,8 +288,13 @@ const nodeTypeSvgMap = {
   [NodeType.CHILD_PROCESS_NODE]: { color: '#14bb83', svg: childProcessSvg }
 }
 
-// 只有只有状态是 -1、0、1 才展示头像右小角状态小icon
-const onlyStatusIconShow = [-1, 0, 1]
+// 只有只有状态是 -1、0、1、8 才展示头像右小角状态小icon
+const onlyStatusIconShow = [
+  TaskStatusEnum.NOT_START,
+  TaskStatusEnum.WAIT,
+  TaskStatusEnum.RUNNING,
+  TaskStatusEnum.WAIT_REVISION
+]
 
 // timeline时间线上icon图标
 const getApprovalNodeImg = (nodeType: NodeType) => {
@@ -335,8 +333,8 @@ const getApprovalNodeTime = (node: ProcessInstanceApi.ApprovalNodeInfo) => {
   }
 }
 
-/** 是否展示审批意见和附件 */
-const shouldShowReasonAndAttachment = (
+/** 是否展示审批意见、附件和签名 */
+const shouldShowTaskEvidence = (
   task: ProcessInstanceApi.ApprovalTaskInfo,
   nodeType: NodeType,
   nodeIndex: number
@@ -346,26 +344,19 @@ const shouldShowReasonAndAttachment = (
     return false
   }
   return (
-    Boolean(task.reason || task.attachments?.length) &&
-    [NodeType.START_USER_NODE, NodeType.USER_TASK_NODE].includes(nodeType)
+    Boolean(
+      task.status === TaskStatusEnum.WAIT_REVISION ||
+      task.reason ||
+      task.attachments?.length ||
+      task.signPicUrl
+    ) &&
+    [NodeType.START_USER_NODE, NodeType.USER_TASK_NODE, NodeType.TRANSACTOR_NODE].includes(nodeType)
   )
 }
 
-/** 获取附件名 */
-const getAttachmentName = (url: string) => {
-  const cleanUrl = url.split(/[?#]/)[0]
-  const fileName = cleanUrl.slice(cleanUrl.lastIndexOf('/') + 1)
-  try {
-    return decodeURIComponent(fileName)
-  } catch {
-    return fileName
-  }
-}
-
-/** 是否图片附件 */
-const isImageAttachment = (url: string) => {
-  const ext = url.split(/[?#]/)[0]?.split('.').pop()?.toLowerCase()
-  return ['bmp', 'gif', 'jpeg', 'jpg', 'png', 'webp'].includes(ext || '')
+/** 获取任务留痕意见标题 */
+const getTaskEvidenceReasonLabel = (nodeType: NodeType) => {
+  return nodeType === NodeType.TRANSACTOR_NODE ? '办理意见' : '审批意见'
 }
 
 // 选择自定义审批人

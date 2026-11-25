@@ -66,6 +66,26 @@ export const createModel = async (data: ModelVO) => {
   return await request.post({ url: '/bpm/model/create', data: data })
 }
 
+export const importModel = async (file: File, key?: string, name?: string) => {
+  const data = new FormData()
+  data.append('file', file)
+  if (key) {
+    data.append('key', key)
+  }
+  if (name) {
+    data.append('name', name)
+  }
+  return await request.post({
+    url: '/bpm/model/import',
+    data,
+    headersType: 'multipart/form-data'
+  })
+}
+
+export const exportModel = async (id: number) => {
+  return await request.get({ url: '/bpm/model/export?id=' + id })
+}
+
 export const deleteModel = async (id: number) => {
   return await request.delete({ url: '/bpm/model/delete?id=' + id })
 }

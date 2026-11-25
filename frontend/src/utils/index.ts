@@ -1,21 +1,5 @@
 import { toNumber } from 'lodash-es'
-
-/**
- *
- * @param component 需要注册的组件
- * @param alias 组件别名
- * @returns any
- */
-export const withInstall = <T>(component: T, alias?: string) => {
-  const comp = component as any
-  comp.install = (app: any) => {
-    app.component(comp.name || comp.displayName, component)
-    if (alias) {
-      app.config.globalProperties[alias] = component
-    }
-  }
-  return component as T & Plugin
-}
+import { isObject } from './is'
 
 /**
  * @param str 需要转下划线的驼峰字符串
@@ -45,6 +29,15 @@ export const humpToDash = (str: string): string => {
 
 export const setCssVar = (prop: string, val: any, dom = document.documentElement) => {
   dom.style.setProperty(prop, val)
+}
+
+/**
+ * 读取 CSS 变量的计算值，未定义时返回空字符串
+ *
+ * 与上游不同：结果会去掉首尾空白
+ */
+export const getCssVar = (prop: string, dom = document.documentElement): string => {
+  return getComputedStyle(dom).getPropertyValue(prop).trim()
 }
 
 /**
@@ -529,6 +522,24 @@ export function jsonParse(str: string) {
 }
 
 /**
+ * 解析 JSON 对象字符串
+ *
+ * @param str JSON 字符串
+ * @return JSON 对象；为空、格式错误或不是对象时，返回 undefined
+ */
+export const jsonParseObject = (str?: string): Record<string, any> | undefined => {
+  if (!str?.trim()) {
+    return undefined
+  }
+  try {
+    const value = JSON.parse(str)
+    return isObject(value) ? value : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * 截取字符串
  *
  * @param str 字符串
@@ -552,4 +563,23 @@ export const escapeHtml = (text: string): string => {
     "'": '&#039;'
   }
   return text.replace(/[&<>"']/g, (char) => map[char])
+}
+
+/**
+ * 把对象转为 FormData
+ *
+ * 与上游不同：值为 undefined、null 的字段跳过，不写入 'undefined'、'null' 字符串；
+ * 0、false、'' 照常写入；Blob / File 原样写入（File 保留文件名），其它值按字符串写入，
+ * 不展开嵌套对象或数组，需要时请先自行 JSON.stringify
+ */
+export const objToFormData = (obj: Recordable): FormData => {
+  const formData = new FormData()
+  Object.keys(obj).forEach((key) => {
+    const value = obj[key]
+    if (value === undefined || value === null) {
+      return
+    }
+    formData.append(key, value instanceof Blob ? value : String(value))
+  })
+  return formData
 }

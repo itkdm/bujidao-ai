@@ -114,6 +114,7 @@ defineOptions({ name: 'WmsShipmentOrderPrint' })
 const printData = ref<ShipmentOrderVO>({}) // 打印数据
 const printButtonRef = ref<HTMLButtonElement>() // 打印按钮
 const tableColumnCount = 5
+const printing = ref(false) // 是否正在准备打印，避免连点触发竞态
 const printObj = ref({
   id: 'wmsShipmentOrderPrint',
   popTitle: '&nbsp',
@@ -133,11 +134,35 @@ const printRows = computed<PrintRow[]>(() =>
   }))
 )
 
+/** 等待新条码 DOM 完成生成和绘制，避免打印插件复制到旧 DOM */
+const waitForPrintReady = async () => {
+  await nextTick()
+  await nextTick()
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => resolve())
+    })
+  })
+}
+
 /** 打印出库单 */
 const print = async (id: number) => {
-  printData.value = await ShipmentOrderApi.getShipmentOrder(id)
-  await nextTick()
-  printButtonRef.value?.click()
+  if (printing.value) {
+    return
+  }
+  printing.value = true
+  try {
+    printData.value = {}
+    await nextTick()
+    const data = await ShipmentOrderApi.getShipmentOrder(id)
+    printData.value = data
+
+    // 等待新条码 DOM 重建并完成绘制，避免打印到上一张条码
+    await waitForPrintReady()
+    printButtonRef.value?.click()
+  } finally {
+    printing.value = false
+  }
 }
 defineExpose({ print })
 </script>

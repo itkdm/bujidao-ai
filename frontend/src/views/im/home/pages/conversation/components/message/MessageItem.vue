@@ -300,7 +300,7 @@ const { recall, sendRaw } = useMessageSender()
 const { uploadAndSendMedia } = useMediaUploader()
 const muteOverlay = useMuteOverlay()
 // 仅用 confirm，避免 message 跟 props.message 同名冲突（vue/no-dupe-keys）
-const { confirm: confirmDialog, success: successMessage } = useMessage()
+const { confirm: confirmDialog, success: successMessage, warning: warningMessage } = useMessage()
 // legacy:true 兼容 HTTP 环境，没有 navigator.clipboard 时降级到 execCommand
 const { copy: copyToClipboard } = useClipboard({ legacy: true })
 
@@ -874,7 +874,8 @@ const canPin = computed(
 /** 置顶消息：二次确认 → 调后端 pin-message；后端广播 GROUP_MESSAGE_PIN，本端 dispatcher 拉最新 pinnedMessages */
 async function handlePin() {
   const group = currentGroup.value
-  if (!group || !props.message.id) {
+  const messageId = props.message.id
+  if (!group || !messageId) {
     return
   }
   try {
@@ -883,7 +884,7 @@ async function handlePin() {
       cancelButtonText: '取消',
       type: 'warning'
     })
-    await apiPinGroupMessage({ id: group.id, messageId: props.message.id })
+    await apiPinGroupMessage({ id: group.id, messageId })
     successMessage('已置顶')
   } catch {}
 }
@@ -932,9 +933,10 @@ function handleEnterMultiSelect() {
  * 不做乐观撤回：失败 / 超时 / 后端拒绝时本端状态可能与服务端漂移，统一让 WS 回推最稳
  */
 async function handleRecall() {
+  const targetMessage = props.message
   try {
     await confirmDialog('确定要撤回这条消息吗？', '撤回消息')
-    await recall(props.message)
+    await recall(targetMessage)
   } catch {}
 }
 
@@ -944,8 +946,7 @@ async function handleRecall() {
  * - 媒体消息（image / file / voice / video）：_localFile 在内存就重走 uploadAndSendMedia（重新上传 + 占位 + 进度）
  * - 文本消息：复用原 clientMessageId + status 回滚到 SENDING，走 existingClientMessageId 路径让服务端按 cmid 幂等
  *
- * 媒体类型若 _localFile 已丢（理论上 IDB 恢复阶段就被 drop，进不到这里；保险起见仍走文本兜底）则按文本路径重发，
- * 后端拒绝失效 blob URL 时再次 FAILED，用户可右键删除
+ * 重启恢复的媒体消息已丢失 _localFile，只提示重新选择文件，不把失效的本地 URL 发给服务端
  *
  * 不还原原 receipt：群回执是发送时的扩展选项、不会持久化到 message，强行猜测可能与原意不符；
  * 默认按"无回执"重发，绝大多数场景符合预期，要回执就重新发一次更直观
@@ -964,33 +965,61 @@ async function handleResend() {
   }
   const message = props.message
   const file = message._localFile
+  const uploadState = parseMessage<Record<string, unknown>>(message.content)
 
-  // 媒体类型 + _localFile 在 → 重走 uploadAndSendMedia；type 分发 + 旧元数据复用统一在 mediaTypeHandlers 表里
-  if (isMediaMessageType(message.type) && file) {
-    const handler = mediaTypeHandlers[message.type]
-    if (handler) {
-      const oldQuote = getQuoteFromMessage(message.content) ?? undefined
-      const context = handler.extractResendContext(message.content)
-      await uploadAndSendMedia({
-        file,
-        type: message.type,
-        quote: oldQuote,
-        conversation,
-        context,
-        existingClientMessageId: message.clientMessageId
+  const markFailedIfOwned = () => {
+    const current = messageStore
+      .getMessageList(conversation.type, conversation.targetId)
+      .find((item) => item.clientMessageId === message.clientMessageId)
+    if (current?.status === ImMessageStatus.SENDING) {
+      messageStore.patchMessage(conversation.type, conversation.targetId, message.clientMessageId, {
+        status: ImMessageStatus.FAILED
       })
-      return
     }
   }
 
-  // 文本类型 / 媒体类型但 _localFile 已丢：把 FAILED 占位回滚到 SENDING，复用 clientMessageId 让服务端按 cmid 幂等去重
-  messageStore.patchMessage(conversation.type, conversation.targetId, message.clientMessageId, {
-    status: ImMessageStatus.SENDING
-  })
-  await sendRaw(message.type, message.content, {
-    atUserIds: message.atUserIds,
-    existingClientMessageId: message.clientMessageId
-  })
+  try {
+    // 媒体类型 + _localFile 在 → 重走 uploadAndSendMedia；type 分发 + 旧元数据复用统一在 mediaTypeHandlers 表里
+    if (isMediaMessageType(message.type) && file) {
+      const handler = mediaTypeHandlers[message.type]
+      if (handler) {
+        const oldQuote = getQuoteFromMessage(message.content) ?? undefined
+        const context = handler.extractResendContext(message.content)
+        await uploadAndSendMedia({
+          file,
+          type: message.type,
+          quote: oldQuote,
+          conversation,
+          context,
+          existingClientMessageId: message.clientMessageId
+        })
+        return
+      }
+    }
+
+    if (
+      isMediaMessageType(message.type) &&
+      (uploadState?._uploadFailed || uploadState?._uploadPending)
+    ) {
+      warningMessage('本地临时文件已失效，请重新选择文件')
+      return
+    }
+
+    // 文本失败消息回滚到 SENDING，复用 clientMessageId 让服务端按 cmid 幂等去重
+    messageStore.patchMessage(conversation.type, conversation.targetId, message.clientMessageId, {
+      status: ImMessageStatus.SENDING
+    })
+    const sent = await sendRaw(message.type, message.content, {
+      atUserIds: message.atUserIds,
+      existingClientMessageId: message.clientMessageId
+    })
+    if (!sent) {
+      markFailedIfOwned()
+    }
+  } catch (error) {
+    console.warn('[IM MessageItem] 重发消息失败', error)
+    markFailedIfOwned()
+  }
 }
 
 /**
@@ -1010,12 +1039,13 @@ function handleMute() {
 /** 解除禁言 */
 async function handleUnmute() {
   const group = currentGroup.value
+  const senderId = props.message.senderId
   if (!group) {
     return
   }
   try {
     await confirmDialog('确定解除该成员的禁言吗？', '解除禁言')
-    await cancelMuteMember({ id: group.id, userId: props.message.senderId })
+    await cancelMuteMember({ id: group.id, userId: senderId })
     successMessage('已解除禁言')
     emit('reload')
   } catch {}
@@ -1024,27 +1054,33 @@ async function handleUnmute() {
 /** 移除群成员 */
 async function handleKick() {
   const group = currentGroup.value
+  const senderId = props.message.senderId
   if (!group) {
     return
   }
   const name = senderDisplayName.value || '该成员'
   try {
     await confirmDialog(`确定将「${name}」移出群聊吗？`, '移除成员')
-    await removeGroupMember({ groupId: group.id, memberUserIds: [props.message.senderId] })
+    await removeGroupMember({ groupId: group.id, memberUserIds: [senderId] })
     successMessage('已移除')
     emit('reload')
   } catch {}
 }
 
-function handleDelete() {
+async function handleDelete() {
   const conversation = conversationStore.activeConversation
   if (!conversation) {
     return
   }
-  messageStore.removeMessage(conversation.type, conversation.targetId, {
-    id: props.message.id,
-    clientMessageId: props.message.clientMessageId
-  })
+  try {
+    await messageStore.removeMessage(conversation.type, conversation.targetId, {
+      id: props.message.id,
+      clientMessageId: props.message.clientMessageId
+    })
+  } catch (error) {
+    console.warn('[IM MessageItem] 删除消息失败', error)
+    warningMessage('删除失败，请重试')
+  }
 }
 </script>
 

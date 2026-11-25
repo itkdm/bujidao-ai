@@ -64,11 +64,19 @@ export const useTagsViewStore = defineStore('tagsView', {
       const cacheMap: Set<string> = new Set()
       for (const v of this.visitedViews) {
         const item = getRawRoute(v)
+        // 空路由项（null / undefined）直接跳过，避免读取 meta、name 时报错
+        if (!item) {
+          continue
+        }
         const needCache = !item.meta?.noCache
         if (!needCache) {
           continue
         }
-        const name = item.name as string
+        // 无名称（undefined / 空字符串，如兜底 404 路由）的路由无法被 KeepAlive 按名称匹配，不加入缓存列表
+        const name = item.name
+        if (typeof name !== 'string' || !name) {
+          continue
+        }
         cacheMap.add(name)
       }
       if (Array.from(this.cachedViews).sort().toString() === Array.from(cacheMap).sort().toString())
@@ -89,9 +97,9 @@ export const useTagsViewStore = defineStore('tagsView', {
         }
       }
     },
-    // 删除缓存
-    delCachedView() {
-      const route = router.currentRoute.value
+    // 删除缓存（按路由名）：传入 view 时删除该页的缓存，未传入时删除当前路由的缓存
+    delCachedView(view?: RouteLocationNormalizedLoaded) {
+      const route = view || router.currentRoute.value
       const index = findIndex<string>(this.getCachedViews, (v) => v === route.name)
       // 需要注释，解决“标签页刷新无效”。相关案例：https://github.com/yudaocode/yudao-ui-admin-vue3/issues/180
       // for (const v of this.visitedViews) {
@@ -103,6 +111,19 @@ export const useTagsViewStore = defineStore('tagsView', {
         this.cachedViews.delete(this.getCachedViews[index])
       }
     },
+    // view 的路由名是否只对应一个缓存实例：AppView 的 KeepAlive 以 meta.viewKey || fullPath 为 key、
+    // 按路由名 include，同名多个实例（如同一路径不同 query）时按名删除缓存会一并清掉其它实例
+    isSingleCachedInstance(view: RouteLocationNormalizedLoaded): boolean {
+      const keys = new Set<string>([view.meta?.viewKey || view.fullPath])
+      for (const v of this.visitedViews) {
+        const item = getRawRoute(v)
+        if (!item || item.meta?.noCache || item.name !== view.name) {
+          continue
+        }
+        keys.add(v.meta?.viewKey || v.fullPath)
+      }
+      return keys.size === 1
+    },
     // 删除所有缓存和tag
     delAllViews() {
       this.delAllVisitedViews()
@@ -113,7 +134,8 @@ export const useTagsViewStore = defineStore('tagsView', {
       const userStore = useUserStoreWithOut()
 
       // const affixTags = this.visitedViews.filter((tag) => tag.meta.affix)
-      this.visitedViews = userStore.getUser
+      // 使用 isSetUser 判断登录态：resetState 后 user 仍是非空对象，不能用 getUser 判断
+      this.visitedViews = userStore.getIsSetUser
         ? this.visitedViews.filter((tag) => tag?.meta?.affix)
         : []
     },
@@ -154,22 +176,27 @@ export const useTagsViewStore = defineStore('tagsView', {
         this.addCachedView()
       }
     },
-    updateVisitedView(view: RouteLocationNormalizedLoaded) {
-      for (let v of this.visitedViews) {
-        if (v.fullPath === view.fullPath) {
-          v = Object.assign(v, view)
-          break
-        }
-      }
-    },
     // 设置当前选中的 tag
     setSelectedTag(tag: RouteLocationNormalizedLoaded) {
       this.selectedTag = tag
     },
+    // 设置 tag 标题：显式传入 path（含空字符串）时修改该 path 的第一个 tag；
+    // 未传入（undefined / null）时修改当前选中的 tag，没有选中的 tag 则不修改
     setTitle(title: string, path?: string) {
+      const selectedTag = this.selectedTag
+      if (path == null && !selectedTag) return
+      const isTarget = (v: RouteLocationNormalizedLoaded) => {
+        if (path != null) return v.path === path
+        // 芋道同一路径、不同 query 的页面各自成 tag，当前 tag 按 fullPath 定位；没有 fullPath 的自建 tag 回退按 path
+        return selectedTag?.fullPath
+          ? v.fullPath === selectedTag.fullPath
+          : v.path === selectedTag?.path
+      }
       for (const v of this.visitedViews) {
-        if (v.path === (path ?? this.selectedTag?.path)) {
+        if (isTarget(v)) {
           v.meta.title = title
+          // 沿用历史契约：setTitle 的标题与静态路由一样经 t 展示，不再沿用后端菜单原文标记
+          v.meta.titleSource = undefined
           break
         }
       }

@@ -19,6 +19,8 @@
 </template>
 
 <script lang="ts" setup>
+import { isIdType, parseId } from '@/utils/id'
+
 import { handleTree } from '@/utils/tree'
 import { getSimpleDeptList, type DeptVO } from '@/api/system/dept'
 import { useUserStoreWithOut } from '@/store/modules/user'
@@ -75,7 +77,7 @@ const loadDeptTree = async () => {
 }
 
 // 根据 ID 获取部门名称
-const getDeptNameById = (id: number): string | undefined => {
+const getDeptNameById = (id?: number): string | undefined => {
   const dept = deptList.value.find((item) => item.id === id)
   return dept?.name
 }
@@ -98,8 +100,8 @@ const handleChange = (value: number | number[] | undefined) => {
     if (props.multiple && Array.isArray(value)) {
       const names = value.map((id) => getDeptNameById(id)).filter(Boolean) as string[]
       emit('update:modelValue', names)
-    } else if (!props.multiple && typeof value === 'number') {
-      const name = getDeptNameById(value)
+    } else if (!props.multiple && isIdType(value)) {
+      const name = getDeptNameById(parseId(value))
       emit('update:modelValue', name)
     }
   } else {
@@ -152,38 +154,32 @@ const hasValidPresetValue = (): boolean => {
   return true
 }
 
+// 是否处于表单设计器中：FcDesigner 会向其内部组件 provide('designer')，运行时表单无此注入
+const designerCtx = inject('designer', null)
+
 // 设置默认值（当前用户部门）
 const setDefaultValue = () => {
-  console.log('[DeptSelect] setDefaultValue called, defaultCurrentDept:', props.defaultCurrentDept)
-
   // 仅当 defaultCurrentDept 为 true 时处理
-  if (!props.defaultCurrentDept) {
-    console.log('[DeptSelect] defaultCurrentDept is false, skip')
-    return
-  }
+  if (!props.defaultCurrentDept) return
 
-  // 检查是否已有预设值（预设值优先级高于默认当前部门）
-  if (hasValidPresetValue()) {
-    console.log('[DeptSelect] has preset value, skip:', props.modelValue)
-    return
-  }
+  // 表单设计器中不设置动态默认值：否则 emit 出去的值会被设计器双向绑定回写到 rule.value，
+  // 随表单设计持久化后，运行时其他用户会拿到这个被污染的固定值，导致默认部门不再跟随当前登录用户。
+  // 仅在「运行时」才设置. 不过会导致表单设计器预览时，无法看到默认值
+  if (designerCtx !== null) return
+
+  // 已有预设值则保留（优先级高于默认当前部门）：用于审批回显时保留发起人填写的真实值
+  if (hasValidPresetValue()) return
 
   // 获取当前用户的部门 ID
   const userStore = useUserStoreWithOut()
   const user = userStore.getUser
   const deptId = user?.deptId
 
-  console.log('[DeptSelect] current user:', user, 'deptId:', deptId)
-
   // 处理 deptId 为空或 0 的边界情况
-  if (!deptId || deptId === 0) {
-    console.log('[DeptSelect] deptId is invalid, skip')
-    return
-  }
+  if (!deptId || deptId === 0) return
 
   // 根据多选模式决定默认值格式
   const defaultValue = props.multiple ? [deptId] : deptId
-  console.log('[DeptSelect] setting default value:', defaultValue)
   emit('update:modelValue', defaultValue)
 }
 

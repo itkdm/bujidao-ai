@@ -75,53 +75,45 @@ const deleteEnum = (index: number) => {
 }
 
 /** 校验枚举值 */
-const validateEnumValue = (_: any, value: any, callback: any) => {
+const validateEnumValue: any = (_: any, value: any) => {
   if (isEmpty(value)) {
-    callback(new Error('枚举值不能为空'))
-    return
+    return Promise.reject(new Error('枚举值不能为空'))
   }
   if (isNaN(Number(value))) {
-    callback(new Error('枚举值必须是数字'))
-    return
+    return Promise.reject(new Error('枚举值必须是数字'))
   }
   // 检查枚举值是否重复
   const values = dataSpecsList.value.map((item) => item.value)
   if (values.filter((v) => v === value).length > 1) {
-    callback(new Error('枚举值不能重复'))
-    return
+    return Promise.reject(new Error('枚举值不能重复'))
   }
-  callback()
+  return Promise.resolve()
 }
 
 /** 校验枚举描述 */
-const validateEnumName = (_: any, value: string, callback: any) => {
+const validateEnumName: any = (_: any, value: string) => {
   if (isEmpty(value)) {
-    callback(new Error('枚举描述不能为空'))
-    return
+    return Promise.reject(new Error('枚举描述不能为空'))
   }
   // 检查开头字符
   if (!/^[\u4e00-\u9fa5a-zA-Z0-9]/.test(value)) {
-    callback(new Error('枚举描述必须以中文、英文字母或数字开头'))
-    return
+    return Promise.reject(new Error('枚举描述必须以中文、英文字母或数字开头'))
   }
   // 检查整体格式
   if (!/^[\u4e00-\u9fa5a-zA-Z0-9][a-zA-Z0-9\u4e00-\u9fa5_-]*$/.test(value)) {
-    callback(new Error('枚举描述只能包含中文、英文字母、数字、下划线和短划线'))
-    return
+    return Promise.reject(new Error('枚举描述只能包含中文、英文字母、数字、下划线和短划线'))
   }
   // 检查长度（一个中文算一个字符）
   if (value.length > 20) {
-    callback(new Error('枚举描述长度不能超过20个字符'))
-    return
+    return Promise.reject(new Error('枚举描述长度不能超过20个字符'))
   }
-  callback()
+  return Promise.resolve()
 }
 
 /** 校验整个枚举列表 */
-const validateEnumList = (_: any, __: any, callback: any) => {
+const validateEnumList: any = (_: any, __: any) => {
   if (isEmpty(dataSpecsList.value)) {
-    callback(new Error('请至少添加一个枚举项'))
-    return
+    return Promise.reject(new Error('请至少添加一个枚举项'))
   }
 
   // 检查是否存在空值
@@ -129,25 +121,22 @@ const validateEnumList = (_: any, __: any, callback: any) => {
     (item) => isEmpty(item.value) || isEmpty(item.name)
   )
   if (hasEmptyValue) {
-    callback(new Error('存在未填写的枚举值或描述'))
-    return
+    return Promise.reject(new Error('存在未填写的枚举值或描述'))
   }
 
   // 检查枚举值是否都是数字
   const hasInvalidNumber = dataSpecsList.value.some((item) => isNaN(Number(item.value)))
   if (hasInvalidNumber) {
-    callback(new Error('存在非数字的枚举值'))
-    return
+    return Promise.reject(new Error('存在非数字的枚举值'))
   }
 
   // 检查是否有重复的枚举值
   const values = dataSpecsList.value.map((item) => item.value)
   const uniqueValues = new Set(values)
   if (values.length !== uniqueValues.size) {
-    callback(new Error('存在重复的枚举值'))
-    return
+    return Promise.reject(new Error('存在重复的枚举值'))
   }
-  callback()
+  return Promise.resolve()
 }
 </script>
 

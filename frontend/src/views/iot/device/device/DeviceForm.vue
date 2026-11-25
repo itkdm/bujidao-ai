@@ -109,9 +109,14 @@ const formData = ref({
 
 /** 打开地图选择弹窗 */
 const openMapDialog = () => {
+  // 0 是合法经纬度；空白和非数字输入视为未填写
+  const longitude = String(formData.value.longitude ?? '').trim()
+  const latitude = String(formData.value.latitude ?? '').trim()
+  const longitudeValue = longitude ? Number(longitude) : NaN
+  const latitudeValue = latitude ? Number(latitude) : NaN
   mapDialogRef.value?.open(
-    formData.value.longitude ? Number(formData.value.longitude) : undefined,
-    formData.value.latitude ? Number(formData.value.latitude) : undefined
+    Number.isFinite(longitudeValue) ? longitudeValue : undefined,
+    Number.isFinite(latitudeValue) ? latitudeValue : undefined
   )
 }
 
@@ -134,19 +139,20 @@ const formRules = reactive({
   ],
   nickname: [
     {
-      validator: (_rule, value: any, callback) => {
+      validator: (_rule, value: any) => {
         if (value === undefined || value === null) {
-          callback()
-          return
+          return Promise.resolve()
         }
         const length = value.replace(/[\u4e00-\u9fa5\u3040-\u30ff]/g, 'aa').length
         if (length < 4 || length > 64) {
-          callback(new Error('备注名称长度限制为 4~64 个字符，中文及日文算 2 个字符'))
-        } else if (!/^[\u4e00-\u9fa5\u3040-\u30ff_a-zA-Z0-9]+$/.test(value)) {
-          callback(new Error('备注名称只能包含中文、英文字母、日文、数字和下划线（_）'))
-        } else {
-          callback()
+          return Promise.reject(new Error('备注名称长度限制为 4~64 个字符，中文及日文算 2 个字符'))
         }
+        if (!/^[\u4e00-\u9fa5\u3040-\u30ff_a-zA-Z0-9]+$/.test(value)) {
+          return Promise.reject(
+            new Error('备注名称只能包含中文、英文字母、日文、数字和下划线（_）')
+          )
+        }
+        return Promise.resolve()
       },
       trigger: 'blur'
     }
@@ -160,46 +166,40 @@ const formRules = reactive({
   ],
   longitude: [
     {
-      validator: (_rule: any, value: any, callback: any) => {
+      validator: (_rule: any, value: any) => {
         if (value !== undefined && value !== null && value !== '') {
           const num = Number(value)
           if (isNaN(num)) {
-            callback(new Error('经度必须是有效数字'))
-            return
+            return Promise.reject(new Error('经度必须是有效数字'))
           }
           if (num < -180 || num > 180) {
-            callback(new Error('经度范围为 -180 到 180'))
-            return
+            return Promise.reject(new Error('经度范围为 -180 到 180'))
           }
           if (!formData.value.latitude && formData.value.latitude !== 0) {
-            callback(new Error('请同时填写纬度'))
-            return
+            return Promise.reject(new Error('请同时填写纬度'))
           }
         }
-        callback()
+        return Promise.resolve()
       },
       trigger: 'blur'
     }
   ],
   latitude: [
     {
-      validator: (_rule: any, value: any, callback: any) => {
+      validator: (_rule: any, value: any) => {
         if (value !== undefined && value !== null && value !== '') {
           const num = Number(value)
           if (isNaN(num)) {
-            callback(new Error('纬度必须是有效数字'))
-            return
+            return Promise.reject(new Error('纬度必须是有效数字'))
           }
           if (num < -90 || num > 90) {
-            callback(new Error('纬度范围为 -90 到 90'))
-            return
+            return Promise.reject(new Error('纬度范围为 -90 到 90'))
           }
           if (!formData.value.longitude && formData.value.longitude !== 0) {
-            callback(new Error('请同时填写经度'))
-            return
+            return Promise.reject(new Error('请同时填写经度'))
           }
         }
-        callback()
+        return Promise.resolve()
       },
       trigger: 'blur'
     }

@@ -211,19 +211,19 @@ export const ThingModelFormRules = {
       trigger: 'blur'
     },
     {
-      validator: (_: any, value: string, callback: any) => {
+      validator: (_: any, value: string) => {
         const reservedKeywords = ['set', 'get', 'post', 'property', 'event', 'time', 'value']
         if (reservedKeywords.includes(value)) {
-          callback(
+          return Promise.reject(
             new Error(
               'set, get, post, property, event, time, value 是系统保留字段，不能用于标识符定义'
             )
           )
-        } else if (/^\d+$/.test(value)) {
-          callback(new Error('标识符不能是纯数字'))
-        } else {
-          callback()
         }
+        if (/^\d+$/.test(value)) {
+          return Promise.reject(new Error('标识符不能是纯数字'))
+        }
+        return Promise.resolve()
       },
       trigger: 'blur'
     }
@@ -232,16 +232,14 @@ export const ThingModelFormRules = {
   'property.dataSpecs.size': [
     { required: true, message: '元素个数不能为空' },
     {
-      validator: (_: any, value: any, callback: any) => {
+      validator: (_: any, value: any) => {
         if (isEmpty(value)) {
-          callback(new Error('元素个数不能为空'))
-          return
+          return Promise.reject(new Error('元素个数不能为空'))
         }
         if (isNaN(Number(value))) {
-          callback(new Error('元素个数必须是数字'))
-          return
+          return Promise.reject(new Error('元素个数必须是数字'))
         }
-        callback()
+        return Promise.resolve()
       },
       trigger: 'blur'
     }
@@ -249,16 +247,14 @@ export const ThingModelFormRules = {
   'property.dataSpecs.length': [
     { required: true, message: '请输入文本字节长度', trigger: 'blur' },
     {
-      validator: (_: any, value: any, callback: any) => {
+      validator: (_: any, value: any) => {
         if (isEmpty(value)) {
-          callback(new Error('文本长度不能为空'))
-          return
+          return Promise.reject(new Error('文本长度不能为空'))
         }
         if (isNaN(Number(value))) {
-          callback(new Error('文本长度必须是数字'))
-          return
+          return Promise.reject(new Error('文本长度必须是数字'))
         }
-        callback()
+        return Promise.resolve()
       },
       trigger: 'blur'
     }
@@ -267,26 +263,22 @@ export const ThingModelFormRules = {
 }
 
 /** 校验布尔值名称 */
-export const validateBoolName = (_: any, value: string, callback: any) => {
+export const validateBoolName: any = (_: any, value: string) => {
   if (isEmpty(value)) {
-    callback(new Error('布尔值名称不能为空'))
-    return
+    return Promise.reject(new Error('布尔值名称不能为空'))
   }
   // 检查开头字符
   if (!/^[\u4e00-\u9fa5a-zA-Z0-9]/.test(value)) {
-    callback(new Error('布尔值名称必须以中文、英文字母或数字开头'))
-    return
+    return Promise.reject(new Error('布尔值名称必须以中文、英文字母或数字开头'))
   }
   // 检查整体格式
   if (!/^[\u4e00-\u9fa5a-zA-Z0-9][a-zA-Z0-9\u4e00-\u9fa5_-]*$/.test(value)) {
-    callback(new Error('布尔值名称只能包含中文、英文字母、数字、下划线和短划线'))
-    return
+    return Promise.reject(new Error('布尔值名称只能包含中文、英文字母、数字、下划线和短划线'))
   }
   // 检查长度（一个中文算一个字符）
   if (value.length > 20) {
-    callback(new Error('布尔值名称长度不能超过 20 个字符'))
-    return
+    return Promise.reject(new Error('布尔值名称长度不能超过 20 个字符'))
   }
 
-  callback()
+  return Promise.resolve()
 }

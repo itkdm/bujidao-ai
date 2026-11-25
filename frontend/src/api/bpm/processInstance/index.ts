@@ -4,6 +4,7 @@ import { NodeType, CandidateStrategy } from '@/components/SimpleProcessDesignerV
 export type Task = {
   id: string
   name: string
+  assigneeUser?: User
 }
 
 export type ProcessInstanceVO = {
@@ -34,6 +35,9 @@ export type ApprovalTaskInfo = {
   id: number
   ownerUser: User
   assigneeUser: User
+  revisionTargetNode?: string
+  revisionTargetNodeName?: string
+  revisionAssigneeUser?: User
   status: number
   reason: string
   attachments?: string[]
@@ -66,7 +70,7 @@ export const createProcessInstance = async (data) => {
   return await request.post({ url: '/bpm/process-instance/create', data: data })
 }
 
-export const cancelProcessInstanceByStartUser = async (id: number, reason: string) => {
+export const cancelProcessInstanceByStartUser = async (id: number | string, reason: string) => {
   const data = {
     id: id,
     reason: reason
@@ -74,7 +78,7 @@ export const cancelProcessInstanceByStartUser = async (id: number, reason: strin
   return await request.delete({ url: '/bpm/process-instance/cancel-by-start-user', data: data })
 }
 
-export const cancelProcessInstanceByAdmin = async (id: number, reason: string) => {
+export const cancelProcessInstanceByAdmin = async (id: number | string, reason: string) => {
   const data = {
     id: id,
     reason: reason

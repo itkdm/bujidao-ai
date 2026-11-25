@@ -355,7 +355,11 @@ const handleCustomerChange = () => {
 }
 
 /** 处理商机变化 */
-const handleBusinessChange = async (businessId: number) => {
+const handleBusinessChange = async (businessId?: number) => {
+  if (!businessId) {
+    formData.value.products = []
+    return
+  }
   const business = await BusinessApi.getBusiness(businessId)
   business.products.forEach((item) => {
     item.contractPrice = item.businessPrice

@@ -31,6 +31,7 @@
           <el-input
             v-model="loginData.loginForm.username"
             :placeholder="t('login.usernamePlaceholder')"
+            autocomplete="username"
             :prefix-icon="iconAvatar"
           />
         </el-form-item>
@@ -40,10 +41,11 @@
           <el-input
             v-model="loginData.loginForm.password"
             :placeholder="t('login.passwordPlaceholder')"
+            autocomplete="current-password"
             :prefix-icon="iconLock"
             show-password
             type="password"
-            @keyup.enter="getCode()"
+            @keyup.enter.stop="getCode()"
           />
         </el-form-item>
       </el-col>
@@ -91,7 +93,7 @@
               </el-button>
             </el-col>
             <el-col :span="8">
-              <el-button class="w-full" @click="setLoginState(LoginStateEnum.QR_CODE)">
+              <el-button class="w-full" @click="handleQrcodeLogin">
                 {{ t('login.btnQRCode') }}
               </el-button>
             </el-col>
@@ -145,9 +147,9 @@ import type { RouteLocationNormalizedLoaded } from 'vue-router'
 import { useIcon } from '@/hooks/web/useIcon'
 
 import * as authUtil from '@/utils/auth'
-import { usePermissionStore } from '@/store/modules/permission'
+import { buildSocialRedirectUri } from '@/utils/social'
 import * as LoginApi from '@/api/login'
-import { LoginStateEnum, useFormValid, useLoginState } from './useLogin'
+import { LoginStateEnum, resolveLoginRedirect, useFormValid, useLoginState } from './useLogin'
 
 defineOptions({ name: 'LoginForm' })
 
@@ -159,8 +161,7 @@ const iconLock = useIcon({ icon: 'ep:lock' })
 const formLogin = ref()
 const { validForm } = useFormValid(formLogin)
 const { setLoginState, getLoginState } = useLoginState()
-const { currentRoute, push } = useRouter()
-const permissionStore = usePermissionStore()
+const { currentRoute, push, resolve } = useRouter()
 const redirect = ref<string>('')
 const loginLoading = ref(false)
 const verify = ref()
@@ -193,8 +194,14 @@ const socialList = [
   { icon: 'ant-design:alipay-circle-filled', type: 0 }
 ]
 
+// 登录进行中的同步锁：Enter 与点击、验证码 success 重复回调只触发一次登录；
+// 不复用 loginLoading，避免社交登录失败未复位 loginLoading 时阻塞账号登录
+let loginPending = false
 // 获取验证码
 const getCode = async () => {
+  if (loginPending) {
+    return
+  }
   // 情况一，未开启：则直接登录
   if (loginData.captchaEnable === 'false') {
     await handleLogin({})
@@ -211,6 +218,11 @@ const getTenantId = async () => {
     authUtil.setTenantId(res)
   }
 }
+// 扫码登录与账号登录一样，先确定租户。
+const handleQrcodeLogin = async () => {
+  await getTenantId()
+  setLoginState(LoginStateEnum.QR_CODE)
+}
 // 记住我
 const getLoginFormCache = () => {
   const loginForm = authUtil.getLoginForm()
@@ -218,7 +230,6 @@ const getLoginFormCache = () => {
     loginData.loginForm = {
       ...loginData.loginForm,
       username: loginForm.username ? loginForm.username : loginData.loginForm.username,
-      password: loginForm.password ? loginForm.password : loginData.loginForm.password,
       rememberMe: loginForm.rememberMe,
       tenantName: loginForm.tenantName ? loginForm.tenantName : loginData.loginForm.tenantName
     }
@@ -238,6 +249,10 @@ const getTenantByWebsite = async () => {
 const loading = ref() // ElLoading.service 返回的实例
 // 登录
 const handleLogin = async (params: any) => {
+  if (loginPending) {
+    return
+  }
+  loginPending = true
   loginLoading.value = true
   try {
     await getTenantId()
@@ -269,11 +284,15 @@ const handleLogin = async (params: any) => {
     if (redirect.value.indexOf('sso') !== -1) {
       window.location.href = redirect.value
     } else {
-      await push({ path: redirect.value || permissionStore.addRouters[0].path })
+      // 整串交给路由解析，原样保留 query、hash（{ path } 形式会丢弃 query 并重复编码 hash）；只接受站内绝对路径
+      await push(resolveLoginRedirect(redirect.value))
     }
   } finally {
+    loginPending = false
     loginLoading.value = false
-    loading.value.close()
+    // 校验失败、接口无返回或异常时，尚未创建 loading 实例
+    loading.value?.close()
+    loading.value = undefined
   }
 }
 
@@ -303,15 +322,24 @@ const doSocialLogin = async (type: number) => {
     // 计算 redirectUri
     // 注意: type、redirect 需要先 encode 一次，否则钉钉回调会丢失。
     // 配合 social-login.vue#getUrlValue() 使用
-    const redirectUri =
-      location.origin +
-      '/social-login?' +
-      encodeURIComponent(`type=${type}&redirect=${redirect.value || '/'}`)
+    const redirectUri = buildSocialRedirectUri(resolve('/social-login').href, {
+      type,
+      redirect: redirect.value || '/'
+    })
 
     // 进行跳转
     window.location.href = await LoginApi.socialAuthRedirect(type, encodeURIComponent(redirectUri))
   }
 }
+// 取消记住我时，立即清除已缓存的登录信息
+watch(
+  () => loginData.loginForm.rememberMe,
+  (rememberMe) => {
+    if (!rememberMe) {
+      authUtil.removeLoginForm()
+    }
+  }
+)
 watch(
   () => currentRoute.value,
   (route: RouteLocationNormalizedLoaded) => {

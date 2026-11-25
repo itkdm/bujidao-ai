@@ -178,11 +178,11 @@ const formData = ref({
   discountPrice: 0,
   paymentPrice: 0,
   items: [] as FinancePaymentItemVO[],
-  no: undefined as string | undefined // 订单单号，后端返回
+  no: undefined as string | undefined // 付款单号，后端返回
 })
 const formRules = reactive({
   supplierId: [{ required: true, message: '供应商不能为空', trigger: 'blur' }],
-  paymentTime: [{ required: true, message: '订单时间不能为空', trigger: 'blur' }]
+  paymentTime: [{ required: true, message: '付款时间不能为空', trigger: 'blur' }]
 })
 const disabled = computed(() => formType.value === 'detail')
 const formRef = ref() // 表单 Ref
@@ -201,7 +201,7 @@ watch(
     if (!val) {
       return
     }
-    const totalPrice = val.items.reduce((prev, curr) => prev + curr.paymentPrice, 0)
+    const totalPrice = val.items.reduce((prev, curr) => prev + (curr.paymentPrice || 0), 0)
     formData.value.totalPrice = totalPrice
     formData.value.paymentPrice = totalPrice - val.discountPrice
   },

@@ -1,17 +1,7 @@
-<script lang="ts" setup>
+<script setup lang="ts">
 import { ElBacktop } from 'element-plus'
-import { useDesign } from '@/hooks/web/useDesign'
-
-defineOptions({ name: 'BackTop' })
-
-const { getPrefixCls, variables } = useDesign()
-
-const prefixCls = getPrefixCls('backtop')
 </script>
 
 <template>
-  <ElBacktop
-    :class="`${prefixCls}-backtop`"
-    :target="`.${variables.namespace}-layout-content-scrollbar .${variables.elNamespace}-scrollbar__wrap`"
-  />
+  <ElBacktop target=".v-layout-content-scrollbar .el-scrollbar__wrap" />
 </template>

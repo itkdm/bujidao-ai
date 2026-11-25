@@ -9,7 +9,8 @@
 
 ## 🐶 新手必读
 
-* nodejs > 16.18.0 && pnpm > 8.6.0 (强制使用pnpm)
+* nodejs ^22.22.1 || >=24.11.0（最低 Node 22.22.1，推荐 `.nvmrc` / `.node-version` 中的 22.22.1，可 `nvm use`；本轮实测 Node 22.22.1、24.17.0，其它版本按 engines 范围选择）&& pnpm >= 10.28.0 (强制使用pnpm，版本由 packageManager 指定为 pnpm@10.28.0)
+* 可选开发容器：`docker compose -f docker-compose.dev.yaml up --build`，依赖默认从 npm 官方 registry 安装；如需公开镜像可加 `PNPM_REGISTRY`，例如 `PNPM_REGISTRY=https://registry.npmmirror.com docker compose -f docker-compose.dev.yaml up --build`
 * 演示地址【Vue3 + element-plus】：<http://dashboard-vue3.yudao.iocoder.cn>
 * 演示地址【Vue3 + vben5.0(ant-design-vue)】：<http://dashboard-vben.yudao.iocoder.cn>
 * 演示地址【Vue2 + element-ui】：<http://dashboard.yudao.iocoder.cn>
@@ -65,6 +66,22 @@
 | ESLint                        | 脚本代码检查              |
 | DotENV                        | env 文件高亮            |
 
+### 打包体积分析
+
+默认关闭，开发和日常构建都不会生成报告。需要分析时，给任意 `build:*` 命令加上环境变量 `VITE_USE_BUNDLE_ANALYZER=true`：
+
+```bash
+# macOS / Linux
+VITE_USE_BUNDLE_ANALYZER=true pnpm build:prod
+```
+
+```powershell
+# Windows PowerShell
+$env:VITE_USE_BUNDLE_ANALYZER='true'; pnpm build:prod; Remove-Item Env:VITE_USE_BUNDLE_ANALYZER
+```
+
+构建完成后，离线报告在 `output/bundle-analyzer/stats.html`，不会打进部署目录，也不会自动打开浏览器。每次分析构建会覆盖上一次的报告。报告只用于查看各依赖和模块的体积，本身不会减小包体积。
+
 ## 🔥 后端架构
 
 支持 Spring Boot、Spring Cloud 两种架构：
@@ -87,7 +104,7 @@
 
 * 通用模块（必选）：系统功能、基础设施
 * 通用模块（可选）：工作流程、支付系统、数据报表、会员中心
-* 业务系统（按需）：Mall 电子商城、OA 办公自动化、ERP 企业资源计划系统、WMS 仓库管理系统、CRM 客户关系管理、CMS 内容管理系统、MES 执行制造系统、AI 大模型平台、IoT 物联网系统、IM 即时通讯系统、Mobile 手机移动端、Report 数据大屏
+* 业务系统（按需）：Mall 电子商城、ERP 企业资源计划系统、WMS 仓库管理系统、CRM 客户关系管理、CMS 内容管理系统、MES 执行制造系统、HRM 人力资源管理、FMS 财务管理、PMS 项目管理、OA 办公自动化、AI 大模型平台、IoT 物联网系统、IM 即时通讯系统、Mobile 手机移动端、Report 数据大屏
 
 ### 系统功能
 
@@ -114,6 +131,31 @@
 | 🚀  | 地区管理  | 展示省份、城市、区镇等城市信息，支持 IP 对应城市      |
 
 ![功能图](/.image/common/system-feature.png)
+
+### 基础设施
+
+|     | 功能        | 描述                                           |
+|-----|-----------|----------------------------------------------|
+| 🚀  | 代码生成      | 前后端代码的生成（Java、Vue、SQL、单元测试），支持 CRUD 下载       |
+| 🚀  | 系统接口      | 基于 Swagger 自动生成相关的 RESTful API 接口文档          |
+| 🚀  | 数据库文档     | 基于 Screw 自动生成数据库文档，支持导出 Word、HTML、MD 格式      |
+|     | 表单构建      | 拖动表单元素生成相应的 HTML 代码，支持导出 JSON、Vue 文件         |
+| 🚀  | 配置管理      | 对系统动态配置常用参数，支持 SpringBoot 加载                 |
+| ⭐️  | 定时任务      | 在线（添加、修改、删除)任务调度包含执行结果日志                     |
+| 🚀  | 文件服务      | 支持将文件存储到 S3（MinIO、阿里云、腾讯云、七牛云）、本地、FTP、数据库等   |
+| 🚀  | WebSocket | 提供 WebSocket 接入示例，支持一对一、一对多发送方式              |
+| 🚀  | API 日志    | 包括 RESTful API 访问日志、异常日志两部分，方便排查 API 相关的问题   |
+|     | MySQL 监控  | 监视当前系统数据库连接池状态，可进行分析SQL找出系统性能瓶颈              |
+|     | Redis 监控  | 监控 Redis 数据库的使用情况，使用的 Redis Key 管理           |
+| 🚀  | 消息队列      | 基于 Redis 实现消息队列，Stream 提供集群消费，Pub/Sub 提供广播消费 |
+| 🚀  | Java 监控   | 基于 Spring Boot Admin 实现 Java 应用的监控           |
+| 🚀  | 链路追踪      | 接入 SkyWalking 组件，实现链路追踪                      |
+| 🚀  | 日志中心      | 接入 SkyWalking 组件，实现日志中心                      |
+| 🚀  | 服务保障      | 基于 Redis 实现分布式锁、幂等、限流功能，满足高并发场景              |
+| 🚀  | 日志服务      | 轻量级日志中心，查看远程服务器的日志                           |
+| 🚀  | 单元测试      | 基于 JUnit + Mockito 实现单元测试，保证功能的正确性、代码的质量等    |
+
+![功能图](/.image/common/infra-feature.png)
 
 ### 工作流程
 
@@ -165,31 +207,6 @@
 | 🚀  | 退款订单 | 查看用户发起的支付宝、微信等的【退款】订单     |
 | 🚀  | 回调通知 | 查看支付回调业务的【支付】【退款】的通知结果    |
 | 🚀  | 接入示例 | 提供接入支付系统的【支付】【退款】的功能实战    |
-
-### 基础设施
-
-|     | 功能        | 描述                                           |
-|-----|-----------|----------------------------------------------|
-| 🚀  | 代码生成      | 前后端代码的生成（Java、Vue、SQL、单元测试），支持 CRUD 下载       |
-| 🚀  | 系统接口      | 基于 Swagger 自动生成相关的 RESTful API 接口文档          |
-| 🚀  | 数据库文档     | 基于 Screw 自动生成数据库文档，支持导出 Word、HTML、MD 格式      |
-|     | 表单构建      | 拖动表单元素生成相应的 HTML 代码，支持导出 JSON、Vue 文件         |
-| 🚀  | 配置管理      | 对系统动态配置常用参数，支持 SpringBoot 加载                 |
-| ⭐️  | 定时任务      | 在线（添加、修改、删除)任务调度包含执行结果日志                     |
-| 🚀  | 文件服务      | 支持将文件存储到 S3（MinIO、阿里云、腾讯云、七牛云）、本地、FTP、数据库等   | 
-| 🚀  | WebSocket | 提供 WebSocket 接入示例，支持一对一、一对多发送方式              | 
-| 🚀  | API 日志    | 包括 RESTful API 访问日志、异常日志两部分，方便排查 API 相关的问题   |
-|     | MySQL 监控  | 监视当前系统数据库连接池状态，可进行分析SQL找出系统性能瓶颈              |
-|     | Redis 监控  | 监控 Redis 数据库的使用情况，使用的 Redis Key 管理           |
-| 🚀  | 消息队列      | 基于 Redis 实现消息队列，Stream 提供集群消费，Pub/Sub 提供广播消费 |
-| 🚀  | Java 监控   | 基于 Spring Boot Admin 实现 Java 应用的监控           |
-| 🚀  | 链路追踪      | 接入 SkyWalking 组件，实现链路追踪                      |
-| 🚀  | 日志中心      | 接入 SkyWalking 组件，实现日志中心                      |
-| 🚀  | 服务保障      | 基于 Redis 实现分布式锁、幂等、限流功能，满足高并发场景              |
-| 🚀  | 日志服务      | 轻量级日志中心，查看远程服务器的日志                           |
-| 🚀  | 单元测试      | 基于 JUnit + Mockito 实现单元测试，保证功能的正确性、代码的质量等    |
-
-![功能图](/.image/common/infra-feature.png)
 
 ### 数据报表
 
@@ -258,7 +275,39 @@
 
 ![功能图](/.image/common/mes-feature.png)
 
-![功能图](/.image/common/mes-preview.png)
+![预览图](/.image/common/mes-preview.png)
+
+### HRM 人力资源管理系统
+
+演示地址：<https://doc.iocoder.cn/hrm-preview/>
+
+![功能图](/.image/common/hrm-feature.png)
+
+![预览图](/.image/common/hrm-preview.png)
+
+### FMS 财务管理系统
+
+演示地址：<https://doc.iocoder.cn/fms-preview/>
+
+![功能图](/.image/common/fms-feature.png)
+
+![预览图](/.image/common/fms-preview.png)
+
+### PMS 项目管理系统
+
+演示地址：<https://doc.iocoder.cn/pms-preview/>
+
+![功能图](/.image/common/pms-feature.png)
+
+![预览图](/.image/common/pms-preview.png)
+
+### OA 协同办公
+
+演示地址：<https://doc.iocoder.cn/oa-preview/>
+
+![功能图](/.image/common/oa-feature.png)
+
+![预览图](/.image/common/oa-preview.png)
 
 ### AI 大模型
 
@@ -267,14 +316,6 @@
 ![功能图](/.image/common/ai-feature.png)
 
 ![功能图](/.image/common/ai-preview.gif)
-
-### MES 系统
-
-演示地址：<https://doc.iocoder.cn/mes-preview/>
-
-![功能图](/.image/common/mes-feature.png)
-
-![预览图](/.image/common/mes-preview.png)
 
 ### IoT 物联网
 

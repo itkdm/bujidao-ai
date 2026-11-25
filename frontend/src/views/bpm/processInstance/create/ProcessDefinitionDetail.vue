@@ -37,7 +37,7 @@
             </div>
           </el-tab-pane>
           <!-- 流程图 -->
-          <el-tab-pane label="流程图" name="diagram">
+          <el-tab-pane label="流程图" name="diagram" lazy>
             <div class="form-scroll-area">
               <!-- BPMN 流程图预览 -->
               <ProcessInstanceBpmnViewer
@@ -81,6 +81,11 @@ import {
   NodeId,
   FieldPermissionType
 } from '@/components/SimpleProcessDesignerV2/src/consts'
+import {
+  applySubFormsPermission,
+  hasSubForm,
+  isSubFieldPermissionField
+} from '@/components/SimpleProcessDesignerV2/src/utils'
 import ProcessInstanceBpmnViewer from '../detail/ProcessInstanceBpmnViewer.vue'
 import ProcessInstanceSimpleViewer from '../detail/ProcessInstanceSimpleViewer.vue'
 import ProcessInstanceTimeline from '../detail/ProcessInstanceTimeline.vue'
@@ -90,8 +95,10 @@ import * as ProcessInstanceApi from '@/api/bpm/processInstance'
 import * as DefinitionApi from '@/api/bpm/definition'
 import { ApprovalNodeInfo } from '@/api/bpm/processInstance'
 import formCreate from '@form-create/element-ui'
+import { useFormCreate } from '@/plugins/formCreate'
 
 defineOptions({ name: 'ProcessDefinitionDetail' })
+useFormCreate() // 按需安装 form-create，需在渲染表单之前
 const props = defineProps<{
   selectProcessDefinition: any
 }>()
@@ -107,11 +114,12 @@ const detailForm: any = ref({
   value: {}
 }) // 流程表单详情
 const fApi = ref<FormCreateApi>()
+let subFormsPermission: string | undefined // 已写入表单规则的字段权限（子表单的子字段权限）
 // 指定审批人
 const startUserSelectTasks: any = ref([]) // 发起人需要选择审批人或抄送人的任务列表
 const startUserSelectAssignees = ref({}) // 发起人选择审批人的数据
 const tempStartUserSelectAssignees = ref({}) // 历史发起人选择审批人的数据，用于每次表单变更时，临时保存
-const bpmnXML: any = ref(null) // BPMN 数据
+const bpmnXML = ref('') // BPMN 数据
 const simpleJson = ref<string | undefined>() // Simple 设计器数据 json 格式
 
 const activeTab = ref('form') // 当前的 Tab
@@ -129,14 +137,14 @@ const initProcessInfo = async (row: any, formVariables?: any) => {
     // 注意：需要从 formVariables 中，移除不在 row.formFields 的值。
     // 原因是：后端返回的 formVariables 里面，会有一些非表单的信息。例如说，某个流程节点的审批人。
     //        这样，就可能导致一个流程被审批不通过后，重新发起时，会直接后端报错！！！
-    const formApi = formCreate.create(decodeFields(row.formFields))
-    const allowedFields = formApi.fields()
+    const allowedFields = collectFormFields(decodeFields(row.formFields))
     for (const key in formVariables) {
-      if (!allowedFields.includes(key)) {
+      if (!allowedFields.has(key)) {
         delete formVariables[key]
       }
     }
     setConfAndFields2(detailForm, row.formConf, row.formFields, formVariables)
+    subFormsPermission = undefined
 
     await nextTick()
     fApi.value?.btn.show(false) // 隐藏提交按钮
@@ -185,7 +193,8 @@ watch(
 /** 获取审批详情 */
 const getApprovalDetail = async (row: any) => {
   try {
-    // TODO 获取审批详情，设置 activityId 为发起人节点（为了获取字段权限。暂时只对 Simple 设计器有效）；@jason：这里可以去掉 activityId 么？
+    // 获取审批详情。activityId 不能去掉：流程未发起时，后端按它获取发起人节点的表单字段权限
+    // 补充说明：没有“发起人节点”的流程（例如说，BPMN 设计器未创建该节点），返回的权限为空，表单不做限制
     const data = await ProcessInstanceApi.getApprovalDetail({
       processDefinitionId: row.id,
       activityId: NodeId.START_USER_NODE_ID,
@@ -221,12 +230,49 @@ const getApprovalDetail = async (row: any) => {
     const formFieldsPermission = data.formFieldsPermission
     // 设置表单字段权限
     if (formFieldsPermission) {
-      Object.keys(formFieldsPermission).forEach((item) => {
-        setFieldPermission(item, formFieldsPermission[item])
-      })
+      await setSubFormsPermission(formFieldsPermission)
+      Object.keys(formFieldsPermission)
+        .filter((item) => !isSubFieldPermissionField(item)) // 子表单的子字段权限，已写入规则
+        .forEach((item) => {
+          setFieldPermission(item, formFieldsPermission[item])
+        })
     }
   } finally {
   }
+}
+
+/** 设置子表单的子字段权限：需要写入规则后重新渲染表单，所以仅在权限变化时设置 */
+const setSubFormsPermission = async (formFieldsPermission: Record<string, string>) => {
+  const permission = JSON.stringify(formFieldsPermission)
+  if (permission === subFormsPermission || !hasSubForm(detailForm.value.rule)) {
+    return
+  }
+  subFormsPermission = permission
+  const rule = decodeFields(props.selectProcessDefinition.formFields)
+  applySubFormsPermission(rule, formFieldsPermission)
+  detailForm.value.rule = rule
+  await nextTick()
+}
+
+/** 收集布局和条件规则中的字段，不额外挂载临时表单 */
+function collectFormFields(rules: Record<string, any>[], fields = new Set<string>()): Set<string> {
+  for (const rule of rules) {
+    if (!rule || typeof rule !== 'object') {
+      continue
+    }
+    if (typeof rule.field === 'string') {
+      fields.add(rule.field)
+    }
+    if (Array.isArray(rule.children)) {
+      collectFormFields(rule.children, fields)
+    }
+    for (const control of rule.control ?? []) {
+      if (Array.isArray(control.rule)) {
+        collectFormFields(control.rule, fields)
+      }
+    }
+  }
+  return fields
 }
 
 /**

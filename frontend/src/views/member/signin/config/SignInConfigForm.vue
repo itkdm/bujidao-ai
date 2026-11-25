@@ -51,16 +51,15 @@ const formLoading = ref(false) // 表单的加载中：1）修改时的数据加
 const formType = ref('') // 表单的类型：create - 新增；update - 修改
 const formData = ref<SignInConfigApi.SignInConfigVO>({} as SignInConfigApi.SignInConfigVO)
 // 奖励校验规则
-const awardValidator = (rule: any, _value: any, callback: any) => {
+const awardValidator = (rule: any) => {
   if (!formData.value.point && !formData.value.experience) {
-    callback(new Error('奖励积分与奖励经验至少配置一个'))
-    return
+    return Promise.reject(new Error('奖励积分与奖励经验至少配置一个'))
   }
 
   // 清除另一个字段的错误提示
   const otherAwardField = rule?.field === 'point' ? 'experience' : 'point'
-  formRef.value.validateField(otherAwardField, () => null)
-  callback()
+  void formRef.value.validateField(otherAwardField).catch(() => null)
+  return Promise.resolve()
 }
 const formRules = reactive({
   day: [{ required: true, message: '签到天数不能空', trigger: 'blur' }],

@@ -6,6 +6,15 @@ export interface CrmStatisticFunnelRespVO {
   businessWinCount: number // 赢单数
 }
 
+export interface CrmStatisticsBusinessSummaryByStatusRespVO {
+  statusId: number // 商机阶段编号
+  statusName: string // 商机阶段名称
+  statusPercent: number // 赢单率
+  sort: number // 排序
+  businessCount: number // 商机数
+  totalPrice: number | string // 商机金额
+}
+
 export interface CrmStatisticsBusinessSummaryByDateRespVO {
   time: string // 时间
   businessCreateCount: number // 商机数
@@ -18,7 +27,7 @@ export interface CrmStatisticsBusinessInversionRateSummaryByDateRespVO {
   businessWinCount: number // 赢单商机数
 }
 
-// 客户分析 API
+// 销售漏斗 API
 export const StatisticFunnelApi = {
   // 1. 获取销售漏斗统计数据
   getFunnelSummary: (params: any) => {
@@ -34,21 +43,28 @@ export const StatisticFunnelApi = {
       params
     })
   },
-  // 3. 获取新增商机分析(按日期)
+  // 3. 获取商机阶段统计
+  getBusinessSummaryByStatus: (params: any) => {
+    return request.get({
+      url: '/crm/statistics-funnel/get-business-summary-by-status',
+      params
+    })
+  },
+  // 4. 获取新增商机分析(按日期)
   getBusinessSummaryByDate: (params: any) => {
     return request.get({
       url: '/crm/statistics-funnel/get-business-summary-by-date',
       params
     })
   },
-  // 4. 获取商机转化率分析(按日期)
+  // 5. 获取商机转化率分析(按日期)
   getBusinessInversionRateSummaryByDate: (params: any) => {
     return request.get({
       url: '/crm/statistics-funnel/get-business-inversion-rate-summary-by-date',
       params
     })
   },
-  // 5. 获取商机列表(按日期)
+  // 6. 获取商机列表(按日期)
   getBusinessPageByDate: (params: any) => {
     return request.get({
       url: '/crm/statistics-funnel/get-business-page-by-date',

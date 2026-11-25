@@ -13,6 +13,10 @@ const download0 = (data: Blob, fileName: string, mineType: string) => {
 }
 
 const download = {
+  // 下载文件方法
+  file: (data: Blob, fileName: string, mineType = 'application/octet-stream') => {
+    download0(data, fileName, mineType)
+  },
   // 下载 Excel 方法
   excel: (data: Blob, fileName: string) => {
     download0(data, fileName, 'application/vnd.ms-excel')
@@ -37,6 +41,18 @@ const download = {
   json: (data: Blob, fileName: string) => {
     download0(data, fileName, 'application/json')
   },
+  // 下载 PPTX 方法
+  pptx: (data: Blob, fileName: string) => {
+    download0(
+      data,
+      fileName,
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+    )
+  },
+  // 下载 PDF 方法
+  pdf: (data: Blob, fileName: string) => {
+    download0(data, fileName, 'application/pdf')
+  },
   // 下载图片（允许跨域）
   image: ({
     url,
@@ -50,7 +66,7 @@ const download = {
     drawWithImageSize?: boolean // 将图片绘制在画布上时带上图片的宽高值, 默认是要带上的
   }) => {
     const image = new Image()
-    // image.setAttribute('crossOrigin', 'anonymous')
+    image.setAttribute('crossOrigin', 'anonymous') // 跨域图片按 CORS 加载，否则画布被污染、无法导出
     image.src = url
     image.onload = () => {
       const canvas = document.createElement('canvas')

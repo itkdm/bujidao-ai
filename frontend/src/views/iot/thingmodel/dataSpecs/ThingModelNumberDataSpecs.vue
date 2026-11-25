@@ -77,56 +77,49 @@ const unitChange = (UnitSpecs: string) => {
 }
 
 /** 校验最小值 */
-const validateMin = (_: any, __: any, callback: any) => {
+const validateMin: any = (_: any, __: any) => {
   const min = Number(dataSpecs.value.min)
   const max = Number(dataSpecs.value.max)
   if (isNaN(min)) {
-    callback(new Error('请输入有效的数值'))
-    return
+    return Promise.reject(new Error('请输入有效的数值'))
   }
   if (max !== undefined && !isNaN(max) && min >= max) {
-    callback(new Error('最小值必须小于最大值'))
-    return
+    return Promise.reject(new Error('最小值必须小于最大值'))
   }
 
-  callback()
+  return Promise.resolve()
 }
 
 /** 校验最大值 */
-const validateMax = (_: any, __: any, callback: any) => {
+const validateMax: any = (_: any, __: any) => {
   const min = Number(dataSpecs.value.min)
   const max = Number(dataSpecs.value.max)
   if (isNaN(max)) {
-    callback(new Error('请输入有效的数值'))
-    return
+    return Promise.reject(new Error('请输入有效的数值'))
   }
   if (min !== undefined && !isNaN(min) && max <= min) {
-    callback(new Error('最大值必须大于最小值'))
-    return
+    return Promise.reject(new Error('最大值必须大于最小值'))
   }
 
-  callback()
+  return Promise.resolve()
 }
 
 /** 校验步长 */
-const validateStep = (_: any, __: any, callback: any) => {
+const validateStep: any = (_: any, __: any) => {
   const step = Number(dataSpecs.value.step)
   if (isNaN(step)) {
-    callback(new Error('请输入有效的数值'))
-    return
+    return Promise.reject(new Error('请输入有效的数值'))
   }
   if (step <= 0) {
-    callback(new Error('步长必须大于0'))
-    return
+    return Promise.reject(new Error('步长必须大于0'))
   }
   const min = Number(dataSpecs.value.min)
   const max = Number(dataSpecs.value.max)
   if (!isNaN(min) && !isNaN(max) && step > max - min) {
-    callback(new Error('步长不能大于最大值和最小值的差值'))
-    return
+    return Promise.reject(new Error('步长不能大于最大值和最小值的差值'))
   }
 
-  callback()
+  return Promise.resolve()
 }
 </script>
 

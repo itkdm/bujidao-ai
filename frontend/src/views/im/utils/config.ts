@@ -16,9 +16,6 @@ export const GROUP_MAX_MEMBER = 500
 /** 单群管理员人数上限（对齐 yudao.im.group.admin-max-count） */
 export const GROUP_ADMIN_MAX_COUNT = 3
 
-/** 单群置顶消息条数上限（对齐 yudao.im.group.pin-max-count） */
-export const GROUP_PIN_MAX_COUNT = 5
-
 /**
  * 是否启用私聊已读功能（对齐 yudao.im.message.private-read-enabled）
  *
@@ -35,15 +32,6 @@ export const MESSAGE_PRIVATE_READ_ENABLED = true
  */
 export const MESSAGE_GROUP_READ_ENABLED = true
 
-/** 消息撤回时间限制（分钟，对齐 yudao.im.message.recall-timeout-minutes） */
-export const MESSAGE_RECALL_TIMEOUT_MINUTES = 5
-
-/** 私聊离线消息最大拉取天数（对齐 yudao.im.message.private-pull-max-days） */
-export const MESSAGE_PRIVATE_PULL_MAX_DAYS = 30
-
-/** 群聊离线消息最大拉取天数（对齐 yudao.im.message.group-pull-max-days） */
-export const MESSAGE_GROUP_PULL_MAX_DAYS = 30
-
 // ==================== 前端独有：拉取 / 分页 ====================
 
 /** 每次拉取私聊消息的最大条数（后端上限 1000，前端取保守值 100） */
@@ -54,9 +42,6 @@ export const MESSAGE_GROUP_PULL_SIZE = 100
 
 /** 「我相关」好友申请列表的单次拉取条数（游标分页 page size） */
 export const FRIEND_REQUEST_PAGE_SIZE = 100
-
-/** 「我相关」加群申请列表的单次拉取条数 */
-export const GROUP_REQUEST_PAGE_SIZE = 100
 
 // ==================== 上传安全策略 ====================
 // 数值与后端 Spring multipart 配置对齐（`spring.servlet.multipart.max-file-size = 16MB`）
@@ -101,7 +86,7 @@ export const MESSAGE_TIME_TIP_GAP_MS = 10 * 60 * 1000
 /**
  * 撤回菜单可见的时间窗：自己发送的消息超过这个时长就不能再撤回，菜单回退为「删除」
  *
- * 比后端 MESSAGE_RECALL_TIMEOUT_MINUTES（5 分钟）严格，对齐微信 PC 的 2 分钟
+ * 比后端 5 分钟撤回限制更严格，对齐微信 PC 的 2 分钟
  */
 export const MESSAGE_RECALL_WINDOW_MS = 2 * 60 * 1000
 

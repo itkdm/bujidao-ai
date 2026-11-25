@@ -143,6 +143,8 @@
 </template>
 
 <script setup lang="ts">
+import { parseId } from '@/utils/id'
+
 import { DICT_TYPE, getIntDictOptions } from '@/utils/dict'
 import {
   StockTakingPlanParamApi,
@@ -222,13 +224,16 @@ const formRules = reactive({
   type: [{ required: true, message: '请选择条件类型', trigger: 'change' }],
   valueId: [
     {
-      validator: (_rule: any, _value: any, callback: any) => {
+      validator: (_rule: any, _value: any) => {
         // 质量状态类型不使用 valueId，校验 valueCode
         if (formData.value.type === MesWmStockTakingParamTypeEnum.QUALITY_STATUS) {
-          callback(formData.value.valueCode ? undefined : new Error('请选择质量状态'))
-        } else {
-          callback(formData.value.valueId ? undefined : new Error('条件值不能为空'))
+          return formData.value.valueCode
+            ? Promise.resolve()
+            : Promise.reject(new Error('请选择质量状态'))
         }
+        return formData.value.valueId
+          ? Promise.resolve()
+          : Promise.reject(new Error('条件值不能为空'))
       },
       trigger: 'change'
     }
@@ -269,7 +274,7 @@ const submitForm = async () => {
     const data = {
       ...formData.value,
       planId: props.planId,
-      valueId: formData.value.valueId != null ? Number(formData.value.valueId) : undefined
+      valueId: formData.value.valueId != null ? parseId(formData.value.valueId) : undefined
     } as StockTakingPlanParamVO
     if (formType.value === 'create') {
       await StockTakingPlanParamApi.createStockTakingPlanParam(data)
@@ -366,7 +371,7 @@ const loadCascadeData = async () => {
     return
   }
   try {
-    const vid = formData.value.valueId as number
+    const vid = formData.value.valueId
     // 库区类型：需要查询库区信息，获取所属仓库ID
     if (formData.value.type === MesWmStockTakingParamTypeEnum.LOCATION) {
       const location = await WmWarehouseLocationApi.getWarehouseLocation(vid)

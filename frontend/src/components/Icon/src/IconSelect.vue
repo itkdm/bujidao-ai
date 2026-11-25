@@ -2,6 +2,8 @@
 import { CSSProperties } from 'vue'
 import { cloneDeep } from 'lodash-es'
 import { IconJson } from '@/components/Icon/src/data'
+import { useConfigGlobal } from '@/hooks/web/useConfigGlobal'
+import { useAppStoreWithOut } from '@/store/modules/app'
 
 defineOptions({ name: 'IconSelect' })
 
@@ -20,9 +22,14 @@ const props = defineProps({
 const emit = defineEmits<{ (e: 'update:modelValue', v: string) }>()
 
 const visible = ref(false)
-const inputValue = toRef(props, 'modelValue')
+// 输入框手动输入时，通过 emit 同步绑定值（props 只读，不能直接修改）
+const inputValue = computed({
+  get: () => props.modelValue,
+  set: (val) => emit('update:modelValue', val ?? '')
+})
 const iconList = ref(IconJson)
-const icon = ref('add-location')
+// 输入框右侧预览的图标：未选择时展示默认图标
+const previewIcon = computed(() => props.modelValue || 'ep:add-location')
 const currentActiveType = ref('ep:')
 // 深拷贝图标数据，前端做搜索
 const copyIconList = cloneDeep(iconList.value)
@@ -48,24 +55,45 @@ const tabsList = [
   }
 ]
 
+// 当前分类下，按搜索条件过滤后的图标
+const filterIconList = computed<string[]>(() => {
+  const keyword = filterValue.value.trim().toLowerCase()
+  return (copyIconList[currentActiveType.value] ?? []).filter((v) => v.includes(keyword))
+})
 const pageList = computed(() => {
-  if (currentPage.value === 1) {
-    return copyIconList[currentActiveType.value]
-      ?.filter((v) => v.includes(filterValue.value))
-      .slice(currentPage.value - 1, pageSize.value)
-  } else {
-    return copyIconList[currentActiveType.value]
-      ?.filter((v) => v.includes(filterValue.value))
-      .slice(
-        pageSize.value * (currentPage.value - 1),
-        pageSize.value * (currentPage.value - 1) + pageSize.value
-      )
+  const start = pageSize.value * (currentPage.value - 1)
+  return filterIconList.value.slice(start, start + pageSize.value)
+})
+// 分页总数使用过滤后的数量，避免搜索后出现空白页
+const iconCount = computed(() => filterIconList.value.length)
+
+const { configGlobal } = useConfigGlobal()
+
+// 预览框与图标单元格尺寸跟随全局组件尺寸：
+// 优先 ConfigGlobal 注入的 size，未注入时回退 app store 的 currentSize，均没有时按 default
+const iconSize = computed(() => {
+  const size = configGlobal?.size ?? useAppStoreWithOut().getCurrentSize
+  return size === 'small'
+    ? 'var(--el-component-size-small)'
+    : size === 'large'
+      ? 'var(--el-component-size-large)'
+      : 'var(--el-component-size)'
+})
+
+const iconWrapStyle = computed((): CSSProperties => {
+  return {
+    width: iconSize.value,
+    height: iconSize.value
   }
 })
-const iconCount = computed(() => {
-  return copyIconList[currentActiveType.value] == undefined
-    ? 0
-    : copyIconList[currentActiveType.value].length
+
+// border-box：1px 边框计入宽高，small 下单元格不被撑大
+const iconCellStyle = computed((): CSSProperties => {
+  return {
+    width: iconSize.value,
+    height: iconSize.value,
+    boxSizing: 'border-box'
+  }
 })
 
 const iconItemStyle = computed((): ParameterCSSProperties => {
@@ -79,16 +107,16 @@ const iconItemStyle = computed((): ParameterCSSProperties => {
   }
 })
 
+// 切换分类只切换展示的图标，不修改绑定值
 function handleClick({ props }) {
   currentPage.value = 1
   currentActiveType.value = props.name
-  emit('update:modelValue', currentActiveType.value + iconList.value[currentActiveType.value][0])
-  icon.value = iconList.value[currentActiveType.value][0]
 }
 
 function onChangeIcon(item) {
-  icon.value = item
-  emit('update:modelValue', currentActiveType.value + item)
+  const icon = currentActiveType.value + item
+  // 开启 clearable 时，再次点击已选中的图标视为清空
+  emit('update:modelValue', props.clearable && icon === props.modelValue ? '' : icon)
   visible.value = false
 }
 
@@ -97,28 +125,64 @@ function onCurrentChange(page) {
 }
 
 function clearIcon() {
-  icon.value = ''
   emit('update:modelValue', '')
   visible.value = false
 }
 
+// 解析绑定值的分类及图标名，前缀不属于已知分类时返回 undefined
+function parseModelValue() {
+  const index = props.modelValue ? props.modelValue.indexOf(':') : -1
+  if (index < 0) {
+    return
+  }
+  const type = props.modelValue!.substring(0, index + 1)
+  if (!tabsList.some((tab) => tab.name === type)) {
+    return
+  }
+  return { type, name: props.modelValue!.substring(index + 1) }
+}
+
+// 计算图标在当前过滤后列表中的页码，不存在时为第 1 页
+function getIconPage(name: string) {
+  const iconIndex = filterIconList.value.indexOf(name)
+  return iconIndex >= 0 ? Math.floor(iconIndex / pageSize.value) + 1 : 1
+}
+
+// 定位到绑定图标所属分类及所在页；空值或未知前缀时保持当前浏览位置
+// 页码按当前搜索过滤后的列表计算，选中图标不在过滤结果中时回到第 1 页
+function locateSelected() {
+  const selected = parseModelValue()
+  if (!selected) {
+    return
+  }
+  currentActiveType.value = selected.type
+  currentPage.value = getIconPage(selected.name)
+}
+
+// 绑定值变化（含编辑回显）时定位
 watch(
   () => {
     return props.modelValue
   },
   () => {
-    if (props.modelValue && props.modelValue.indexOf(':') >= 0) {
-      currentActiveType.value = props.modelValue.substring(0, props.modelValue.indexOf(':') + 1)
-      icon.value = props.modelValue.substring(props.modelValue.indexOf(':') + 1)
-    }
-  }
+    locateSelected()
+  },
+  { immediate: true }
 )
+// 每次打开弹层时重新定位，浏览其它分类/页后未选择而关闭，再次打开仍回到选中图标
+watch(visible, (value) => {
+  if (value) {
+    locateSelected()
+  }
+})
+// 搜索时回到第 1 页；清空搜索时，若选中图标属于当前分类，则回到其所在页
 watch(
   () => {
     return filterValue.value
   },
-  () => {
-    currentPage.value = 1
+  (value) => {
+    const selected = value.trim() ? undefined : parseModelValue()
+    currentPage.value = selected?.type === currentActiveType.value ? getIconPage(selected.name) : 1
   }
 )
 </script>
@@ -133,6 +197,7 @@ watch(
     >
       <template #append>
         <ElPopover
+          :persistent="false"
           :popper-options="{
             placement: 'auto'
           }"
@@ -143,10 +208,11 @@ watch(
         >
           <template #reference>
             <div
-              class="h-32px w-40px flex cursor-pointer items-center justify-center"
+              :style="iconWrapStyle"
+              class="flex cursor-pointer items-center justify-center"
               @click="visible = !visible"
             >
-              <Icon :icon="currentActiveType + icon" />
+              <Icon :icon="previewIcon" />
             </div>
           </template>
 
@@ -160,21 +226,24 @@ watch(
               :label="pane.label"
               :name="pane.name"
             >
-              <ElDivider border-style="dashed" class="tab-divider" />
-              <ElScrollbar height="220px">
-                <ul class="ml-2 flex flex-wrap">
-                  <li
-                    v-for="(item, key) in pageList"
-                    :key="key"
-                    :style="iconItemStyle(item)"
-                    :title="item"
-                    class="icon-item mr-2 mt-1 w-1/10 flex cursor-pointer items-center justify-center border border-solid p-2"
-                    @click="onChangeIcon(item)"
-                  >
-                    <Icon :icon="currentActiveType + item" />
-                  </li>
-                </ul>
-              </ElScrollbar>
+              <!-- 各 tab 共用同一份分页数据，只渲染当前 tab，避免重复渲染图标 -->
+              <template v-if="pane.name === currentActiveType">
+                <ElDivider border-style="dashed" class="tab-divider" />
+                <ElScrollbar height="220px">
+                  <ul class="ml-2 flex flex-wrap">
+                    <li
+                      v-for="(item, key) in pageList"
+                      :key="key"
+                      :style="[iconCellStyle, iconItemStyle(item)]"
+                      :title="item"
+                      class="icon-item mr-2 mt-1 flex cursor-pointer items-center justify-center border border-solid"
+                      @click="onChangeIcon(item)"
+                    >
+                      <Icon :icon="currentActiveType + item" />
+                    </li>
+                  </ul>
+                </ElScrollbar>
+              </template>
             </ElTabPane>
           </ElTabs>
           <ElDivider border-style="dashed" />

@@ -28,6 +28,11 @@
   </div>
 </template>
 
+<script lang="ts">
+// 模块级单例协调前后两个 IM 页面实例
+let activeImShellOwner: object | null = null
+</script>
+
 <script lang="ts" setup>
 import { onMounted, onUnmounted, ref, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
@@ -35,18 +40,20 @@ import { useRoute } from 'vue-router'
 import { useAppStore } from '@/store/modules/app'
 import { useConversationStore } from './store/conversationStore'
 import { useMessageStore } from './store/messageStore'
-import { useImWebSocketStore } from './store/websocketStore'
 import { useFriendStore } from './store/friendStore'
 import { useGroupStore } from './store/groupStore'
 import { useGroupRequestStore } from './store/groupRequestStore'
 import { useFaceStore } from './store/faceStore'
 import { useChannelStore } from './store/channelStore'
+import { useImWebSocketStore } from './store/websocketStore'
 import { useRtcStore } from './store/rtcStore'
 import { useMessagePuller } from './composables/useMessagePuller'
 import { useMessageSender } from './composables/useMessageSender'
 import { useVoicePlayer } from './composables/useVoicePlayer'
 import { ImConversationType } from '../utils/constants'
-import { initDb, stopRequests, StorageKeys } from '../utils/db'
+import { closeDb, initDb, StorageKeys } from '../utils/db'
+import { clearMessageSyncState } from '../utils/messageSync'
+import { clearResourceRequests } from '../utils/resourceRequest'
 import type { Conversation } from './types'
 import ToolBar from './components/ToolBar.vue'
 import UserInfoCard from './components/user/UserInfoCard.vue'
@@ -56,31 +63,42 @@ import RtcCallContainer from './components/rtc/RtcCallContainer.vue'
 
 defineOptions({ name: 'ImIndex' })
 
+const shellOwner = {} // 当前 IM 页面壳 owner；旧卸载回调不得停止后来重新挂载的壳
+activeImShellOwner = shellOwner
 const route = useRoute()
 const appStore = useAppStore()
 const conversationStore = useConversationStore()
 const messageStore = useMessageStore()
-const webSocketStore = useImWebSocketStore()
 const friendStore = useFriendStore()
 const groupStore = useGroupStore()
 const groupRequestStore = useGroupRequestStore()
 const faceStore = useFaceStore()
 const channelStore = useChannelStore()
+const wsStore = useImWebSocketStore()
 const rtcStore = useRtcStore()
 const { pullOnce, cancelPull } = useMessagePuller()
 const { readActive, syncPrivateReadStatus } = useMessageSender()
 const voicePlayer = useVoicePlayer()
 const childRouteReady = ref(false) // 子路由是否允许挂载
+let disposed = false // 当前 IM 主壳是否已经卸载
+
+/** 判断当前首页初始化任务仍属于本组件 */
+function isInitializationActive() {
+  return !disposed
+}
 
 /** 初始化：先吃本地缓存让首屏立即渲染，再远端刷新最新数据，最后建实时通信拉离线消息 */
 onMounted(async () => {
-  // 0.1 系统表情包后台预拉：独立链路与首屏 IDB / 远端拉取并发，消除表情面板首次展开白屏；失败仅记日志，不阻塞主流程
-  void faceStore.ensureFacePackList().catch((e) => console.warn('[IM] 后台预拉表情包失败', e))
   // 1.1 整段 loading=true 阻断会话列表抖动写盘 + WebSocket 普通消息进缓冲，避免 connect 到 pullOnce 之间收到的实时消息推进 maxId 导致 pull 跳过断线积压消息
   conversationStore.loading = true
   try {
-    // 1.2 打开当前用户 IM DB
     await initDb()
+    if (!isInitializationActive()) {
+      return
+    }
+    wsStore.connect()
+    // 0.1 系统表情包后台预拉：独立链路与本地恢复并发，失败仅记日志
+    void faceStore.ensureFacePackList().catch((e) => console.warn('[IM] 后台预拉表情包失败', e))
     // 1.3 多个 store 并发从 IDB 读取本地缓存
     const [, , hasFriendRows, hasGroupRows, hasChannelRows] = await Promise.all([
       conversationStore.loadConversationList(),
@@ -90,6 +108,9 @@ onMounted(async () => {
       channelStore.loadChannelList(),
       groupRequestStore.loadGroupRequestList()
     ])
+    if (!isInitializationActive()) {
+      return
+    }
     childRouteReady.value = true
     groupStore.markAllGroupActiveCallsExpired()
     groupStore.markAllGroupMembersExpired()
@@ -123,6 +144,9 @@ onMounted(async () => {
     // 2.4 执行加载
     if (requiredFetches.length > 0) {
       await Promise.all(requiredFetches)
+      if (!isInitializationActive()) {
+        return
+      }
     }
 
     // 2.5 好友申请增量补偿：首登也要跑，离线期间好友申请变更不会影响好友主表
@@ -131,13 +155,18 @@ onMounted(async () => {
       .catch((e) => console.warn('[IM] 后台增量拉好友申请失败', e))
 
     // 3. 会话读位置先补偿，消息入库时可直接过滤已读历史消息
-    await conversationStore
-      .pullConversationReads()
-      .catch((e) => console.warn('[IM] 拉取会话读位置失败', e))
+    await conversationStore.pullConversationReads().catch((e) => {
+      console.warn('[IM] 拉取会话读位置失败', e)
+    })
+    if (!isInitializationActive()) {
+      return
+    }
 
     // 4. 实时通信：建 WebSocket 长连接 + 拉离线消息（pullOnce finally 把 loading 归位）
-    webSocketStore.connect()
     await pullOnce()
+    if (!isInitializationActive()) {
+      return
+    }
 
     // 5. 默认选中第一个会话；若置顶分组处于折叠态，需跳过被折叠隐藏的置顶项，避免自动展开折叠
     const sorted = conversationStore.getSortedConversationList
@@ -146,6 +175,9 @@ onMounted(async () => {
       conversationStore.setActiveConversation(firstVisible)
     }
   } catch (e) {
+    if (!isInitializationActive()) {
+      return
+    }
     // 1. 首拉失败：手动复位 loading（pullOnce 没跑到，它的 finally 兜不到这里），否则后续会话列表写入全被早 return 阻断
     // 2. WebSocket 不在这里 disconnect——路由离开会走 onUnmounted 自然清理，用户也可以刷新重试
     conversationStore.loading = false
@@ -172,23 +204,46 @@ function pickFirstVisibleConversation(sorted: Conversation[]): Conversation | un
 
 /** 标签关闭前 flush 草稿队列；debounce 默认 trail-edge 触发，最后一次输入可能还压在队列里 */
 function onBeforeUnload() {
-  conversationStore.flushConversationDraftSave()
+  void conversationStore.flushConversationDraftSave()
 }
 window.addEventListener('beforeunload', onBeforeUnload)
 
-/** 离开 IM 主壳：取消 pull、断开 WebSocket、清理 RTC、保存草稿、停止语音、解绑 unload，并结束当前 IM session */
-onUnmounted(() => {
+/** 离开 IM 主壳：取消拉取、断开实时资源、保存草稿并关闭本地库 */
+onUnmounted(async () => {
+  disposed = true
   cancelPull()
-  webSocketStore.disconnect()
   rtcStore.reset()
   rtcStore.clearGroupCallCache()
-  conversationStore.flushConversationDraftSave()
-  faceStore.clear()
   // 模块级单例 audio 不会随视图卸载自动停，主动停掉避免切路由后语音继续响
   voicePlayer.stop()
   window.removeEventListener('beforeunload', onBeforeUnload)
-  // 停止当前 IM session 并清理各 store 内存
-  void stopRequests()
+  await conversationStore.flushConversationDraftSave()
+  // 旧壳等待草稿期间可能已有新壳挂载，不能停止新壳复用的物理资源
+  if (activeImShellOwner !== shellOwner) {
+    return
+  }
+  // 先释放旧壳 owner；后续 await 后若新壳接管，则停止清理共享资源
+  activeImShellOwner = null
+  wsStore.disconnect()
+  await clearResourceRequests()
+  if (activeImShellOwner) {
+    return
+  }
+  await clearMessageSyncState(() => !activeImShellOwner)
+  if (activeImShellOwner) {
+    return
+  }
+  await closeDb()
+  if (activeImShellOwner) {
+    return
+  }
+  messageStore.clear()
+  conversationStore.clear()
+  friendStore.clear()
+  groupStore.clear()
+  channelStore.clear()
+  groupRequestStore.clear()
+  faceStore.clear()
 })
 
 /**
@@ -203,14 +258,18 @@ watch(
     conversationStore.activeConversation?.targetId
   ],
   async ([type, targetId]) => {
-    if (!targetId) {
+    if (!targetId || !type) {
       return
     }
-    // 本地清零未读 + 上报后端已读，让其它端 / 对方 UI 同步
-    await readActive()
-    // 私聊补一次"对方已读到哪条"，弥补离线 / 多端漏掉的 RECEIPT 推送
-    if (type === ImConversationType.PRIVATE) {
-      void syncPrivateReadStatus(targetId)
+    try {
+      // 本地清零未读 + 上报后端已读，让其它端 / 对方 UI 同步
+      await readActive()
+      // 私聊补一次"对方已读到哪条"，弥补离线 / 多端漏掉的 RECEIPT 推送
+      if (type === ImConversationType.PRIVATE) {
+        await syncPrivateReadStatus(targetId)
+      }
+    } catch (error) {
+      console.warn('[IM] 会话已读同步失败', error)
     }
   }
 )

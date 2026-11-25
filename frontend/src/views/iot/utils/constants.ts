@@ -123,6 +123,25 @@ export const IotDeviceMessageMethodEnum = {
     method: 'thing.ota.progress',
     name: 'OTA 升级进度上报',
     upstream: true
+  },
+
+  // ========== 设备影子 ==========
+  SHADOW_UPDATE: {
+    method: 'thing.shadow.update',
+    name: '设备影子更新',
+    upstream: true
+  },
+
+  // ========== 透传 ==========
+  RAW_POST: {
+    method: 'thing.raw.post',
+    name: '透传上报',
+    upstream: true
+  },
+  RAW_PUSH: {
+    method: 'thing.raw.push',
+    name: '透传下发',
+    upstream: false
   }
 }
 
@@ -692,3 +711,69 @@ export const getByteOrderOptions = (rawDataType: string) => {
   }
   return ModbusByteOrder16Options
 }
+
+// ========== OPC UA 常量 ==========
+
+/**
+ * OPC UA 安全策略选项：OPC UA Client 只支持用户名认证，口令必须加密传输，因此不提供 None；
+ * 也不包含已废弃的 SHA-1 策略（Basic128Rsa15、Basic256）
+ */
+export const OpcUaSecurityPolicyOptions = [
+  { value: 'Basic256Sha256', label: 'Basic256Sha256' },
+  { value: 'Aes128_Sha256_RsaOaep', label: 'Aes128_Sha256_RsaOaep' },
+  { value: 'Aes256_Sha256_RsaPss', label: 'Aes256_Sha256_RsaPss' }
+]
+
+/** OPC UA 安全模式：用户名认证只能使用 SignAndEncrypt */
+export const OpcUaSecurityModeEnum = {
+  SIGN_AND_ENCRYPT: 'SignAndEncrypt'
+} as const
+
+/** OPC UA 安全模式选项 */
+export const OpcUaSecurityModeOptions = [
+  { value: OpcUaSecurityModeEnum.SIGN_AND_ENCRYPT, label: 'SignAndEncrypt（签名并加密）' }
+]
+
+/** OPC UA 认证方式枚举 */
+export const OpcUaAuthTypeEnum = {
+  ANONYMOUS: 1, // 匿名：OPC UA Client 已不支持，只用于识别历史数据
+  USERNAME: 2 // 用户名（账号口令保存在网关本地，按凭据别名引用）
+} as const
+
+/** OPC UA 认证方式选项：只支持用户名认证；匿名只用于展示历史数据 */
+export const OpcUaAuthTypeOptions = [
+  { value: OpcUaAuthTypeEnum.ANONYMOUS, label: '匿名（不支持）' },
+  { value: OpcUaAuthTypeEnum.USERNAME, label: '用户名（网关本地凭据）' }
+]
+
+/** OPC UA 采集方式枚举 */
+export const OpcUaCollectModeEnum = {
+  POLL: 1, // Read 轮询
+  SUBSCRIBE: 2 // MonitoredItem 订阅
+} as const
+
+/** OPC UA 采集方式选项 */
+export const OpcUaCollectModeOptions = [
+  { value: OpcUaCollectModeEnum.SUBSCRIBE, label: '订阅（MonitoredItem）' },
+  { value: OpcUaCollectModeEnum.POLL, label: '轮询（Read）' }
+]
+
+/** Redis 数据结构 */
+export const IotRedisDataStructureEnum = {
+  STREAM: 1,
+  HASH: 2,
+  LIST: 3,
+  SET: 4,
+  ZSET: 5,
+  STRING: 6
+} as const
+
+/** Redis 数据结构选项 */
+export const IOT_REDIS_DATA_STRUCTURE_OPTIONS = [
+  { label: 'Stream', value: IotRedisDataStructureEnum.STREAM },
+  { label: 'Hash', value: IotRedisDataStructureEnum.HASH },
+  { label: 'List', value: IotRedisDataStructureEnum.LIST },
+  { label: 'Set', value: IotRedisDataStructureEnum.SET },
+  { label: 'ZSet', value: IotRedisDataStructureEnum.ZSET },
+  { label: 'String', value: IotRedisDataStructureEnum.STRING }
+]

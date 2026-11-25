@@ -450,17 +450,19 @@
 </template>
 
 <script lang="ts" setup>
+import { compareId } from '@/utils/id'
+
 import { computed, ref, watch } from 'vue'
 import Icon from '@/components/Icon/src/Icon.vue'
 import { useMessage } from '@/hooks/web/useMessage'
 
 import { getCurrentUserId } from '@/utils/auth'
 import { CommonStatusEnum } from '@/utils/constants'
-import { updateGroup, muteAll, dissolveGroup } from '@/api/im/group'
-import { quitGroup, updateGroupMember } from '@/api/im/group/member'
+import { updateGroup, muteAll } from '@/api/im/group'
+import { updateGroupMember } from '@/api/im/group/member'
 import { useConversationStore } from '../../../../store/conversationStore'
 import { useGroupStore } from '../../../../store/groupStore'
-import { ImConversationType, ImGroupMemberRole } from '@/views/im/utils/constants'
+import { ImGroupMemberRole } from '@/views/im/utils/constants'
 import GroupMemberGrid from '../../../../components/group/GroupMemberGrid.vue'
 import GroupMemberAddDialog from '../../../../components/group/GroupMemberAddDialog.vue'
 import GroupMemberRemoveDialog from '../../../../components/group/GroupMemberRemoveDialog.vue'
@@ -549,7 +551,7 @@ const visibleMembers = computed(() => {
     .sort((a, b) => {
       const roleA = a.role ?? ImGroupMemberRole.NORMAL
       const roleB = b.role ?? ImGroupMemberRole.NORMAL
-      return roleA !== roleB ? roleA - roleB : a.userId - b.userId
+      return roleA !== roleB ? roleA - roleB : compareId(a.userId, b.userId)
     })
 })
 
@@ -688,7 +690,10 @@ function onMutedChange(value: boolean | string | number) {
   conversationStore.setConversationSilent(type, targetId, next)
   groupStore.setGroupSilent(targetId, next).catch((error) => {
     console.error('[IM ConversationGroupSide] setGroupSilent 失败', { targetId }, error)
-    conversationStore.setConversationSilent(type, targetId, !next)
+    const conversation = conversationStore.getConversation(type, targetId)
+    if (conversation?.silent === next) {
+      conversationStore.setConversationSilent(type, targetId, !next)
+    }
   })
 }
 
@@ -759,22 +764,20 @@ async function handleQuit() {
   if (!props.group) {
     return
   }
+  const groupId = props.group.id
   // 二次确认（用户点取消时 message.confirm 抛 reject，吃掉直接 return）
   try {
     await message.confirm('退出群聊后将不再接收群里的消息，确认退出吗？', '确认退出')
   } catch {
     return
   }
-  const groupId = props.group.id
-  await quitGroup(groupId)
-  // 本地立即响应：先把 self.member 置 DISABLE（让 GroupInfo 等 isMember 收敛），再清会话 + 群 store
-  if (myId.value) {
-    groupStore.updateGroupMemberStatus(groupId, myId.value, CommonStatusEnum.DISABLE)
+  try {
+    await groupStore.quitGroup(groupId)
+    message.success('已退出群聊')
+    visible.value = false
+  } catch (error) {
+    console.warn('[IM ConversationGroupSide] 退出群聊失败', error)
   }
-  conversationStore.removeConversation(ImConversationType.GROUP, groupId)
-  groupStore.removeGroup(groupId)
-  message.success('已退出群聊')
-  visible.value = false
 }
 
 /** 解散群聊（仅群主入口） */
@@ -782,17 +785,19 @@ async function handleDissolve() {
   if (!props.group) {
     return
   }
+  const groupId = props.group.id
   try {
     await message.confirm('解散后所有成员将被移出，且无法恢复，确认解散吗？', '确认解散')
   } catch {
     return
   }
-  const groupId = props.group.id
-  await dissolveGroup(groupId)
-  conversationStore.removeConversation(ImConversationType.GROUP, groupId)
-  groupStore.removeGroup(groupId)
-  message.success('群聊已解散')
-  visible.value = false
+  try {
+    await groupStore.dissolveGroup(groupId)
+    message.success('群聊已解散')
+    visible.value = false
+  } catch (error) {
+    console.warn('[IM ConversationGroupSide] 解散群聊失败', error)
+  }
 }
 
 // ==================== 群主操作 ====================

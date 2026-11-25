@@ -32,6 +32,11 @@
           </el-button>
         </el-form-item>
         <el-form-item>
+          <el-button @click="modelImportFormRef?.open()" v-hasPermi="['bpm:model:import']">
+            <Icon icon="ep:upload" class="mr-5px" /> 导入模型
+          </el-button>
+        </el-form-item>
+        <el-form-item>
           <el-dropdown @command="(command) => handleCommand(command)" placement="bottom-end">
             <el-button class="w-30px" plain>
               <Icon icon="ep:setting" />
@@ -87,6 +92,7 @@
 
   <!-- 表单弹窗：添加分类 -->
   <CategoryForm ref="categoryFormRef" @success="getList" />
+  <ModelImportForm ref="modelImportFormRef" @success="getList" />
   <!-- 弹窗：表单详情 -->
   <Dialog title="表单详情" v-model="formDetailVisible" width="800">
     <form-create :rule="formDetailPreview.rule" :option="formDetailPreview.option" />
@@ -100,8 +106,12 @@ import * as ModelApi from '@/api/bpm/model'
 import CategoryForm from '../category/CategoryForm.vue'
 import { cloneDeep } from 'lodash-es'
 import CategoryDraggableModel from './CategoryDraggableModel.vue'
+import ModelImportForm from './ModelImportForm.vue'
+import { useFormCreate } from '@/plugins/formCreate'
 
 defineOptions({ name: 'BpmModel' })
+
+useFormCreate() // 按需安装 form-create，需在渲染表单之前
 
 const { push } = useRouter()
 const message = useMessage() // 消息弹窗
@@ -112,6 +122,7 @@ const queryParams = reactive({
 })
 const categoryGroup: any = ref([]) // 按照 category 分组的数据
 const originalData: any = ref([]) // 原始数据
+const modelImportFormRef = ref<InstanceType<typeof ModelImportForm>>()
 
 /** 搜索按钮操作 */
 const handleQuery = () => {

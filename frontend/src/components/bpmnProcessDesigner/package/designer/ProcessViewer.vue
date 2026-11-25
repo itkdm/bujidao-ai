@@ -1,6 +1,6 @@
 <template>
   <div class="process-viewer">
-    <div style="height: 100%" ref="processCanvas" v-show="!isLoading"> </div>
+    <div style="height: 100%" ref="processCanvas"> </div>
     <!-- 自定义箭头样式，用于已完成状态下流程连线箭头 -->
     <defs ref="customDefs">
       <marker
@@ -408,9 +408,10 @@ const setProcessStatus = (view: any) => {
 watch(
   () => props.xml,
   (newXml) => {
-    importXML(newXml)
-  },
-  { immediate: true }
+    if (processCanvas.value) {
+      importXML(newXml || '')
+    }
+  }
 )
 
 watch(
