@@ -7,14 +7,18 @@ import cn.iocoder.yudao.module.iot.gateway.protocol.http.IotHttpConfig;
 import cn.iocoder.yudao.module.iot.gateway.protocol.modbus.tcpclient.IotModbusTcpClientConfig;
 import cn.iocoder.yudao.module.iot.gateway.protocol.modbus.tcpserver.IotModbusTcpServerConfig;
 import cn.iocoder.yudao.module.iot.gateway.protocol.mqtt.IotMqttConfig;
+import cn.iocoder.yudao.module.iot.gateway.protocol.opcua.client.IotOpcUaClientConfig;
+import cn.iocoder.yudao.module.iot.gateway.protocol.opcua.server.IotOpcUaServerConfig;
 import cn.iocoder.yudao.module.iot.gateway.protocol.tcp.IotTcpConfig;
 import cn.iocoder.yudao.module.iot.gateway.protocol.udp.IotUdpConfig;
 import cn.iocoder.yudao.module.iot.gateway.protocol.websocket.IotWebSocketConfig;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.util.unit.DataSize;
 import org.springframework.validation.annotation.Validated;
 
 import java.time.Duration;
@@ -33,6 +37,16 @@ public class IotGatewayProperties {
      * Token 配置
      */
     private TokenProperties token;
+    /**
+     * 数据解析脚本配置
+     */
+    @Valid
+    private ScriptProperties script = new ScriptProperties();
+    /**
+     * 离线暂存配置
+     */
+    @Valid
+    private SpoolProperties spool = new SpoolProperties();
 
     /**
      * 协议实例列表
@@ -73,6 +87,80 @@ public class IotGatewayProperties {
          */
         @NotNull(message = "令牌有效期不能为空")
         private Duration expiration;
+
+    }
+
+    /**
+     * 数据解析脚本配置
+     */
+    @Data
+    public static class ScriptProperties {
+
+        /**
+         * 是否开启数据解析脚本功能（运维开关，默认关闭）
+         * <p>
+         * 关闭时整体绕开脚本：不执行、不预热；raw 上行纯透传，标准下行与未开启时相同，raw.push 照常写出
+         */
+        private boolean enabled = false;
+        /**
+         * 透传处理的截止时间：raw 上行（含 HTTP / CoAP 同一请求内应答）、脚本下行、透传回复，从收到（入队）开始计算，
+         * 覆盖排队与执行脚本
+         */
+        @NotNull(message = "透传处理截止时间不能为空")
+        private Duration deadline = Duration.ofMillis(2000);
+        /**
+         * 单次脚本执行的时间预算：与截止时间取较早者
+         */
+        @NotNull(message = "脚本执行时间预算不能为空")
+        private Duration execBudget = Duration.ofMillis(500);
+        /**
+         * 单次脚本执行的指令上限
+         */
+        private long maxInstructions = 1_000_000;
+        /**
+         * 每个设备最多排队的脚本下行指令数（不含执行中的一条）：超过时丢弃并记日志
+         */
+        @Positive(message = "每个设备最多排队的下行指令数必须大于 0")
+        private int maxPendingCommandsPerDevice = 256;
+
+    }
+
+    /**
+     * 离线暂存配置：网关到消息总线不可用时，把各协议的属性、事件、批量上报暂存到本地 SQLite，恢复后按顺序补传
+     * <p>
+     * 支持 Redis、Kafka、RocketMQ、RabbitMQ 消息总线，经 {@link cn.iocoder.yudao.module.iot.core.messagebus.core.IotMessageBus#postConfirmed}
+     * 确认发送；Local 为进程内，没有断网，不生效。确认只到 broker，不保证平台已经处理（入库）
+     */
+    @Data
+    public static class SpoolProperties {
+
+        /**
+         * 是否开启（默认关闭）
+         */
+        private boolean enabled = false;
+        /**
+         * SQLite 文件路径
+         */
+        @NotEmpty(message = "离线暂存文件路径不能为空")
+        private String file = "data/iot-gateway-spool.db";
+        /**
+         * 暂存消息的最大字节数（按消息 JSON 的 UTF-8 字节数累计）：超过时拒绝新消息
+         */
+        @NotNull(message = "离线暂存最大字节数不能为空")
+        private DataSize maxSize = DataSize.ofGigabytes(2);
+        /**
+         * 暂存消息的最长保留时间：超过时删除，不再补传
+         */
+        @NotNull(message = "离线暂存最长保留时间不能为空")
+        private Duration maxAge = Duration.ofDays(7);
+        /**
+         * 每秒最多补传的消息数：降低恢复时的写入峰值
+         * <p>
+         * 注意：Redis 消息总线每小时把 Stream 裁剪到 10000 条，平台的消费积压超过时，未消费的消息会被裁剪；
+         * 限速只能降低这种风险，不能保证避免，需要结合平台的消费能力设置
+         */
+        @Positive(message = "每秒最多补传的消息数必须大于 0")
+        private int drainRate = 200;
 
     }
 
@@ -179,6 +267,18 @@ public class IotGatewayProperties {
          */
         @Valid
         private IotModbusTcpServerConfig modbusTcpServer;
+
+        /**
+         * OPC UA Client 协议配置
+         */
+        @Valid
+        private IotOpcUaClientConfig opcUaClient;
+
+        /**
+         * OPC UA Server 协议配置
+         */
+        @Valid
+        private IotOpcUaServerConfig opcUaServer;
 
     }
 

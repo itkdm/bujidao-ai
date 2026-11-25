@@ -190,7 +190,8 @@ public class CrmReceivableServiceImpl implements CrmReceivableService {
             return null;
         }
         CrmReceivablePlanDO receivablePlan = receivablePlanService.getReceivablePlan(planId);
-        return receivablePlan.getPeriod();
+        // 回款计划可能已被删除
+        return receivablePlan == null ? null : receivablePlan.getPeriod();
     }
 
     @Override
@@ -240,6 +241,7 @@ public class CrmReceivableServiceImpl implements CrmReceivableService {
     @Transactional(rollbackFor = Exception.class)
     @LogRecord(type = CRM_RECEIVABLE_TYPE, subType = CRM_RECEIVABLE_SUBMIT_SUB_TYPE, bizNo = "{{#id}}",
             success = CRM_RECEIVABLE_SUBMIT_SUCCESS)
+    @CrmPermission(bizType = CrmBizTypeEnum.CRM_RECEIVABLE, bizId = "#id", level = CrmPermissionLevelEnum.WRITE)
     public void submitReceivable(Long id, Long userId) {
         // 1. 校验回款是否在审批
         CrmReceivableDO receivable = validateReceivableExists(id);

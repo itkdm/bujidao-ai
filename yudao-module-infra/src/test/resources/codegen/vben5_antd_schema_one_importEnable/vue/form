@@ -27,7 +27,7 @@ const [Form, formApi] = useVbenForm({
       class: 'w-full',
     },
     formItemClass: 'col-span-2',
-    labelWidth: 80,
+    labelWidth: 120,
   },
   layout: 'horizontal',
   schema: useFormSchema(),
@@ -59,7 +59,7 @@ const [Modal, modalApi] = useVbenModal({
       return;
     }
     // 加载数据
-    const data = modalApi.getData<InfraStudentApi.Student>();
+    const data = modalApi.getData() as InfraStudentApi.Student;
     if (!data || !data.id) {
       return;
     }

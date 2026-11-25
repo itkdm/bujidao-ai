@@ -1,16 +1,21 @@
 package cn.iocoder.yudao.module.infra.framework.file.core.utils;
 
 import cn.hutool.core.io.IoUtil;
+import cn.hutool.core.lang.Assert;
 import cn.hutool.core.util.StrUtil;
 import cn.iocoder.yudao.framework.common.util.http.HttpUtils;
+import com.google.common.annotations.VisibleForTesting;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.Tika;
+import org.apache.tika.io.LookaheadInputStream;
 import org.apache.tika.mime.MimeTypeException;
 import org.apache.tika.mime.MimeTypes;
 
+import java.io.BufferedInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 
 /**
  * 文件类型 Utils
@@ -23,14 +28,20 @@ public class FileTypeUtils {
     private static final Tika TIKA = new Tika();
 
     /**
+     * 通过文件流探测类型时，最多读取的文件头部字节数
+     *
+     * 目的：探测只缓冲有限的头部，避免大文件整体读入内存
+     */
+    private static final int DETECT_LIMIT = 256 * 1024;
+
+    /**
      * 获得文件的 mineType，对于 doc，jar 等文件会有误差
      *
      * @param data 文件内容
      * @return mineType 无法识别时会返回“application/octet-stream”
      */
-    @SneakyThrows
     public static String getMineType(byte[] data) {
-        return TIKA.detect(data);
+        return detectContent(data, null);
     }
 
     /**
@@ -40,7 +51,7 @@ public class FileTypeUtils {
      * @return mineType 无法识别时会返回“application/octet-stream”
      */
     public static String getMineType(String name) {
-        return TIKA.detect(name);
+        return detectByName(name);
     }
 
     /**
@@ -51,7 +62,56 @@ public class FileTypeUtils {
      * @return mineType 无法识别时会返回“application/octet-stream”
      */
     public static String getMineType(byte[] data, String name) {
-        return TIKA.detect(data, name);
+        return detectContent(data, name);
+    }
+
+    /**
+     * 通过文件流和文件名获得 mineType，只读取文件头部，读取后重置到原位置，不会吞掉已读取的内容
+     *
+     * @param data 文件流，必须支持 mark / reset
+     * @param name 文件名
+     * @return mineType 无法识别时会返回“application/octet-stream”
+     */
+    @SneakyThrows
+    public static String getMineType(InputStream data, String name) {
+        Assert.isTrue(data.markSupported(), "文件流必须支持 mark / reset");
+        // 关闭 LookaheadInputStream 时，会将 data 重置到读取前的位置
+        // 注意：读取、重置失败时直接抛出，不能按文件名兜底，否则后续输出的内容会缺失头部
+        byte[] head;
+        try (InputStream lookahead = new LookaheadInputStream(data, DETECT_LIMIT)) {
+            head = lookahead.readNBytes(DETECT_LIMIT);
+        }
+        return detectContent(head, name);
+    }
+
+    private static String detectContent(byte[] data, String name) {
+        return detectContent(TIKA, data, name);
+    }
+
+    /**
+     * 按内容和文件名识别，失败时只按文件名识别
+     *
+     * 例如说：Tika 4 的 Detector 接口与 classpath 上旧的 {@code org.gagravarr.tika.OggDetector} 不兼容，
+     * 识别时抛出 AbstractMethodError（LinkageError），会把正常的文件上传、下载打成 500
+     */
+    @VisibleForTesting
+    static String detectContent(Tika tika, byte[] data, String name) {
+        try {
+            return name == null ? tika.detect(data) : tika.detect(data, name);
+        } catch (Exception | LinkageError ex) {
+            log.warn("[detectContent][按内容识别文件({})类型失败，改为按文件名识别]", name, ex);
+            return detectByName(name);
+        }
+    }
+
+    /**
+     * 只按扩展名识别，不能调用 {@link Tika#detect(String)}：该方法同样会调用全部 SPI Detector
+     */
+    private static String detectByName(String name) {
+        if (StrUtil.isBlank(name)) {
+            return MimeTypes.OCTET_STREAM;
+        }
+        return MimeTypes.getDefaultMimeTypes().getMimeType(name).getName();
     }
 
     /**
@@ -81,13 +141,24 @@ public class FileTypeUtils {
     public static void writeAttachment(HttpServletResponse response, String filename, byte[] content) throws IOException {
         // 设置 header 和 contentType
         String mineType = getMineType(content, filename);
+        // 文件名可能伪装，按内容识别为 SVG、HTML、XML 等可携带脚本的类型时，以内容为准
+        String contentMineType = getMineType(content);
+        if (!isScriptable(mineType) && isScriptable(contentMineType)) {
+            mineType = contentMineType;
+        }
         response.setContentType(mineType);
+        response.setHeader("X-Content-Type-Options", "nosniff");
         // 设置内容显示、下载文件名：https://www.cnblogs.com/wq-9/articles/12165056.html
-        if (isImage(mineType)) {
+        if (isImage(mineType) && !isScriptable(mineType)) {
             // 参见 https://github.com/YunaiV/ruoyi-vue-pro/issues/692 讨论
             response.setHeader("Content-Disposition", buildContentDisposition("inline", filename));
         } else {
+            // SVG 等可携带脚本的文件：直接打开时按附件下载；保留原类型，页面中作为图片引用时仍可显示
             response.setHeader("Content-Disposition", buildContentDisposition("attachment", filename));
+            // 被 object、embed 等嵌入时，按沙箱执行，禁止脚本、隔离来源
+            if (isScriptable(mineType)) {
+                response.setHeader("Content-Security-Policy", "sandbox");
+            }
         }
         // 针对 video 的特殊处理，解决视频地址在移动端播放的兼容性问题
         if (StrUtil.containsIgnoreCase(mineType, "video")) {
@@ -96,6 +167,42 @@ public class FileTypeUtils {
         }
         // 输出附件
         IoUtil.write(response.getOutputStream(), false, content);
+    }
+
+    /**
+     * 返回附件，边读边写，不把整个文件读入内存
+     *
+     * 注意：流式输出不设置 Content-Length 和 Accept-Ranges：真实长度未知时不能凭空声明，且不支持 Range 分段请求，
+     * 带 Range 的请求仍返回完整内容
+     *
+     * @param response 响应
+     * @param filename 文件名
+     * @param content  附件内容，由调用方关闭
+     */
+    public static void writeAttachment(HttpServletResponse response, String filename, InputStream content) throws IOException {
+        // 设置 header 和 contentType：按文件头部和文件名探测类型
+        InputStream input = content.markSupported() ? content : new BufferedInputStream(content);
+        String mineType = getMineType(input, filename);
+        // 文件名可能伪装，按内容识别为 SVG、HTML、XML 等可携带脚本的类型时，以内容为准
+        String contentMineType = getMineType(input, null);
+        if (!isScriptable(mineType) && isScriptable(contentMineType)) {
+            mineType = contentMineType;
+        }
+        response.setContentType(mineType);
+        response.setHeader("X-Content-Type-Options", "nosniff");
+        // 设置内容显示、下载文件名：普通图片 inline，其它 attachment
+        if (isImage(mineType) && !isScriptable(mineType)) {
+            response.setHeader("Content-Disposition", buildContentDisposition("inline", filename));
+        } else {
+            // SVG 等可携带脚本的文件：直接打开时按附件下载；保留原类型，页面中作为图片引用时仍可显示
+            response.setHeader("Content-Disposition", buildContentDisposition("attachment", filename));
+            // 被 object、embed 等嵌入时，按沙箱执行，禁止脚本、隔离来源
+            if (isScriptable(mineType)) {
+                response.setHeader("Content-Security-Policy", "sandbox");
+            }
+        }
+        // 输出附件
+        IoUtil.copy(input, response.getOutputStream());
     }
 
     private static String buildContentDisposition(String dispositionType, String filename) {
@@ -129,6 +236,18 @@ public class FileTypeUtils {
      */
     public static boolean isImage(String mineType) {
         return StrUtil.startWith(mineType, "image/");
+    }
+
+    /**
+     * 判断是否是可携带脚本的类型，例如说 SVG、HTML、XHTML、XML，同源直接打开时会执行其中的脚本
+     *
+     * 注意：Office 的 openxmlformats 类型以 document、sheet 等结尾，不属于此类
+     *
+     * @param mineType 类型
+     * @return 是否可携带脚本
+     */
+    public static boolean isScriptable(String mineType) {
+        return StrUtil.containsAnyIgnoreCase(mineType, "svg", "html") || StrUtil.endWithIgnoreCase(mineType, "xml");
     }
 
 }

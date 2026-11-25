@@ -19,13 +19,16 @@ import java.time.LocalDateTime;
 #end
 #end
 ## 处理 Excel 导出
-import cn.idev.excel.annotation.*;
+import org.apache.fesod.sheet.annotation.*;
 #foreach ($column in $columns)
 #if ("$!column.dictType" != "")## 有设置数据字典
 import ${DictFormatClassName};
 import ${DictConvertClassName};
 #break
 #end
+#end
+#foreach ($converterClassName in $codegenHelper.getExcelConverterClassNames($columns, "resp"))## 集合字段的 Excel 转换器
+import ${converterClassName};
 #end
 
 @Schema(description = "${sceneEnum.name} - ${table.classComment} Response VO")
@@ -39,14 +42,19 @@ public class ${sceneEnum.prefixClass}${table.className}RespVO {
 ## 1. 处理 Swagger 注解
     @Schema(description = "${column.columnComment}"#if (!${column.nullable}), requiredMode = Schema.RequiredMode.REQUIRED#end#if ("$!column.example" != ""), example = "${column.example}"#end)
 ## 2. 处理 Excel 导出
-#if ("$!column.dictType" != "")##处理枚举值
+#if ($codegenHelper.isCollection($column))## 集合字段
+    @ExcelProperty(value = "${column.columnComment}", converter = ${codegenHelper.getExcelConverter($column)}.class)
+#if ("$!column.dictType" != "")
+    @DictFormat("${column.dictType}") // TODO 代码优化：建议设置到对应的 DictTypeConstants 枚举类中
+#end
+#elseif ("$!column.dictType" != "")##处理枚举值
     @ExcelProperty(value = "${column.columnComment}", converter = DictConvert.class)
     @DictFormat("${column.dictType}") // TODO 代码优化：建议设置到对应的 DictTypeConstants 枚举类中
 #else
     @ExcelProperty("${column.columnComment}")
 #end
 ## 3. 处理字段定义
-    private ${column.javaType} ${column.javaField};
+    private ${codegenHelper.getJavaType($column)} ${column.javaField};
 
 #end
 #end

@@ -1,31 +1,39 @@
 package cn.iocoder.yudao.module.infra.framework.file.core.client.s3;
 
+import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.io.IoUtil;
 import cn.hutool.core.util.BooleanUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.http.HttpUtil;
 import cn.iocoder.yudao.framework.common.util.http.HttpUtils;
 import cn.iocoder.yudao.module.infra.framework.file.core.client.AbstractFileClient;
+import cn.iocoder.yudao.module.infra.framework.file.core.utils.FileTypeUtils;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3Configuration;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.net.URI;
 import java.net.URL;
 import java.time.Duration;
 
 /**
- * 基于 S3 协议的文件客户端，实现 MinIO、阿里云、腾讯云、七牛云、华为云等云服务
+ * 基于 S3 协议的文件客户端，实现 MinIO、RustFS、阿里云、腾讯云、七牛云、华为云等云服务
  *
  * @author 芋道源码
  */
@@ -33,8 +41,22 @@ public class S3FileClient extends AbstractFileClient<S3FileClientConfig> {
 
     private static final Duration EXPIRATION_DEFAULT = Duration.ofHours(24);
 
+    private static final String CONTENT_DISPOSITION_ATTACHMENT = "attachment";
+
     private S3Client client;
     private S3Presigner presigner;
+    // DONE @AI：presigner、presignDomain 可以融合么？（presignDomain 在创建 presigner 时一起算出，去掉单独的常量、方法）
+    /**
+     * 预签名 URL 的 Domain，例如 https://bucket.oss-cn-beijing.aliyuncs.com
+     *
+     * 为什么需要：阿里云 OSS、七牛云配置自定义域名后，domain 是自定义域名，但 presigner 只能用服务商的 endpoint 签名，
+     * 所以私有访问返回的预签名 URL 是服务商的域名，与 domain 不同。业务把这个 URL 入库后，再调用 {@link #presignGetUrl(String, Integer)}
+     * 重新签名时，要靠它识别出 URL 并还原对象名；否则会把整个 URL 当作对象名，签出一个不存在的文件
+     *
+     * 怎么得到：创建 presigner 时，对任意对象名本地签名一次（不访问存储），去掉对象名、签名参数，剩下的就是 Domain。
+     * 这样与 SDK 实际生成的 URL 完全一致，不用自己按虚拟主机、路径风格拼接
+     */
+    private String presignDomain;
 
     public S3FileClient(Long id, S3FileClientConfig config) {
         super(id, config);
@@ -70,6 +92,11 @@ public class S3FileClient extends AbstractFileClient<S3FileClientConfig> {
                 .endpointOverride(presignerEndpoint)
                 .serviceConfiguration(serviceConfiguration)
                 .build();
+        String signedUrl = presigner.presignGetObject(GetObjectPresignRequest.builder()
+                        .signatureDuration(EXPIRATION_DEFAULT)
+                        .getObjectRequest(b -> b.bucket(config.getBucket()).key("presign-domain")).build())
+                .url().toString();
+        presignDomain = StrUtil.removeSuffix(HttpUtils.removeUrlPathQueryAndFragment(signedUrl), "/presign-domain");
     }
 
     @Override
@@ -79,10 +106,35 @@ public class S3FileClient extends AbstractFileClient<S3FileClientConfig> {
                 .bucket(config.getBucket())
                 .key(path)
                 .contentType(type)
+                // SVG 等可携带脚本的文件：直链直接打开时按附件下载；页面中作为图片引用时不受影响
+                .contentDisposition(FileTypeUtils.isScriptable(type) ? CONTENT_DISPOSITION_ATTACHMENT : null)
                 .contentLength((long) content.length)
                 .build();
         // 上传文件
         client.putObject(putRequest, RequestBody.fromBytes(content));
+        // 拼接返回路径
+        return presignGetUrl(path, null);
+    }
+
+    @Override
+    public String upload(InputStream content, long size, String path, String type) {
+        // 已关闭分块编码，SDK 会先读取请求体计算签名或校验和、再重新读取发送，而文件流只能回退有限长度；
+        // 因此先边读边写到本地临时文件，再按文件上传，不把整个文件读入内存
+        File tempFile = FileUtil.createTempFile();
+        try {
+            FileUtil.writeFromStream(content, tempFile, false);
+            // 构造 PutObjectRequest，以实际写入的长度为准
+            PutObjectRequest putRequest = PutObjectRequest.builder()
+                    .bucket(config.getBucket())
+                    .key(path)
+                    .contentType(type)
+                    .contentLength(tempFile.length())
+                    .build();
+            // 上传文件
+            client.putObject(putRequest, RequestBody.fromFile(tempFile));
+        } finally {
+            FileUtil.del(tempFile);
+        }
         // 拼接返回路径
         return presignGetUrl(path, null);
     }
@@ -102,7 +154,22 @@ public class S3FileClient extends AbstractFileClient<S3FileClientConfig> {
                 .bucket(config.getBucket())
                 .key(path)
                 .build();
-        return IoUtil.readBytes(client.getObject(getRequest));
+        // 读取完成后关闭响应流，释放 HTTP 连接
+        try (ResponseInputStream<GetObjectResponse> input = client.getObject(getRequest)) {
+            return IoUtil.readBytes(input, false);
+        } catch (IOException ex) {
+            throw new UncheckedIOException(ex);
+        }
+    }
+
+    @Override
+    public InputStream getStream(String path) {
+        GetObjectRequest getRequest = GetObjectRequest.builder()
+                .bucket(config.getBucket())
+                .key(path)
+                .build();
+        // 返回 SDK 响应流，调用方关闭时释放 HTTP 连接
+        return client.getObject(getRequest);
     }
 
     @Override
@@ -116,10 +183,16 @@ public class S3FileClient extends AbstractFileClient<S3FileClientConfig> {
     @Override
     public String presignGetUrl(String url, Integer expirationSeconds) {
         // 1. 将 url 转换为 path
-        // 完整 Domain URL 会解码还原为原始对象名；裸 path 约定已经是未编码的对象名
-        boolean domainUrl = StrUtil.startWith(url, config.getDomain() + "/");
-        String path = domainUrl ? StrUtil.removePrefix(url, config.getDomain() + "/") : url;
-        if (domainUrl) {
+        // 完整 URL（domain 开头，或 presignDomain 开头的已签发预签名 URL）会解码还原为原始对象名；裸 path 约定已经是未编码的对象名
+        String urlDomain = null;
+        if (StrUtil.startWith(url, config.getDomain() + "/")) {
+            urlDomain = config.getDomain();
+        } else if (StrUtil.startWith(url, presignDomain + "/")) {
+            urlDomain = presignDomain;
+        }
+        String path = url;
+        if (urlDomain != null) {
+            path = StrUtil.removePrefix(url, urlDomain + "/");
             path = HttpUtils.removeUrlPathQueryAndFragment(path);
             path = HttpUtils.decodeUrlPath(path);
         }
@@ -133,9 +206,14 @@ public class S3FileClient extends AbstractFileClient<S3FileClientConfig> {
         // 2.2 情况二：私有访问：生成 GET 预签名 URL
         String finalPath = path;
         Duration expiration = expirationSeconds != null ? Duration.ofSeconds(expirationSeconds) : EXPIRATION_DEFAULT;
+        // 新签发的私有 URL：对象 key 扩展名为 SVG 等可携带脚本的类型时，要求按附件下载
+        // 注意：不覆盖公开访问、已签发的 URL，以及扩展名与 Content-Type 不一致的直传对象
+        String contentDisposition = FileTypeUtils.isScriptable(FileTypeUtils.getMineType(finalPath))
+                ? CONTENT_DISPOSITION_ATTACHMENT : null;
         URL signedUrl = presigner.presignGetObject(GetObjectPresignRequest.builder()
                 .signatureDuration(expiration)
-                .getObjectRequest(b -> b.bucket(config.getBucket()).key(finalPath)).build())
+                .getObjectRequest(b -> b.bucket(config.getBucket()).key(finalPath)
+                        .responseContentDisposition(contentDisposition)).build())
                 .url();
         return signedUrl.toString();
     }
@@ -146,7 +224,7 @@ public class S3FileClient extends AbstractFileClient<S3FileClientConfig> {
      * @return Domain 地址
      */
     private String buildDomain() {
-        // 如果已经是 http 或者 https，则不进行拼接.主要适配 MinIO
+        // 如果已经是 http 或者 https，则不进行拼接.主要适配 MinIO、RustFS
         if (HttpUtil.isHttp(config.getEndpoint()) || HttpUtil.isHttps(config.getEndpoint())) {
             return StrUtil.format("{}/{}", config.getEndpoint(), config.getBucket());
         }
@@ -173,6 +251,12 @@ public class S3FileClient extends AbstractFileClient<S3FileClientConfig> {
      * @return 节点地址
      */
     private String buildPresignerEndpoint() {
+        // 阿里云 OSS、七牛云的自定义域名仅用于文件访问，不能作为 S3 签名节点。
+        // Presigner 必须使用服务商提供的 endpoint，否则生成的签名无法用于直传。
+        if (StrUtil.contains(config.getEndpoint(), S3FileClientConfig.ENDPOINT_ALIYUN)
+                || StrUtil.contains(config.getEndpoint(), S3FileClientConfig.ENDPOINT_QINIU)) {
+            return buildEndpoint();
+        }
         // 补全 domain
         if (StrUtil.isEmpty(config.getDomain())) {
             config.setDomain(buildDomain());
@@ -249,7 +333,7 @@ public class S3FileClient extends AbstractFileClient<S3FileClientConfig> {
             }
         }
 
-        // 3.4 其他情况（MinIO、七牛云等）使用默认值
+        // 3.4 其他情况（MinIO、RustFS、七牛云等）使用默认值
         return "us-east-1";
     }
 

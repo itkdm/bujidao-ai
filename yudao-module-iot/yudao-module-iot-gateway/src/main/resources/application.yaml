@@ -11,10 +11,27 @@ spring:
       port: 6379 # Redis 服务器端口
       database: 0 # Redis 数据库索引
       # password: # Redis 密码，如果有的话
-      timeout: 30000ms # 连接超时时间
+      timeout: 5000ms # 命令超时时间：Redis 不可用时，离线暂存的直发最多等待该时间后写入暂存（需大于消费 Stream 的阻塞读取时间 2 秒）
+      connect-timeout: 5000ms # 连接超时时间
   # Kafka 配置项，对应 KafkaProperties 配置类
   kafka:
     bootstrap-servers: 127.0.0.1:9092 # 指定 Kafka Broker 地址，可以设置多个，以逗号分隔
+    producer:
+      properties:
+        max.block.ms: 5000 # 等待元数据、发送缓冲区的最长时间：Kafka 不可用时，发送最多阻塞该时间
+        request.timeout.ms: 5000 # 单次请求等待 broker 响应的超时时间
+        delivery.timeout.ms: 10000 # 发送（含重试）的总超时时间：超时按未确认处理，离线暂存保留（可能重复，不会丢失）；需不小于 linger.ms + request.timeout.ms
+  # RabbitMQ 配置项，对应 RabbitProperties 配置类
+  rabbitmq:
+    host: 127.0.0.1 # RabbitMQ 服务的地址
+    port: 5672 # RabbitMQ 服务的端口
+    username: guest # RabbitMQ 服务的账号
+    password: guest # RabbitMQ 服务的密码
+    connection-timeout: 5s # 连接超时时间：RabbitMQ 不可用时，发送最多等待该时间建立连接
+    publisher-confirm-type: correlated # 开启 publisher confirm：离线暂存的确认发送需要
+    publisher-returns: true # 开启 return：离线暂存的确认发送需要，判断消息是否无法路由
+    template:
+      mandatory: false # 普通发送保持不开启 mandatory（publisher-returns 开启时默认为 true）；确认发送使用独立的 RabbitTemplate
 
 --- #################### 消息队列相关 ####################
 
@@ -32,6 +49,7 @@ yudao:
     # 消息总线配置
     message-bus:
       type: redis # 消息总线的类型
+      confirm-timeout: 5s # 确认发送等待 broker 确认的超时时间（RabbitMQ 的 publisher confirm）：超时按未确认处理，离线暂存保留
 
     # 网关配置
     gateway:
@@ -44,6 +62,13 @@ yudao:
       token:
         secret: yudaoIotGatewayTokenSecret123456789 # Token 密钥，至少32位
         expiration: 7d
+      # 离线暂存配置：消息总线不可用时，各协议的属性、事件、批量上报暂存到本地 SQLite，恢复后补传
+      spool:
+        enabled: false # 是否开启：支持 Redis、Kafka、RocketMQ、RabbitMQ 消息总线（RabbitMQ 需开启上面的 publisher confirm、return）；Local 为进程内，不生效
+        file: data/iot-gateway-spool.db # SQLite 文件路径
+        max-size: 2GB # 暂存消息的最大字节数，超过时拒绝新消息
+        max-age: 7d # 暂存消息的最长保留时间，超过时删除
+        drain-rate: 200 # 每秒最多补传的消息数
 
       # 协议实例列表
       protocols:
@@ -185,8 +210,64 @@ yudao:
           modbus-tcp-server:
             config-refresh-interval: 30     # 配置刷新间隔（秒）
             custom-function-code: 65        # 自定义功能码（用于认证等扩展交互）
+            min-request-interval: 1000      # 同一设备的最小轮询请求间隔（毫秒，小于等于 0 表示不限制）
             request-timeout: 5000           # Pending Request 超时时间（毫秒）
             request-cleanup-interval: 10000 # Pending Request 清理间隔（毫秒）
+        # ====================================
+        # 针对引入的 OPC UA Client 组件的配置（只读采集；单网关长连接，只部署一个启用该协议的网关实例）
+        # ====================================
+        - id: opc-ua-client-1
+          enabled: false
+          protocol: opc_ua_client
+          port: 4841                        # 只用于生成 serverId，不监听端口
+          opc-ua-client:
+            config-refresh-interval: 30     # 配置刷新间隔（秒）
+            state-retry-interval: 30        # 上下线消息发送失败后的重试间隔（秒）
+            pki-dir: data/opc-ua/pki        # PKI 目录：own/client.pfx、trusted/certs、issuer/certs、rejected
+            keystore-password: ${IOT_OPC_UA_KEYSTORE_PASSWORD:}  # 客户端 keystore 口令（必填，建议通过环境变量注入）
+            keystore-alias: yudao-opc-ua-client # keystore 中客户端证书的别名（放入 CA 签发的证书时，私钥和证书链放在该别名下）
+            application-name: Yudao IoT Gateway OPC UA Client # 应用名称（会话 ApplicationName、新生成证书的 CN；多网关时便于服务端区分）
+            endpoint-host-rewrite: false    # 服务端返回的端点主机、端口与配置不一致时，是否改写为配置的
+            max-nodes-per-read: 100         # 每次 Read 的最大节点数（与服务端 OperationLimits 取较小值）
+            max-points-per-message: 100     # 每条属性上报消息的最大点位数
+            max-message-bytes: 262144       # 每条属性上报消息的最大字节数
+            max-monitored-items-per-call: 100 # 每次创建、删除 MonitoredItem 的最大数量
+            subscription-keep-alive-count: 10
+            subscription-lifetime-count: 30
+            write-timeout: 10000            # 属性写入超时（毫秒），含排队、读取节点属性和写入
+            max-pending-writes-per-device: 16 # 每个设备排队中的属性写入消息上限
+            max-nodes-per-write: 100        # 每次 Write 的最大节点数（与服务端 OperationLimits 取较小值）
+            credentials: {}                 # 用户名凭据（只支持用户名认证，设备必须引用这里的凭据别名），示例：
+            #  plc-reader:                    # 凭据别名（设备配置的 credentialAlias）
+            #    username: reader
+            #    password: ${IOT_OPC_UA_PLC_READER_PASSWORD:}
+            #    tenant-ids: [1]              # 允许使用的租户
+            #    endpoints: ["opc.tcp://192.168.1.10:4840"] # 允许使用的端点
+        # ====================================
+        # 针对引入的 OPC UA Server 组件的配置（北向只读数据服务：节点只读、写入拒绝；单网关部署，默认关闭）
+        # ====================================
+        - id: opc-ua-server-1
+          enabled: false
+          protocol: opc_ua_server
+          port: 4840                        # 监听端口
+          opc-ua-server:
+            config-refresh-interval: 30     # 配置刷新间隔（秒）
+            bind-address: 0.0.0.0           # 监听地址
+            hostname: localhost             # 端点主机名（上位机可访问的地址，也写入自签名证书 SAN）
+            path: /yudao-iot                # 端点路径；发现端点为 <path>/discovery
+            pki-dir: data/opc-ua-server/pki # PKI 目录：own/server.pfx、trusted/certs、issuer/certs、rejected
+            keystore-password: ${IOT_OPC_UA_SERVER_KEYSTORE_PASSWORD:} # 服务端 keystore 口令（必填，建议通过环境变量注入）
+            keystore-alias: yudao-opc-ua-server
+            application-name: Yudao IoT Gateway OPC UA Server
+            security-none-allowed: false    # 是否允许 None 安全策略的会话（只用于开发联调；仍然只允许用户名登录）
+            max-sessions: 20                # 网关最大会话数（每个配置的会话数另受配置的最大会话数限制）
+            max-subscriptions-per-session: 5      # 每个会话的最大订阅数上限
+            max-monitored-items-per-session: 1000 # 每个会话的最大 MonitoredItem 数上限
+            credentials: {}                 # 用户名凭据，示例：
+            #  scada-a:                       # 凭据别名（OPC UA Server 配置的 credentialAlias）
+            #    username: scada
+            #    password: ${IOT_OPC_UA_SERVER_SCADA_A_PASSWORD:}
+            #    tenant-ids: [1]              # 允许使用的租户
 
 --- #################### 日志相关配置 ####################
 
@@ -209,6 +290,7 @@ logging:
     cn.iocoder.yudao.module.iot.gateway.protocol.coap: DEBUG
     cn.iocoder.yudao.module.iot.gateway.protocol.websocket: DEBUG
     cn.iocoder.yudao.module.iot.gateway.protocol.modbus: DEBUG
+    cn.iocoder.yudao.module.iot.gateway.protocol.opcua: DEBUG
     # 根日志级别
     root: INFO
 

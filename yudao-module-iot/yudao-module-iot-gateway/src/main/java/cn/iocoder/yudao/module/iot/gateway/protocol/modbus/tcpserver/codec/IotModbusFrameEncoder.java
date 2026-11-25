@@ -56,6 +56,18 @@ public class IotModbusFrameEncoder {
      */
     public byte[] encodeWriteSingleRequest(int slaveId, int functionCode, int address, int value,
                                            IotModbusFrameFormatEnum format, Integer transactionId) {
+        return wrapFrame(slaveId, buildWriteSinglePdu(functionCode, address, value), format, transactionId);
+    }
+
+    /**
+     * 构造写单个寄存器 / 线圈的请求 PDU（FC06 / FC05）
+     *
+     * @param functionCode 功能码
+     * @param address      寄存器地址
+     * @param value        值（FC05 非 0 为 ON）
+     * @return PDU（功能码 + 数据）
+     */
+    public static byte[] buildWriteSinglePdu(int functionCode, int address, int value) {
         // FC05 单写线圈：Modbus 标准要求 value 为 0xFF00（ON）或 0x0000（OFF）
         if (functionCode == IotModbusCommonUtils.FC_WRITE_SINGLE_COIL) {
             value = (value != 0) ? 0xFF00 : 0x0000;
@@ -67,7 +79,7 @@ public class IotModbusFrameEncoder {
         pdu[2] = (byte) (address & 0xFF);
         pdu[3] = (byte) ((value >> 8) & 0xFF);
         pdu[4] = (byte) (value & 0xFF);
-        return wrapFrame(slaveId, pdu, format, transactionId);
+        return pdu;
     }
 
     /**
@@ -82,6 +94,17 @@ public class IotModbusFrameEncoder {
      */
     public byte[] encodeWriteMultipleRegistersRequest(int slaveId, int address, int[] values,
                                                       IotModbusFrameFormatEnum format, Integer transactionId) {
+        return wrapFrame(slaveId, buildWriteMultipleRegistersPdu(address, values), format, transactionId);
+    }
+
+    /**
+     * 构造写多个寄存器的请求 PDU（FC16）
+     *
+     * @param address 起始地址
+     * @param values  值数组
+     * @return PDU（功能码 + 数据）
+     */
+    public static byte[] buildWriteMultipleRegistersPdu(int address, int[] values) {
         // PDU: [FC(1)] [Address(2)] [Quantity(2)] [ByteCount(1)] [Values(N*2)]
         int quantity = values.length;
         int byteCount = quantity * 2;
@@ -96,7 +119,7 @@ public class IotModbusFrameEncoder {
             pdu[6 + i * 2] = (byte) ((values[i] >> 8) & 0xFF);
             pdu[6 + i * 2 + 1] = (byte) (values[i] & 0xFF);
         }
-        return wrapFrame(slaveId, pdu, format, transactionId);
+        return pdu;
     }
 
     /**
@@ -113,6 +136,17 @@ public class IotModbusFrameEncoder {
      */
     public byte[] encodeWriteMultipleCoilsRequest(int slaveId, int address, int[] values,
                                                    IotModbusFrameFormatEnum format, Integer transactionId) {
+        return wrapFrame(slaveId, buildWriteMultipleCoilsPdu(address, values), format, transactionId);
+    }
+
+    /**
+     * 构造写多个线圈的请求 PDU（FC15）：线圈值按 bit 打包
+     *
+     * @param address 起始地址
+     * @param values  线圈值数组（非 0 表示 ON）
+     * @return PDU（功能码 + 数据）
+     */
+    public static byte[] buildWriteMultipleCoilsPdu(int address, int[] values) {
         // PDU: [FC(1)] [Address(2)] [Quantity(2)] [ByteCount(1)] [CoilValues(N)]
         int quantity = values.length;
         int byteCount = (quantity + 7) / 8; // 向上取整
@@ -129,7 +163,7 @@ public class IotModbusFrameEncoder {
                 pdu[6 + i / 8] |= (byte) (1 << (i % 8));
             }
         }
-        return wrapFrame(slaveId, pdu, format, transactionId);
+        return pdu;
     }
 
     /**
@@ -155,7 +189,7 @@ public class IotModbusFrameEncoder {
     // ==================== 帧封装 ====================
 
     /**
-     * 将 PDU 封装为完整帧
+     * 将 PDU 封装为完整帧（透传请求直接封装已校验的 PDU）
      *
      * @param slaveId       从站地址
      * @param pdu           PDU 数据（含 functionCode）
@@ -163,7 +197,7 @@ public class IotModbusFrameEncoder {
      * @param transactionId 事务 ID（TCP 模式下使用，RTU 模式可为 null）
      * @return 完整帧字节数组
      */
-    private byte[] wrapFrame(int slaveId, byte[] pdu, IotModbusFrameFormatEnum format, Integer transactionId) {
+    public byte[] wrapFrame(int slaveId, byte[] pdu, IotModbusFrameFormatEnum format, Integer transactionId) {
         if (format == IotModbusFrameFormatEnum.MODBUS_TCP) {
             return wrapTcpFrame(slaveId, pdu, transactionId != null ? transactionId : 0);
         } else {

@@ -28,8 +28,8 @@
 | 【完整版】[ruoyi-vue-pro](https://gitee.com/zhijiantianya/ruoyi-vue-pro) | [`master`](https://gitee.com/zhijiantianya/ruoyi-vue-pro/tree/master/) 分支 | [`master-jdk17`](https://gitee.com/zhijiantianya/ruoyi-vue-pro/tree/master-jdk17/) 分支 | [`master-jdk25`](https://gitee.com/zhijiantianya/ruoyi-vue-pro/tree/master-jdk25/) 分支 |
 | 【精简版】[yudao-boot-mini](https://gitee.com/yudaocode/yudao-boot-mini) | [`master`](https://gitee.com/yudaocode/yudao-boot-mini/tree/master/) 分支   | [`master-jdk17`](https://gitee.com/yudaocode/yudao-boot-mini/tree/master-jdk17/) 分支   | [`master-jdk25`](https://gitee.com/yudaocode/yudao-boot-mini/tree/master-jdk25/) 分支   |
 
-* 【完整版】：包括系统功能、基础设施、会员中心、数据报表、工作流程、商城系统、微信公众号、CRM、ERP、WMS、MES、IM 即时通讯、AI 大模型、IoT 物联网等功能
-* 【精简版】：只包括系统功能、基础设施功能，不包括会员中心、数据报表、工作流程、商城系统、微信公众号、CRM、ERP、WMS、MES、IM 即时通讯、AI 大模型、IoT 物联网等功能
+* 【完整版】：包括系统功能、基础设施、工作流程、支付系统、数据报表、微信公众号、商城系统、会员中心、ERP、WMS、CRM、MES、HRM、FMS、PMS、OA 协同办公、AI 大模型、IoT 物联网、IM 即时通讯等功能
+* 【精简版】：只包括系统功能、基础设施功能，不包括工作流程、支付系统、数据报表、微信公众号、商城系统、会员中心、ERP、WMS、CRM、MES、HRM、FMS、PMS、OA 协同办公、AI 大模型、IoT 物联网、IM 即时通讯等功能
 
 可参考 [《迁移文档》](https://doc.iocoder.cn/migrate-module/) ，只需要 5-10 分钟，即可将【完整版】按需迁移到【精简版】
 
@@ -47,7 +47,7 @@
 * 管理后台的电脑端：Vue3 提供 `element-plus`、`vben(ant-design-vue)` 两个版本，Vue2 提供 `element-ui` 版本
 * 管理后台的移动端：采用 `uni-app` 方案，一份代码多终端适配，同时支持 APP、小程序、H5！
 * 后端采用 Spring Boot 多模块架构、MySQL + MyBatis Plus、Redis + Redisson
-* 数据库可使用 MySQL、Oracle、PostgreSQL、SQL Server、MariaDB、国产达梦 DM、TiDB 等
+* 数据库可使用 MySQL、Oracle、PostgreSQL、SQL Server、MariaDB，以及达梦、人大金仓、瀚高等国产数据库，详见 [信创兼容与数据库支持](#-信创兼容与数据库支持)
 * 消息队列可使用 Event、Redis、RabbitMQ、Kafka、RocketMQ 等
 * 权限认证使用 Spring Security & Token & Redis，支持多终端、多种用户的认证系统，支持 SSO 单点登录
 * 支持加载动态权限菜单，按钮级别权限控制，Redis 缓存提升性能
@@ -58,6 +58,22 @@
 * 集成微信小程序、微信公众号、企业微信、钉钉等三方登陆，集成支付宝、微信等支付与退款
 * 集成阿里云、腾讯云等短信渠道，集成 MinIO、阿里云、腾讯云、七牛云等云存储服务
 * 集成报表设计器、大屏设计器，通过拖拽即可生成酷炫的报表与大屏
+
+## 🐲 信创兼容与数据库支持
+
+支持国产操作系统、数据库和中间件，满足信创环境的部署需要：
+
+| 类别       | 支持                                                  | 说明                                                                                                                                                         |
+|----------|-----------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 国产操作系统   | 银河麒麟、统信 UOS 等 Linux 系统                              | 参考 [《Linux 部署》](https://doc.iocoder.cn/deployment-linux/)，选择与 CPU 架构匹配的 JDK                                                                              |
+| 关系型数据库   | MySQL、MariaDB、Oracle、PostgreSQL、SQL Server          | 默认使用 MySQL                                                                                                                                                 |
+| 国产关系型数据库 | 达梦 DM、人大金仓 KingbaseES、openGauss、瀚高 HighGo、OceanBase、TiDB、华为 GaussDB、云和恩墨 MogDB、海量 Vastbase G100、PolarDB、神通 | 参考 [《国产信创数据库》](https://doc.iocoder.cn/xinchuang-db/) |
+| 国产缓存     | 东方通 TongRDS、宝兰德 BES CacheDB                         | 替换 Redis，参考 [《国产信创数据库》](https://doc.iocoder.cn/xinchuang-db/)                                                               |
+| 国产应用服务器  | 东方通 TongWeb、宝兰德 BES AppServer                       | 替换 Tomcat，参考 [《东方通服务器部署》](https://doc.iocoder.cn/deployment-tong/)、[《宝兰德服务器部署》](https://doc.iocoder.cn/deployment-bes/) |
+| 国产 Web 服务器 | 东方通 TongHttpServer                                   | 替换 Nginx，提供静态资源、反向代理，参考 [《东方通服务器部署》](https://doc.iocoder.cn/deployment-tong/)                                                                       |
+
+* 数据库脚本：[`sql`](sql/) 目录提供 MySQL、Oracle、PostgreSQL、SQL Server、达梦、人大金仓、openGauss、瀚高、OceanBase 的项目初始化脚本（含 Quartz），优先使用对应目录；MariaDB、TiDB 直接使用 MySQL 脚本；GaussDB、MogDB、Vastbase G100 基于 openGauss 脚本导入，PolarDB PostgreSQL 版直接使用 PostgreSQL 脚本；神通需按 [文档](https://doc.iocoder.cn/xinchuang-db/#_9-神通数据库) 调整 openGauss 项目脚本（含 Quartz）后导入
+* 其它数据库、后续表结构变更，可参考 [`sql/tools`](sql/tools/README.md) 的转换工具及 [《表结构变更（版本升级）》](https://doc.iocoder.cn/sql-update/#_3-数据库转换)，转换后仍需按实际数据库调整、测试
 
 ##  🐳 项目关系
 
@@ -102,7 +118,7 @@
 
 团队包含专业的项目经理、架构师、前端工程师、后端工程师、测试工程师、运维工程师，可以提供全流程的外包服务。
 
-项目可以是商城、SCRM 系统、OA 系统、物流系统、ERP 系统、CMS 系统、HIS 系统、支付系统、IM 即时通讯、微信公众号、微信小程序等等。
+项目可以是商城、SCRM 系统、OA 系统、物流系统、ERP 系统、HRM 人力资源系统、FMS 财务系统、PMS 项目管理系统、CMS 系统、HIS 系统、支付系统、IM 即时通讯、微信公众号、微信小程序等等。
 
 ## 🐼 内置功能
 
@@ -112,7 +128,7 @@
 
 * 通用模块（必选）：系统功能、基础设施
 * 通用模块（可选）：工作流程、支付系统、数据报表、会员中心
-* 业务系统（按需）：Mall 电子商城、OA 办公自动化、ERP 企业资源计划系统、WMS 仓库管理系统、CRM 客户关系管理、CMS 内容管理系统、MES 执行制造系统、AI 大模型平台、IoT 物联网系统、IM 即时通讯系统、Mobile 手机移动端、Report 数据大屏
+* 业务系统（按需）：Mall 电子商城、ERP 企业资源计划系统、WMS 仓库管理系统、CRM 客户关系管理、CMS 内容管理系统、MES 执行制造系统、HRM 人力资源管理、FMS 财务管理、PMS 项目管理、OA 办公自动化、AI 大模型平台、IoT 物联网系统、IM 即时通讯系统、Mobile 手机移动端、Report 数据大屏
 
 > 友情提示：本项目基于 RuoYi-Vue 修改，**重构优化**后端的代码，**美化**前端的界面。
 >
@@ -134,7 +150,7 @@
 | 🚀  | 租户管理  | 配置系统租户，支持 SaaS 场景下的多租户功能        |
 | 🚀  | 租户套餐  | 配置租户套餐，自定每个租户的菜单、操作、按钮的权限       |
 |     | 字典管理  | 对系统中经常使用的一些较为固定的数据进行维护          |
-| 🚀  | 短信管理  | 短信渠道、短息模板、短信日志，对接阿里云、腾讯云等主流短信平台 |
+| 🚀  | 短信管理  | 短信渠道、短信模板、短信日志，对接阿里云、腾讯云等主流短信平台 |
 | 🚀  | 邮件管理  | 邮箱账号、邮件模版、邮件发送日志，支持所有邮件平台       |
 | 🚀  | 站内信   | 系统内的消息通知，提供站内信模版、站内信消息          |
 | 🚀  | 操作日志  | 系统正常操作日志记录和查询，集成 Swagger 生成日志内容 |
@@ -146,6 +162,31 @@
 | 🚀  | 地区管理  | 展示省份、城市、区镇等城市信息，支持 IP 对应城市      |
 
 ![功能图](/.image/common/system-feature.png)
+
+### 基础设施
+
+|     | 功能        | 描述                                           |
+|-----|-----------|----------------------------------------------|
+| 🚀  | 代码生成      | 前后端代码的生成（Java、Vue、SQL、单元测试），支持 CRUD 下载       |
+| 🚀  | 系统接口      | 基于 Swagger 自动生成相关的 RESTful API 接口文档          |
+| 🚀  | 数据库文档     | 基于 Screw 自动生成数据库文档，支持导出 Word、HTML、MD 格式      |
+|     | 表单构建      | 拖动表单元素生成相应的 HTML 代码，支持导出 JSON、Vue 文件         |
+| 🚀  | 配置管理      | 对系统动态配置常用参数，支持 SpringBoot 加载                 |
+| ⭐️  | 定时任务      | 在线（添加、修改、删除)任务调度包含执行结果日志                     |
+| 🚀  | 文件服务      | 支持将文件存储到 S3（MinIO、阿里云、腾讯云、七牛云）、本地、FTP、数据库等   |
+| 🚀  | WebSocket | 提供 WebSocket 接入示例，支持一对一、一对多发送方式              |
+| 🚀  | API 日志    | 包括 RESTful API 访问日志、异常日志两部分，方便排查 API 相关的问题   |
+|     | MySQL 监控  | 监视当前系统数据库连接池状态，可进行分析SQL找出系统性能瓶颈              |
+|     | Redis 监控  | 监控 Redis 数据库的使用情况，使用的 Redis Key 管理           |
+| 🚀  | 消息队列      | 基于 Redis 实现消息队列，Stream 提供集群消费，Pub/Sub 提供广播消费 |
+| 🚀  | Java 监控   | 基于 Spring Boot Admin 实现 Java 应用的监控           |
+| 🚀  | 链路追踪      | 接入 SkyWalking 组件，实现链路追踪                      |
+| 🚀  | 日志中心      | 接入 SkyWalking 组件，实现日志中心                      |
+| 🚀  | 服务保障      | 基于 Redis 实现分布式锁、幂等、限流功能，满足高并发场景              |
+| 🚀  | 日志服务      | 轻量级日志中心，查看远程服务器的日志                           |
+| 🚀  | 单元测试      | 基于 JUnit + Mockito 实现单元测试，保证功能的正确性、代码的质量等    |
+
+![功能图](/.image/common/infra-feature.png)
 
 ### 工作流程
 
@@ -197,31 +238,6 @@
 | 🚀  | 退款订单 | 查看用户发起的支付宝、微信等的【退款】订单     |
 | 🚀  | 回调通知 | 查看支付回调业务的【支付】【退款】的通知结果    |
 | 🚀  | 接入示例 | 提供接入支付系统的【支付】【退款】的功能实战    |
-
-### 基础设施
-
-|     | 功能        | 描述                                           |
-|-----|-----------|----------------------------------------------|
-| 🚀  | 代码生成      | 前后端代码的生成（Java、Vue、SQL、单元测试），支持 CRUD 下载       |
-| 🚀  | 系统接口      | 基于 Swagger 自动生成相关的 RESTful API 接口文档          |
-| 🚀  | 数据库文档     | 基于 Screw 自动生成数据库文档，支持导出 Word、HTML、MD 格式      |
-|     | 表单构建      | 拖动表单元素生成相应的 HTML 代码，支持导出 JSON、Vue 文件         |
-| 🚀  | 配置管理      | 对系统动态配置常用参数，支持 SpringBoot 加载                 |
-| ⭐️  | 定时任务      | 在线（添加、修改、删除)任务调度包含执行结果日志                     |
-| 🚀  | 文件服务      | 支持将文件存储到 S3（MinIO、阿里云、腾讯云、七牛云）、本地、FTP、数据库等   | 
-| 🚀  | WebSocket | 提供 WebSocket 接入示例，支持一对一、一对多发送方式              | 
-| 🚀  | API 日志    | 包括 RESTful API 访问日志、异常日志两部分，方便排查 API 相关的问题   |
-|     | MySQL 监控  | 监视当前系统数据库连接池状态，可进行分析SQL找出系统性能瓶颈              |
-|     | Redis 监控  | 监控 Redis 数据库的使用情况，使用的 Redis Key 管理           |
-| 🚀  | 消息队列      | 基于 Redis 实现消息队列，Stream 提供集群消费，Pub/Sub 提供广播消费 |
-| 🚀  | Java 监控   | 基于 Spring Boot Admin 实现 Java 应用的监控           |
-| 🚀  | 链路追踪      | 接入 SkyWalking 组件，实现链路追踪                      |
-| 🚀  | 日志中心      | 接入 SkyWalking 组件，实现日志中心                      |
-| 🚀  | 服务保障      | 基于 Redis 实现分布式锁、幂等、限流功能，满足高并发场景              |
-| 🚀  | 日志服务      | 轻量级日志中心，查看远程服务器的日志                           |
-| 🚀  | 单元测试      | 基于 JUnit + Mockito 实现单元测试，保证功能的正确性、代码的质量等    |
-
-![功能图](/.image/common/infra-feature.png)
 
 ### 数据报表
 
@@ -292,6 +308,38 @@
 
 ![功能图](/.image/common/mes-preview.png)
 
+### HRM 人力资源管理系统
+
+演示地址：<https://doc.iocoder.cn/hrm-preview/>
+
+![功能图](/.image/common/hrm-feature.png)
+
+![预览图](/.image/common/hrm-preview.png)
+
+### FMS 财务管理系统
+
+演示地址：<https://doc.iocoder.cn/fms-preview/>
+
+![功能图](/.image/common/fms-feature.png)
+
+![预览图](/.image/common/fms-preview.png)
+
+### PMS 项目管理系统
+
+演示地址：<https://doc.iocoder.cn/pms-preview/>
+
+![功能图](/.image/common/pms-feature.png)
+
+![预览图](/.image/common/pms-preview.png)
+
+### OA 协同办公
+
+演示地址：<https://doc.iocoder.cn/oa-preview/>
+
+![功能图](/.image/common/oa-feature.png)
+
+![预览图](/.image/common/oa-preview.png)
+
 ### AI 大模型
 
 演示地址：<https://doc.iocoder.cn/ai-preview/>
@@ -331,20 +379,24 @@
 | `yudao-framework`     | Java 框架拓展          |
 | `yudao-server`        | 管理后台 + 用户 APP 的服务端 |
 | `yudao-module-system` | 系统功能的 Module 模块    |
-| `yudao-module-member` | 会员中心的 Module 模块    |
 | `yudao-module-infra`  | 基础设施的 Module 模块    |
 | `yudao-module-bpm`    | 工作流程的 Module 模块    |
 | `yudao-module-pay`    | 支付系统的 Module 模块    |
+| `yudao-module-report` | 大屏报表 Module 模块     |
+| `yudao-module-mp`     | 微信公众号的 Module 模块   |
 | `yudao-module-mall`   | 商城系统的 Module 模块    |
+| `yudao-module-member` | 会员中心的 Module 模块    |
 | `yudao-module-erp`    | ERP 系统的 Module 模块  |
+| `yudao-module-wms`    | WMS 系统的 Module 模块  |
 | `yudao-module-crm`    | CRM 系统的 Module 模块  |
 | `yudao-module-mes`    | MES 系统的 Module 模块  |
-| `yudao-module-wms`    | WMS 系统的 Module 模块  |
-| `yudao-module-im`     | IM 即时通讯的 Module 模块 |
+| `yudao-module-hrm`    | HRM 人力资源管理的 Module 模块 |
+| `yudao-module-fms`    | FMS 财务管理的 Module 模块 |
+| `yudao-module-pms`    | PMS 项目管理的 Module 模块 |
+| `yudao-module-oa`     | OA 协同办公的 Module 模块 |
 | `yudao-module-ai`     | AI 大模型的 Module 模块  |
 | `yudao-module-iot`    | IoT 物联网的 Module 模块 |
-| `yudao-module-mp`     | 微信公众号的 Module 模块   |
-| `yudao-module-report` | 大屏报表 Module 模块     |
+| `yudao-module-im`     | IM 即时通讯的 Module 模块 |
 
 ### 框架
 

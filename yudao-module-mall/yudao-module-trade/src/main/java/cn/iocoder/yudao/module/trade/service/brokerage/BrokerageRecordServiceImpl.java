@@ -74,16 +74,18 @@ public class BrokerageRecordServiceImpl implements BrokerageRecordService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void addBrokerage(Long userId, BrokerageRecordBizTypeEnum bizType, List<BrokerageAddReqBO> list) {
+    public void addBrokerage(Long userId, Long brokerageUserId, BrokerageRecordBizTypeEnum bizType,
+                             List<BrokerageAddReqBO> list) {
         TradeConfigDO memberConfig = tradeConfigService.getTradeConfig();
         // 0 未启用分销功能
         if (memberConfig == null || !BooleanUtil.isTrue(memberConfig.getBrokerageEnabled())) {
-            log.error("[addBrokerage][增加佣金失败：brokerageEnabled 未配置，userId({}) bizType({}) list({})", userId, bizType, list);
+            log.error("[addBrokerage][增加佣金失败：brokerageEnabled 未配置，userId({}) brokerageUserId({}) bizType({}) list({})",
+                    userId, brokerageUserId, bizType, list);
             return;
         }
 
         // 1.1 获得一级推广人
-        BrokerageUserDO firstUser = brokerageUserService.getBindBrokerageUser(userId);
+        BrokerageUserDO firstUser = brokerageUserService.getBrokerageUser(brokerageUserId);
         if (firstUser == null || !BooleanUtil.isTrue(firstUser.getBrokerageEnabled())) {
             return;
         }
@@ -304,7 +306,9 @@ public class BrokerageRecordServiceImpl implements BrokerageRecordService {
         }
 
         // 2. 更新佣金余额
-        boolean success = brokerageUserService.updateUserPrice(userId, brokeragePrice);
+        // 扣减时（例如说提现），要求佣金充足后原子扣减。原因是：上面的余额校验在并发时都会通过，避免多笔提现超额扣成负数
+        boolean success = brokeragePrice < 0 ? brokerageUserService.updateUserPriceDecrIfEnough(userId, brokeragePrice)
+                : brokerageUserService.updateUserPrice(userId, brokeragePrice);
         if (!success) {
             // 失败时，则抛出异常。只会出现扣减佣金时，余额不足的情况
             throw exception(BROKERAGE_WITHDRAW_USER_BALANCE_NOT_ENOUGH, MoneyUtils.fenToYuanStr(balance));

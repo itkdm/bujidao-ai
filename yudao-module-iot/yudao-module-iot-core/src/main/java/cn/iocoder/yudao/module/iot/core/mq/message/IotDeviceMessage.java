@@ -94,6 +94,25 @@ public class IotDeviceMessage {
      */
     private String msg;
 
+    // ========== 透传（raw）相关字段 ==========
+
+    /**
+     * 与设备之间实际收发的原始字节（Base64）
+     *
+     * 只由服务端可信赋值：网关的透传上行（解析成功的业务消息、或未解析的 thing.raw.post）、Modbus 设备的实际响应，
+     * 以及 biz 下发的 thing.raw.push；设备经标准路径上报的消息，网关会清空该字段
+     */
+    private String raw;
+
+    // ========== 离线暂存（spool）相关字段 ==========
+
+    /**
+     * 网关接收时刻（毫秒时间戳），与 {@link #reportTime} 是同一次取样；非空表示该消息经网关的离线暂存（SQLite）补传
+     *
+     * 只由网关可信赋值：设备、数据解析脚本带上的一律清空；批量上报（pack）拆出的子消息，沿用 pack 的值
+     */
+    private Long spoolTime;
+
     // ========== 基础方法：只传递"serialize（序列化）相关字段" ==========
 
     public static IotDeviceMessage requestOf(String method) {

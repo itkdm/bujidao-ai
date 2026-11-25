@@ -7,6 +7,7 @@ import cn.hutool.extra.spring.SpringUtil;
 import cn.iocoder.yudao.framework.common.enums.CommonStatusEnum;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
+import cn.iocoder.yudao.framework.mybatis.core.util.JdbcUtils;
 import cn.iocoder.yudao.framework.tenant.core.aop.TenantIgnore;
 import cn.iocoder.yudao.framework.tenant.core.util.TenantUtils;
 import cn.iocoder.yudao.module.iot.controller.admin.rule.vo.scene.IotSceneRulePageReqVO;
@@ -200,6 +201,10 @@ public class IotSceneRuleServiceImpl implements IotSceneRuleService {
     public void executeSceneRuleByDevice(IotDeviceMessage message) {
         // 1.1 这里的 tenantId，通过设备获取；
         IotDeviceDO device = deviceService.getDeviceFromCache(message.getDeviceId());
+        if (device == null) { // 设备已删除时，跳过处理：https://github.com/YunaiV/ruoyi-vue-pro/issues/1271
+            log.warn("[executeSceneRuleByDevice][设备({}) 不存在]", message.getDeviceId());
+            return;
+        }
         TenantUtils.execute(device.getTenantId(), () -> {
             // 1.2 获得设备匹配的规则场景
             List<IotSceneRuleDO> sceneRules = getMatchedSceneRuleListByMessage(message);
@@ -382,6 +387,8 @@ public class IotSceneRuleServiceImpl implements IotSceneRuleService {
         try {
             return sceneRuleMatcherManager.isMatched(message, trigger) && isTriggerConditionGroupsMatched(message, trigger, sceneRule);
         } catch (Exception e) {
+            // 状态事务内，数据访问异常不吞掉，交给事务回滚（见 IotDeviceMessageServiceImpl#handleStateUpdateMessage）
+            JdbcUtils.throwIfDataAccessExceptionInTransaction(e);
             log.error("[matchSingleTrigger][触发器匹配异常] sceneRuleId: {}, triggerType: {}, message: {}",
                     sceneRule.getId(), trigger.getType(), message, e);
             return false;
@@ -441,6 +448,8 @@ public class IotSceneRuleServiceImpl implements IotSceneRuleService {
         try {
             return sceneRuleMatcherManager.isConditionMatched(message, condition);
         } catch (Exception e) {
+            // 状态事务内，数据访问异常不吞掉，交给事务回滚
+            JdbcUtils.throwIfDataAccessExceptionInTransaction(e);
             log.error("[isTriggerConditionMatched][规则场景编号({}) 的触发器({}) 条件匹配异常]",
                     sceneRule.getId(), trigger, e);
             return false;
@@ -471,6 +480,8 @@ public class IotSceneRuleServiceImpl implements IotSceneRuleService {
                         log.info("[executeSceneRuleAction][消息({}) 规则场景编号({}) 的执行动作({}) 成功]",
                                 message, sceneRule.getId(), actionConfig);
                     } catch (Exception e) {
+                        // 状态事务内，数据访问异常不吞掉，交给事务回滚
+                        JdbcUtils.throwIfDataAccessExceptionInTransaction(e);
                         log.error("[executeSceneRuleAction][消息({}) 规则场景编号({}) 的执行动作({}) 执行异常]",
                                 message, sceneRule.getId(), actionConfig, e);
                     }
@@ -491,6 +502,8 @@ public class IotSceneRuleServiceImpl implements IotSceneRuleService {
         try {
             sceneRuleMapper.updateById(new IotSceneRuleDO().setId(id).setLastTriggerTime(LocalDateTime.now()));
         } catch (Exception e) {
+            // 状态事务内，数据访问异常不吞掉，交给事务回滚（例如说，热点行的锁等待超时）
+            JdbcUtils.throwIfDataAccessExceptionInTransaction(e);
             log.error("[updateLastTriggerTime][规则场景编号({}) 更新最后触发时间异常]", id, e);
         }
     }

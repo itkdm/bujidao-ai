@@ -12,6 +12,8 @@ import cn.iocoder.yudao.module.crm.enums.common.CrmBizTypeEnum;
 import cn.iocoder.yudao.module.crm.enums.permission.CrmPermissionLevelEnum;
 import cn.iocoder.yudao.module.crm.enums.product.CrmProductStatusEnum;
 import cn.iocoder.yudao.module.crm.framework.permission.core.annotations.CrmPermission;
+import cn.iocoder.yudao.module.crm.service.business.CrmBusinessService;
+import cn.iocoder.yudao.module.crm.service.contract.CrmContractService;
 import cn.iocoder.yudao.module.crm.service.permission.CrmPermissionService;
 import cn.iocoder.yudao.module.crm.service.permission.bo.CrmPermissionCreateReqBO;
 import cn.iocoder.yudao.module.system.api.user.AdminUserApi;
@@ -19,6 +21,7 @@ import com.mzt.logapi.context.LogRecordContext;
 import com.mzt.logapi.service.impl.DiffParseFunction;
 import com.mzt.logapi.starter.annotation.LogRecord;
 import jakarta.annotation.Resource;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
@@ -48,6 +51,12 @@ public class CrmProductServiceImpl implements CrmProductService {
 
     @Resource
     private CrmProductCategoryService productCategoryService;
+    @Resource
+    @Lazy // 延迟加载，避免循环依赖
+    private CrmContractService contractService;
+    @Resource
+    @Lazy // 延迟加载，避免循环依赖
+    private CrmBusinessService businessService;
     @Resource
     private CrmPermissionService permissionService;
 
@@ -126,10 +135,21 @@ public class CrmProductServiceImpl implements CrmProductService {
             success = CRM_PRODUCT_DELETE_SUCCESS)
     @CrmPermission(bizType = CrmBizTypeEnum.CRM_PRODUCT, bizId = "#id", level = CrmPermissionLevelEnum.OWNER)
     public void deleteProduct(Long id) {
-        // 校验存在
-        validateProductExists(id);
-        // 删除
+        // 1.1 校验存在
+        CrmProductDO product = validateProductExists(id);
+        // 1.2 校验未被合同/商机引用，避免删除后产生悬空引用
+        if (contractService.getContractProductCountByProductId(id) > 0) {
+            throw exception(PRODUCT_DELETE_FAIL_CONTRACT_EXISTS);
+        }
+        if (businessService.getBusinessProductCountByProductId(id) > 0) {
+            throw exception(PRODUCT_DELETE_FAIL_BUSINESS_EXISTS);
+        }
+
+        // 2. 删除
         productMapper.deleteById(id);
+
+        // 3. 记录操作日志上下文
+        LogRecordContext.putVariable("product", product);
     }
 
     @Override

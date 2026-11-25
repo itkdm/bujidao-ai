@@ -6,8 +6,8 @@ import cn.iocoder.yudao.module.system.api.social.dto.SocialWxQrcodeReqDTO;
 import cn.iocoder.yudao.module.system.api.social.dto.SocialWxaOrderNotifyConfirmReceiveReqDTO;
 import cn.iocoder.yudao.module.system.api.social.dto.SocialWxaOrderUploadShippingInfoReqDTO;
 import cn.iocoder.yudao.module.system.api.social.dto.SocialWxaSubscribeMessageSendReqDTO;
-import cn.iocoder.yudao.module.system.controller.admin.socail.vo.client.SocialClientPageReqVO;
-import cn.iocoder.yudao.module.system.controller.admin.socail.vo.client.SocialClientSaveReqVO;
+import cn.iocoder.yudao.module.system.controller.admin.social.vo.client.SocialClientPageReqVO;
+import cn.iocoder.yudao.module.system.controller.admin.social.vo.client.SocialClientSaveReqVO;
 import cn.iocoder.yudao.module.system.dal.dataobject.social.SocialClientDO;
 import cn.iocoder.yudao.module.system.enums.social.SocialTypeEnum;
 import jakarta.validation.Valid;
@@ -39,11 +39,22 @@ public interface SocialClientService {
      *
      * @param socialType 社交平台的类型
      * @param userType   用户类型
-     * @param code       授权码
-     * @param state      授权 state
+     * @param code        授权码
+     * @param state       授权 state
+     * @param redirectUri 发起授权时的回调地址，换取令牌时需与其一致；为空时使用配置中的回调地址
      * @return 授权的用户
      */
-    AuthUser getAuthUser(Integer socialType, Integer userType, String code, String state);
+    AuthUser getAuthUser(Integer socialType, Integer userType, String code, String state, String redirectUri);
+
+    /**
+     * 获得指定用户类型下，已具备授权配置的社交平台类型列表
+     *
+     * 启用的社交应用覆盖配置文件中的全局配置，未启用时使用全局配置；只判断配置完整，不请求社交平台校验凭据
+     *
+     * @param userType 用户类型
+     * @return 社交平台的类型列表 {@link SocialTypeEnum}；未开启 JustAuth 时返回空列表
+     */
+    List<Integer> getAvailableSocialTypeList(Integer userType);
 
     // =================== 微信公众号独有 ===================
 

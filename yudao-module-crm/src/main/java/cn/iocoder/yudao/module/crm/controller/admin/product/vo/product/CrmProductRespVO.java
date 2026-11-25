@@ -4,8 +4,8 @@ import cn.iocoder.yudao.framework.excel.core.annotations.DictFormat;
 import cn.iocoder.yudao.framework.excel.core.convert.DictConvert;
 import cn.iocoder.yudao.module.crm.dal.dataobject.product.CrmProductCategoryDO;
 import cn.iocoder.yudao.module.crm.enums.DictTypeConstants;
-import cn.idev.excel.annotation.ExcelIgnoreUnannotated;
-import cn.idev.excel.annotation.ExcelProperty;
+import org.apache.fesod.sheet.annotation.ExcelIgnoreUnannotated;
+import org.apache.fesod.sheet.annotation.ExcelProperty;
 import org.dromara.core.trans.anno.Trans;
 import org.dromara.core.trans.constant.TransType;
 import org.dromara.core.trans.vo.VO;
@@ -35,7 +35,7 @@ public class CrmProductRespVO implements VO {
     @Schema(description = "单位", example = "2")
     @ExcelProperty(value = "单位", converter = DictConvert.class)
     @DictFormat(DictTypeConstants.CRM_PRODUCT_UNIT)
-    private Integer unit;
+    private int unit;
 
     @Schema(description = "价格, 单位：分", requiredMode = Schema.RequiredMode.REQUIRED, example = "8911")
     @ExcelProperty("价格，单位：分")

@@ -1,0 +1,342 @@
+package cn.iocoder.yudao.module.ai1.harness.llm;
+
+import cn.iocoder.yudao.framework.common.util.json.JsonUtils;
+import cn.iocoder.yudao.module.ai1.service.model.bo.Ai1ModelRespBO;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.sun.net.httpserver.HttpServer;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.springaicommunity.agent.tools.SkillsTool;
+import org.springframework.ai.embedding.EmbeddingModel;
+import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.tool.function.FunctionToolCallback;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+/**
+ * {@link Ai1LlmModelFactory} 的单元测试
+ */
+public class Ai1LlmModelFactoryTest {
+
+    private final Ai1LlmModelFactory factory = new Ai1LlmModelFactory();
+    private final List<Request> requests = new CopyOnWriteArrayList<>();
+    private HttpServer server;
+    private String baseUrl;
+    private String requestedTool;
+    /**
+     * 按请求顺序返回的响应体；为空时使用默认响应
+     */
+    private List<String> scriptedResponses;
+
+    @BeforeEach
+    public void before() throws Exception {
+        // mock HTTP 服务
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/", exchange -> {
+            requests.add(new Request(exchange.getRequestURI().getPath(),
+                    exchange.getRequestHeaders().getFirst("Authorization"),
+                    exchange.getRequestHeaders().getFirst("X-Session"),
+                    exchange.getRequestHeaders().getFirst("X-Provider"),
+                    JsonUtils.parseTree(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8))));
+            boolean embedding = exchange.getRequestURI().getPath().endsWith("/embeddings");
+            boolean callTool = requestedTool != null && requests.size() == 1;
+            String response = scriptedResponses != null ? scriptedResponses.get(requests.size() - 1)
+                    : callTool ? toolCallSse(requestedTool) : embedding
+                    ? "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"index\":0,\"embedding\":[0.1,0.2]}],\"model\":\"test-model\",\"usage\":{\"prompt_tokens\":1,\"total_tokens\":1}}"
+                    : sse("{\"role\":\"assistant\",\"reasoning_content\":\"想\"}")
+                    + sse("{\"reasoning_content\":\"想\"}")
+                    + sse("{\"reasoning_content\":\"想到\"}")
+                    + sse("{\"content\":\"你好\"}")
+                    + "data: [DONE]\n\n";
+            byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", embedding ? "application/json" : "text/event-stream");
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (var output = exchange.getResponseBody()) {
+                output.write(bytes);
+            }
+        });
+        server.start();
+        baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+    }
+
+    @AfterEach
+    public void after() {
+        server.stop(0);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "/v1/", "/proxy/v1"})
+    public void testChat_endpointHeadersAndReasoningDeltas(String prefix) {
+        // 准备参数
+        Ai1ModelRespBO model = model(baseUrl + prefix);
+        Ai1LlmChatTool chatTool = new Ai1LlmChatTool();
+        ReflectionTestUtils.setField(chatTool, "llmModelFactory", factory);
+        List<String> thinking = new ArrayList<>();
+        List<String> content = new ArrayList<>();
+
+        // 调用
+        Ai1LlmChatTool.ChatText result = chatTool.chat(model, "系统指令", List.<String[]>of(new String[]{"user", "历史"}),
+                "当前消息", List.of(), List.of(), 42L, thinking::add, content::add);
+
+        // 断言
+        assertEquals("你好", result.getContent());
+        assertEquals("想想想到", result.getThinking());
+        assertEquals(List.of("想", "想", "想到"), thinking);
+        assertEquals(List.of("你好"), content);
+        assertEquals(1, requests.size());
+        Request request = requests.get(0);
+        String normalizedPrefix = prefix.isEmpty() ? "/v1" : prefix.replaceAll("/$", "");
+        assertEquals(normalizedPrefix + "/chat/completions", request.path());
+        assertEquals("Bearer test-key", request.authorization());
+        assertEquals("42", request.session());
+        assertEquals("provider", request.provider());
+        assertEquals("test-model", request.body().get("model").asText());
+        assertEquals(3, request.body().get("messages").size());
+        assertTrue(request.body().get("stream").asBoolean());
+    }
+
+    @Test
+    public void testEmbedding_endpointAndHeaders() {
+        // 准备参数
+        Ai1ModelRespBO model = model(baseUrl + "/proxy/v1/");
+        EmbeddingModel embedding = factory.getOrCreateEmbeddingModel(model);
+
+        // 调用
+        float[] result = embedding.embed("文档内容");
+        // 断言
+        assertArrayEquals(new float[]{0.1F, 0.2F}, result);
+        Request request = requests.get(0);
+        assertEquals("/proxy/v1/embeddings", request.path());
+        assertEquals("Bearer test-key", request.authorization());
+        assertNull(request.session());
+        assertEquals("provider", request.provider());
+        assertEquals("test-model", request.body().get("model").asText());
+        assertEquals("文档内容", request.body().get("input").get(0).asText());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    public void testNullApiKey_noAuthorization(boolean embedding) {
+        // 准备参数：未配置密钥时不鉴权，不回退 OPENAI_API_KEY 环境变量
+        Ai1ModelRespBO model = model(baseUrl).setApiKey(null);
+
+        // 调用
+        if (embedding) {
+            assertArrayEquals(new float[]{0.1F, 0.2F}, factory.getOrCreateEmbeddingModel(model).embed("文档内容"));
+        } else {
+            Ai1LlmChatTool chatTool = new Ai1LlmChatTool();
+            ReflectionTestUtils.setField(chatTool, "llmModelFactory", factory);
+            assertEquals("你好", chatTool.chat(model, "", List.of(), "当前消息", List.of(), List.of(),
+                    42L, null, null).getContent());
+        }
+        // 断言：不携带 Authorization（不用 assertNull，避免失败信息输出密钥）
+        assertEquals(1, requests.size());
+        assertTrue(requests.get(0).authorization() == null, "请求不应携带 Authorization");
+    }
+
+    @Test
+    public void testChat_skillCallback(@TempDir Path root) throws Exception {
+        // 准备参数
+        Files.writeString(root.resolve("SKILL.md"), "---\nname: probe\ndescription: test\n---\nunique-skill-content\n");
+        ToolCallback skill = SkillsTool.builder().addSkillsDirectory(root.toString()).build();
+        requestedTool = skill.getToolDefinition().name();
+        Ai1LlmChatTool chat = new Ai1LlmChatTool();
+        ReflectionTestUtils.setField(chat, "llmModelFactory", factory);
+
+        // 调用
+        Ai1LlmChatTool.ChatText result = chat.chat(model(baseUrl), "system", List.of(), "use skill",
+                List.of(skill), List.of(), 42L, null, null);
+        // 断言
+        assertEquals("你好", result.getContent());
+        assertEquals(2, requests.size());
+        assertEquals(requestedTool, requests.get(0).body().get("tools").get(0).get("function").get("name").asText());
+        boolean hasToolResult = false;
+        for (JsonNode message : requests.get(1).body().get("messages")) {
+            if ("tool".equals(message.get("role").asText())) {
+                hasToolResult = true;
+                assertTrue(message.get("content").asText().contains("unique-skill-content"));
+            }
+        }
+        assertTrue(hasToolResult);
+        assertEquals("42", requests.get(1).session());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"想|完", "想", "想| |\n|完"})
+    public void testChat_toolLoopReasoningPerCompletion(String secondRound) {
+        // 准备参数：第一轮推理“想”后调用工具；第二轮是新的 completion，推理从头累计
+        List<String> fragments = List.of(secondRound.split("\\|", -1));
+        AtomicInteger toolCalls = new AtomicInteger();
+        ToolCallback tool = FunctionToolCallback.builder("probe_tool", (String value) -> {
+            toolCalls.incrementAndGet();
+            return "tool:" + value;
+        }).inputType(String.class).description("探针工具").build();
+        StringBuilder round2 = new StringBuilder(sse("round-2", "{\"role\":\"assistant\",\"reasoning_content\":\"\"}"));
+        for (String fragment : fragments) {
+            round2.append(sse("round-2", JsonUtils.toJsonString(Map.of("reasoning_content", fragment))));
+        }
+        // 同一 completion 内后续分片的累计推理不变，不应重复输出
+        round2.append(sse("round-2", "{\"content\":\"你好\"}"))
+                .append(sse("round-2", "{\"reasoning_content\":\"\"}"))
+                .append("data: [DONE]\n\n");
+        scriptedResponses = List.of(sse("round-1", "{\"role\":\"assistant\",\"reasoning_content\":\"想\"}")
+                + toolCallSse("round-1", tool.getToolDefinition().name(), "\"probe\""), round2.toString());
+        Ai1LlmChatTool chatTool = new Ai1LlmChatTool();
+        ReflectionTestUtils.setField(chatTool, "llmModelFactory", factory);
+        List<String> thinking = new ArrayList<>();
+        List<String> content = new ArrayList<>();
+
+        // 调用
+        Ai1LlmChatTool.ChatText result = chatTool.chat(model(baseUrl), "系统指令", List.of(), "当前消息",
+                List.of(tool), List.of(), 42L, thinking::add, content::add);
+        // 断言：两轮推理各自取增量，回调保留两轮；工具执行 1 次、请求 2 次
+        List<String> expected = new ArrayList<>(List.of("想"));
+        expected.addAll(fragments);
+        assertEquals(expected, thinking);
+        assertEquals(String.join("", expected), result.getThinking());
+        assertEquals(List.of("你好"), content);
+        assertEquals("你好", result.getContent());
+        assertEquals(1, toolCalls.get());
+        assertEquals(2, requests.size());
+        assertTrue(requests.get(1).body().get("messages").toString().contains("tool:probe"));
+    }
+
+    @Test
+    public void testCache_sessionIsolationAndInvalidation() {
+        // 准备参数
+        Ai1ModelRespBO model = model(baseUrl);
+
+        // 调用
+        Object chat = chatModel(model, 1L);
+        // 断言
+        assertSame(chat, chatModel(model, 1L));
+        assertNotSame(chat, chatModel(model, 2L));
+        EmbeddingModel embedding = factory.getOrCreateEmbeddingModel(model);
+        assertSame(embedding, factory.getOrCreateEmbeddingModel(model));
+
+        // 调用
+        factory.evictByModelId(model.getModelId());
+        // 断言
+        assertNotSame(chat, chatModel(model, 1L));
+        assertNotSame(embedding, factory.getOrCreateEmbeddingModel(model));
+
+        // 准备参数
+        model.setHeaders(Map.of("X-Provider", "provider"));
+        // 调用
+        chat = chatModel(model, 1L);
+        // 断言
+        assertSame(chat, chatModel(model, 2L));
+
+        // 调用
+        model.setApiKey("changed-key");
+        // 断言
+        assertNotSame(chat, chatModel(model, 1L));
+
+        // 调用
+        chat = chatModel(model, 1L);
+        factory.evictByProviderId(model.getProviderId());
+        // 断言
+        assertNotSame(chat, chatModel(model, 1L));
+    }
+
+    @Test
+    public void testCache_chatConfigChange() {
+        // 准备参数
+        Ai1ModelRespBO model = model(baseUrl);
+        Ai1LlmChatTool chatTool = new Ai1LlmChatTool();
+        ReflectionTestUtils.setField(chatTool, "llmModelFactory", factory);
+        Object chat = chatModel(model, 42L);
+
+        // 调用：接口地址变化
+        model.setBaseUrl(baseUrl + "/proxy/v1");
+        chatTool.chat(model, "系统指令", List.of(), "当前消息", List.of(), List.of(), 42L, null, null);
+        // 断言
+        Object changed = chatModel(model, 42L);
+        assertNotSame(chat, changed);
+        assertEquals("/proxy/v1/chat/completions", requests.get(0).path());
+
+        // 调用：请求 Header 变化
+        model.setHeaders(Map.of("X-Session", "{session}", "X-Provider", "changed"));
+        chatTool.chat(model, "系统指令", List.of(), "当前消息", List.of(), List.of(), 42L, null, null);
+        // 断言
+        assertNotSame(changed, chatModel(model, 42L));
+        assertEquals(2, requests.size());
+        assertEquals("/proxy/v1/chat/completions", requests.get(1).path());
+        assertEquals("changed", requests.get(1).provider());
+        assertEquals("42", requests.get(1).session());
+    }
+
+    @Test
+    public void testCache_embeddingConfigChange() {
+        // 准备参数
+        Ai1ModelRespBO model = model(baseUrl);
+        EmbeddingModel embedding = factory.getOrCreateEmbeddingModel(model);
+        embedding.embed("旧配置");
+
+        // 调用：接口地址、请求 Header 变化
+        model.setBaseUrl(baseUrl + "/proxy/v1").setHeaders(Map.of("X-Provider", "changed"));
+        EmbeddingModel changed = factory.getOrCreateEmbeddingModel(model);
+        changed.embed("新配置");
+        // 断言
+        assertNotSame(embedding, changed);
+        assertSame(changed, factory.getOrCreateEmbeddingModel(model));
+        assertEquals(2, requests.size());
+        assertEquals("/v1/embeddings", requests.get(0).path());
+        assertEquals("provider", requests.get(0).provider());
+        assertEquals("/proxy/v1/embeddings", requests.get(1).path());
+        assertEquals("changed", requests.get(1).provider());
+        assertEquals("新配置", requests.get(1).body().get("input").get(0).asText());
+    }
+
+    // ========== 工具方法 ==========
+
+    private Object chatModel(Ai1ModelRespBO model, Long sessionId) {
+        return ReflectionTestUtils.invokeMethod(factory, "getOrCreateChatModel", model, sessionId);
+    }
+
+    private static Ai1ModelRespBO model(String url) {
+        return new Ai1ModelRespBO().setProviderId(1L).setModelId(2L).setBaseUrl(url).setApiKey("test-key")
+                .setModel("test-model").setHeaders(Map.of("X-Session", "{session}", "X-Provider", "provider"));
+    }
+
+    private static String sse(String delta) {
+        return sse("test", delta);
+    }
+
+    private static String sse(String id, String delta) {
+        return "data: {\"id\":\"" + id + "\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"test-model\","
+                + "\"choices\":[{\"index\":0,\"delta\":" + delta + ",\"finish_reason\":null}]}\n\n";
+    }
+
+    private static String toolCallSse(String name) {
+        return toolCallSse("test", name, "{\"command\":\"probe\"}");
+    }
+
+    private static String toolCallSse(String id, String name, String arguments) {
+        String delta = JsonUtils.toJsonString(Map.of("role", "assistant", "tool_calls", List.of(Map.of(
+                "index", 0, "id", "call-probe", "type", "function", "function", Map.of(
+                        "name", name, "arguments", arguments)))));
+        return sse(id, delta)
+                + "data: {\"id\":\"" + id + "\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"test-model\","
+                + "\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n"
+                + "data: [DONE]\n\n";
+    }
+
+    private record Request(String path, String authorization, String session, String provider, JsonNode body) {
+    }
+}

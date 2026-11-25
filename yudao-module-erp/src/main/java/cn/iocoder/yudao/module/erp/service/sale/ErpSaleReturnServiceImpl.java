@@ -148,7 +148,7 @@ public class ErpSaleReturnServiceImpl implements ErpSaleReturnService {
             saleReturn.setDiscountPercent(BigDecimal.ZERO);
         }
         saleReturn.setDiscountPrice(MoneyUtils.priceMultiplyPercent(saleReturn.getTotalPrice(), saleReturn.getDiscountPercent()));
-        saleReturn.setTotalPrice(saleReturn.getTotalPrice().subtract(saleReturn.getDiscountPrice().add(saleReturn.getOtherPrice())));
+        saleReturn.setTotalPrice(saleReturn.getTotalPrice().subtract(saleReturn.getDiscountPrice()).add(saleReturn.getOtherPrice()));
     }
 
     private void updateSaleOrderReturnCount(Long orderId) {
@@ -198,7 +198,7 @@ public class ErpSaleReturnServiceImpl implements ErpSaleReturnService {
     @Override
     public void updateSaleReturnRefundPrice(Long id, BigDecimal refundPrice) {
         ErpSaleReturnDO saleReturn = saleReturnMapper.selectById(id);
-        if (saleReturn.getRefundPrice().equals(refundPrice)) {
+        if (saleReturn.getRefundPrice().compareTo(refundPrice) == 0) {
             return;
         }
         if (refundPrice.compareTo(saleReturn.getTotalPrice()) > 0) {
@@ -311,6 +311,11 @@ public class ErpSaleReturnServiceImpl implements ErpSaleReturnService {
             return Collections.emptyList();
         }
         return saleReturnItemMapper.selectListByReturnIds(returnIds);
+    }
+
+    @Override
+    public Long getSaleReturnItemCountByProductId(Long productId) {
+        return saleReturnItemMapper.selectCount(ErpSaleReturnItemDO::getProductId, productId);
     }
 
 }

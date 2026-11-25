@@ -5,9 +5,12 @@ import cn.hutool.core.lang.func.Func1;
 import cn.hutool.core.lang.func.LambdaUtil;
 import cn.hutool.core.util.ArrayUtil;
 import cn.iocoder.yudao.framework.common.pojo.PageParam;
+import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.pojo.SortablePageParam;
 import cn.iocoder.yudao.framework.common.pojo.SortingField;
 import org.springframework.util.Assert;
+
+import java.util.List;
 
 import static java.util.Collections.singletonList;
 
@@ -22,6 +25,28 @@ public class PageUtils {
 
     public static int getStart(PageParam pageParam) {
         return (pageParam.getPageNo() - 1) * pageParam.getPageSize();
+    }
+
+    /**
+     * 对内存列表分页，不改变列表顺序
+     *
+     * @param pageParam 分页参数，支持 {@link PageParam#PAGE_SIZE_NONE} 返回全部数据
+     * @param list 已排序的完整列表
+     * @param <T> 数据类型
+     * @return 分页结果，超出末页时保留总数并返回空列表
+     */
+    public static <T> PageResult<T> buildPageResult(PageParam pageParam, List<T> list) {
+        if (CollUtil.isEmpty(list)) {
+            return PageResult.empty();
+        }
+        long total = list.size();
+        if (PageParam.PAGE_SIZE_NONE.equals(pageParam.getPageSize())) {
+            return new PageResult<>(list, total);
+        }
+        long offset = (long) (pageParam.getPageNo() - 1) * pageParam.getPageSize();
+        int fromIndex = (int) Math.min(offset, total);
+        int toIndex = (int) Math.min((long) fromIndex + pageParam.getPageSize(), total);
+        return new PageResult<>(list.subList(fromIndex, toIndex), total);
     }
 
     /**

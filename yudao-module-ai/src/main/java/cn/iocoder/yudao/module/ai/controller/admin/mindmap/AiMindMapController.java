@@ -4,6 +4,7 @@ import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.module.ai.controller.admin.mindmap.vo.AiMindMapGenerateReqVO;
+import cn.iocoder.yudao.module.ai.controller.admin.mindmap.vo.AiMindMapGenerateRespVO;
 import cn.iocoder.yudao.module.ai.controller.admin.mindmap.vo.AiMindMapPageReqVO;
 import cn.iocoder.yudao.module.ai.controller.admin.mindmap.vo.AiMindMapRespVO;
 import cn.iocoder.yudao.module.ai.dal.dataobject.mindmap.AiMindMapDO;
@@ -31,7 +32,8 @@ public class AiMindMapController {
 
     @PostMapping(value = "/generate-stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @Operation(summary = "导图生成（流式）", description = "流式返回，响应较快")
-    public Flux<CommonResult<String>> generateMindMap(@RequestBody @Valid AiMindMapGenerateReqVO generateReqVO) {
+    public Flux<CommonResult<AiMindMapGenerateRespVO>> generateMindMap(
+            @RequestBody @Valid AiMindMapGenerateReqVO generateReqVO) {
         return mindMapService.generateMindMap(generateReqVO, getLoginUserId());
     }
 
@@ -44,6 +46,15 @@ public class AiMindMapController {
     public CommonResult<Boolean> deleteMindMap(@RequestParam("id") Long id) {
         mindMapService.deleteMindMap(id);
         return success(true);
+    }
+
+    @GetMapping("/get")
+    @Operation(summary = "获得思维导图")
+    @Parameter(name = "id", description = "编号", required = true, example = "1024")
+    @PreAuthorize("@ss.hasPermission('ai:mind-map:query')")
+    public CommonResult<AiMindMapRespVO> getMindMap(@RequestParam("id") Long id) {
+        AiMindMapDO mindMap = mindMapService.getMindMap(id);
+        return success(BeanUtils.toBean(mindMap, AiMindMapRespVO.class));
     }
 
     @GetMapping("/page")

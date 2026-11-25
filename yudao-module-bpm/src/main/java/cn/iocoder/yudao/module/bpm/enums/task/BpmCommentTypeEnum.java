@@ -13,6 +13,7 @@ import lombok.Getter;
 @AllArgsConstructor
 public enum BpmCommentTypeEnum {
 
+    COMMENT("0", "评论", "{}"),
     APPROVE("1", "审批通过", "审批通过，原因是：{}"),
     REJECT("2", "不通过", "审批不通过：原因是：{}"),
     CANCEL("3", "已取消", "系统自动取消，原因是：{}"),
@@ -22,6 +23,7 @@ public enum BpmCommentTypeEnum {
     TRANSFER("7", "转派", "[{}]将任务转派给[{}]，转派理由为:{}"),
     ADD_SIGN("8", "加签", "[{}]{}给了[{}]，理由为：{}"),
     SUB_SIGN("9", "减签", "[{}]操作了【减签】,审批人[{}]的任务被取消"),
+    RESUBMIT("10", "重新提交", "退回目标处理人修改后重新提交"),
     ;
 
     /**
@@ -40,7 +42,7 @@ public enum BpmCommentTypeEnum {
     private final String comment;
 
     public String formatComment(Object... params) {
-         return StrUtil.format(comment, params);
+        return StrUtil.format(comment, params);
     }
 
 }

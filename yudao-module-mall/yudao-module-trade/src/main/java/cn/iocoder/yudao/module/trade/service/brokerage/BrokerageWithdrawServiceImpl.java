@@ -190,9 +190,10 @@ public class BrokerageWithdrawServiceImpl implements BrokerageWithdrawService {
 
         // 2.1 计算手续费
         Integer feePrice = calculateFeePrice(createReqVO.getPrice(), tradeConfig.getBrokerageWithdrawFeePercent());
-        // 2.2 创建佣金提现记录
+        // 2.2 创建佣金提现记录，状态为审核中
         BrokerageWithdrawDO withdraw = BeanUtils.toBean(createReqVO, BrokerageWithdrawDO.class)
-                .setUserId(userId).setFeePrice(feePrice);
+                .setUserId(userId).setFeePrice(feePrice)
+                .setStatus(BrokerageWithdrawStatusEnum.AUDITING.getStatus());
         brokerageWithdrawMapper.insert(withdraw);
 
         // 3. 创建用户佣金记录
@@ -250,6 +251,12 @@ public class BrokerageWithdrawServiceImpl implements BrokerageWithdrawService {
             }
             // 异常：转账单编号不同，说明转账单编号错误
             log.error("[updateBrokerageWithdrawTransferred][withdraw({}) 转账单不匹配({})，请进行处理！]", withdraw, payTransferId);
+            throw exception(BROKERAGE_WITHDRAW_UPDATE_STATUS_FAIL_PAY_TRANSFER_ID_ERROR);
+        }
+        // 1.3 校验转账单编号，与提现单绑定的转账单编号一致。避免其它支付应用中，相同商户转账编号、金额的转账单被用于更新状态
+        if (ObjectUtil.notEqual(withdraw.getPayTransferId(), payTransferId)) {
+            log.error("[updateBrokerageWithdrawTransferred][withdraw({}) 绑定的转账单({}) 与回调的转账单({}) 不匹配，请进行处理！]",
+                    id, withdraw.getPayTransferId(), payTransferId);
             throw exception(BROKERAGE_WITHDRAW_UPDATE_STATUS_FAIL_PAY_TRANSFER_ID_ERROR);
         }
 

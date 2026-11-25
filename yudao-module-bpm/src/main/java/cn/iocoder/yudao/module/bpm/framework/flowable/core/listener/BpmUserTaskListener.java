@@ -1,0 +1,63 @@
+package cn.iocoder.yudao.module.bpm.framework.flowable.core.listener;
+
+import cn.iocoder.yudao.module.bpm.controller.admin.definition.vo.model.simple.BpmSimpleModelNodeVO;
+import cn.iocoder.yudao.module.bpm.enums.definition.BpmHttpRequestParamTypeEnum;
+import cn.iocoder.yudao.module.bpm.framework.flowable.core.util.BpmHttpRequestUtils;
+import cn.iocoder.yudao.module.bpm.service.task.BpmProcessInstanceQueryService;
+import jakarta.annotation.Resource;
+import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
+import org.flowable.common.engine.api.delegate.Expression;
+import org.flowable.engine.delegate.TaskListener;
+import org.flowable.engine.runtime.ProcessInstance;
+import org.flowable.task.service.delegate.DelegateTask;
+import org.springframework.context.annotation.Scope;
+import org.springframework.stereotype.Component;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import static cn.iocoder.yudao.module.bpm.framework.flowable.core.util.BpmnModelUtils.parseListenerConfig;
+
+/**
+ * BPM 用户任务通用监听器
+ *
+ * @author 芋道源码
+ */
+@Component
+@Slf4j
+@Scope("prototype")
+public class BpmUserTaskListener implements TaskListener {
+
+    public static final String DELEGATE_EXPRESSION = "${bpmUserTaskListener}";
+
+    @Resource
+    private BpmProcessInstanceQueryService processInstanceQueryService;
+
+    @Setter
+    private Expression listenerConfig;
+
+    @Override
+    public void notify(DelegateTask delegateTask) {
+        // 1. 获取所需基础信息
+        ProcessInstance processInstance = processInstanceQueryService.getProcessInstance(delegateTask.getProcessInstanceId());
+        BpmSimpleModelNodeVO.ListenerHandler listenerHandler = parseListenerConfig(listenerConfig);
+
+        // 2. 发起请求
+        // TODO @芋艿：哪些默认参数，后续再调研下；感觉可以搞个 task 字段，把整个 delegateTask 放进去；
+        List<BpmSimpleModelNodeVO.HttpRequestParam> body = listenerHandler.getBody() == null
+                ? new ArrayList<>() : new ArrayList<>(listenerHandler.getBody());
+        body.add(new BpmSimpleModelNodeVO.HttpRequestParam().setKey("processInstanceId")
+                .setType(BpmHttpRequestParamTypeEnum.FIXED_VALUE.getType()).setValue(delegateTask.getProcessInstanceId()));
+        body.add(new BpmSimpleModelNodeVO.HttpRequestParam().setKey("assignee")
+                .setType(BpmHttpRequestParamTypeEnum.FIXED_VALUE.getType()).setValue(delegateTask.getAssignee()));
+        body.add(new BpmSimpleModelNodeVO.HttpRequestParam().setKey("taskDefinitionKey")
+                .setType(BpmHttpRequestParamTypeEnum.FIXED_VALUE.getType()).setValue(delegateTask.getTaskDefinitionKey()));
+        body.add(new BpmSimpleModelNodeVO.HttpRequestParam().setKey("taskId")
+                .setType(BpmHttpRequestParamTypeEnum.FIXED_VALUE.getType()).setValue(delegateTask.getId()));
+        BpmHttpRequestUtils.executeBpmHttpRequest(processInstance,
+                listenerHandler.getPath(), listenerHandler.getHeader(), body, false, null);
+
+        // 3. 是否需要后续操作？TODO 芋艿：待定！
+    }
+}

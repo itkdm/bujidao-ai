@@ -26,9 +26,14 @@
 <!--        <module>yudao-module-iot</module>-->
 <!--        <module>yudao-module-mes</module>-->
 <!--        <module>yudao-module-wms</module>-->
+<!--        <module>yudao-module-hrm</module>-->
+<!--        <module>yudao-module-fms</module>-->
+<!--        <module>yudao-module-pms</module>-->
+<!--        <module>yudao-module-oa</module>-->
 <!--        <module>yudao-module-im</module>-->
 <!-- 请参考 https://doc.iocoder.cn/ai/build/ 文档，完成 AI 模块的启动！！！ -->
 <!--        <module>yudao-module-ai</module>-->
+<!--        <module>yudao-module-ai1-springai</module>-->
     </modules>
 
     <name>${project.artifactId}</name>
@@ -36,7 +41,7 @@
     <url>https://github.com/YunaiV/ruoyi-vue-pro</url>
 
     <properties>
-        <revision>2026.06-SNAPSHOT</revision>
+        <revision>2026.10-SNAPSHOT</revision>
         <!-- Maven 相关 -->
         <java.version>17</java.version>
         <maven.compiler.source>${java.version}</maven.compiler.source>
@@ -45,9 +50,9 @@
         <maven-compiler-plugin.version>3.14.0</maven-compiler-plugin.version>
         <flatten-maven-plugin.version>1.7.2</flatten-maven-plugin.version>
         <!-- maven-surefire-plugin 暂时无法通过 bom 的依赖读取（兼容老版本 IDEA 2024 及以前版本） -->
-        <lombok.version>1.18.42</lombok.version>
-        <spring.boot.version>3.5.15</spring.boot.version>
-        <mapstruct.version>1.6.3</mapstruct.version>
+        <lombok.version>1.18.48</lombok.version>
+        <spring.boot.version>3.5.16</spring.boot.version>
+        <mapstruct.version>1.7.0.Beta2</mapstruct.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 

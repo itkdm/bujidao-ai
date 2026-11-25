@@ -21,7 +21,9 @@
     #set ($listOperationCondition = $column.listOperationCondition)
     #set ($comment = $column.columnComment)
     #set ($dictMethod = "getDictOptions")
-    #if ($javaType == "Integer" || $javaType == "Long" || $javaType == "Byte" || $javaType == "Short")
+    #if ($codegenHelper.isLongCollection($column))## Long 集合：使用字符串的字典值，避免超过 JS 安全整数后精度丢失
+      #set ($dictMethod = "getStrDictOptions")
+    #elseif ($javaType == "Integer" || $javaType == "Long" || $javaType == "Byte" || $javaType == "Short")
       #set ($dictMethod = "getIntDictOptions")
     #elseif ($javaType == "String")
       #set ($dictMethod = "getStrDictOptions")
@@ -41,24 +43,13 @@
       </view>
     #elseif ($column.htmlType == "datetime" && $listOperationCondition == "BETWEEN")
       <yd-search-date-range v-model="formData.${javaField}" label="${comment}" />
-    #elseif (($column.htmlType == "select" || $column.htmlType == "radio") && $dictType && "" != $dictType)
-      <view class="yd-search-form-item">
-        <view class="yd-search-form-label">
-          ${comment}
-        </view>
-        <wd-radio-group v-model="formData.${javaField}" type="button">
-          <wd-radio :value="-1">
-            全部
-          </wd-radio>
-          <wd-radio
-            v-for="dict in $dictMethod(DICT_TYPE.$dictType.toUpperCase())"
-            :key="dict.value"
-            :value="dict.value"
-          >
-            {{ dict.label }}
-          </wd-radio>
-        </wd-radio-group>
-      </view>
+    #elseif (($column.htmlType == "select" || $column.htmlType == "radio" || $codegenHelper.isCollection($column)) && $dictType && "" != $dictType)## 集合（多选）字段按单个元素搜索
+      <yd-search-picker
+        v-model="formData.${javaField}"
+        label="${comment}"
+        :columns="$dictMethod(DICT_TYPE.$dictType.toUpperCase())"
+        all-option
+      />
     #else
       <view class="yd-search-form-item">
         <view class="yd-search-form-label">
@@ -95,8 +86,10 @@
 #foreach($column in $columns)
   #if ($column.listOperation && $column.dictType && "" != $column.dictType)
     #set ($hasDict = 1)
-    #if ($column.htmlType == "select" || $column.htmlType == "radio")
-      #if ($column.javaType == "Integer" || $column.javaType == "Long" || $column.javaType == "Byte" || $column.javaType == "Short")
+    #if ($column.htmlType == "select" || $column.htmlType == "radio" || $codegenHelper.isCollection($column))
+      #if ($codegenHelper.isLongCollection($column))## Long 集合：使用字符串的字典值，避免超过 JS 安全整数后精度丢失
+        #set ($hasGetStrDictOptions = 1)
+      #elseif ($column.javaType == "Integer" || $column.javaType == "Long" || $column.javaType == "Byte" || $column.javaType == "Short")
         #set ($hasGetIntDictOptions = 1)
       #elseif ($column.javaType == "String")
         #set ($hasGetStrDictOptions = 1)
@@ -150,13 +143,13 @@ const formData = reactive({
   ${column.javaField}: [undefined, undefined] as [number | undefined, number | undefined],
     #elseif ($column.dictType && "" != $column.dictType)
       #if(${javaType} == "string")
-  ${column.javaField}: -1 as -1 | string, // -1 表示全部
+  ${column.javaField}: undefined as string | undefined,
       #elseif(${javaType} == "boolean")
-  ${column.javaField}: -1 as -1 | boolean, // -1 表示全部
+  ${column.javaField}: undefined as boolean | undefined,
       #else
-  ${column.javaField}: -1, // -1 表示全部
+  ${column.javaField}: undefined as number | undefined,
       #end
-    #elseif(${javaType} == "long" || ${javaType} == "integer" || ${javaType} == "short" || ${javaType} == "double" || ${javaType} == "bigdecimal" || ${javaType} == "byte")
+    #elseif(${javaType} == "long" || ${javaType} == "integer" || ${javaType} == "short" || ${javaType} == "float" || ${javaType} == "double" || ${javaType} == "bigdecimal" || ${javaType} == "byte")
   ${column.javaField}: undefined as number | undefined,
     #elseif(${javaType} == "boolean")
   ${column.javaField}: undefined as boolean | undefined,
@@ -181,11 +174,11 @@ const placeholder = computed(() => {
     conditions.push(`${comment}:#[[${]]#formatDate(formData.${javaField}[0])#[[}]]#~#[[${]]#formatDate(formData.${javaField}[1])#[[}]]#`)
   }
     #elseif ($dictType && "" != $dictType)
-  if (formData.${javaField} !== -1) {
+  if (formData.${javaField} !== undefined) {
     conditions.push(`${comment}:#[[${]]#getDictLabel(DICT_TYPE.${dictType.toUpperCase()}, formData.${javaField})#[[}]]#`)
   }
     #else
-      #if(${javaType} == "long" || ${javaType} == "integer" || ${javaType} == "short" || ${javaType} == "double" || ${javaType} == "bigdecimal" || ${javaType} == "byte" || ${javaType} == "boolean")
+      #if(${javaType} == "long" || ${javaType} == "integer" || ${javaType} == "short" || ${javaType} == "float" || ${javaType} == "double" || ${javaType} == "bigdecimal" || ${javaType} == "byte" || ${javaType} == "boolean")
   if (formData.${javaField} !== undefined) {
     conditions.push(`${comment}:#[[${]]#formData.${javaField}#[[}]]#`)
   }
@@ -207,9 +200,7 @@ function handleSearch() {
     ...formData,
 #foreach($column in $columns)
   #if ($column.listOperation)
-    #if ($column.dictType && "" != $column.dictType)
-    ${column.javaField}: formData.${column.javaField} === -1 ? undefined : formData.${column.javaField},
-    #elseif ($column.htmlType == "datetime" && $column.listOperationCondition == "BETWEEN")
+    #if ($column.htmlType == "datetime" && $column.listOperationCondition == "BETWEEN")
     ${column.javaField}: formatDateRange(formData.${column.javaField}),
     #end
   #end
@@ -224,7 +215,7 @@ function handleReset() {
     #if ($column.htmlType == "datetime" && $column.listOperationCondition == "BETWEEN")
   formData.${column.javaField} = [undefined, undefined]
     #elseif ($column.dictType && "" != $column.dictType)
-  formData.${column.javaField} = -1
+  formData.${column.javaField} = undefined
     #else
   formData.${column.javaField} = undefined
     #end

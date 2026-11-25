@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Schema(description = "管理后台 - AI 模型 Response VO")
 @Data
@@ -18,10 +19,16 @@ public class AiModelRespVO {
     @Schema(description = "模型名字", example = "张三")
     private String name;
 
+    @Schema(description = "模型简介", example = "通用推荐")
+    private String description;
+
+    @Schema(description = "模型图标地址", example = "https://www.iocoder.cn/suno.png")
+    private String iconUrl;
+
     @Schema(description = "模型标识", example = "gpt-3.5-turbo-0125")
     private String model;
 
-    @Schema(description = "模型平台", example = "OpenAI")
+    @Schema(description = "模型平台", example = "OPENAI")
     private String platform;
 
     @Schema(description = "模型类型", example = "1")
@@ -41,6 +48,12 @@ public class AiModelRespVO {
 
     @Schema(description = "上下文的最大 Message 数量", example = "8192")
     private Integer maxContexts;
+
+    @Schema(description = "输入模态数组", example = "[\"text\", \"image\"]")
+    private List<String> inputModalities;
+
+    @Schema(description = "思考配置", example = "{\"levels\":[{\"level\":\"off\",\"options\":{\"thinking\":{\"type\":\"disabled\"}}}],\"defaultLevel\":\"off\"}")
+    private AiModelSaveReqVO.ReasoningConfig reasoningConfig;
 
     @Schema(description = "创建时间", requiredMode = Schema.RequiredMode.REQUIRED)
     private LocalDateTime createTime;

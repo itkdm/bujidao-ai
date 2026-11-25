@@ -3,10 +3,10 @@ package cn.iocoder.yudao.module.iot.controller.admin.product.vo.product;
 import cn.iocoder.yudao.framework.excel.core.annotations.DictFormat;
 import cn.iocoder.yudao.framework.excel.core.convert.DictConvert;
 import cn.iocoder.yudao.module.iot.enums.DictTypeConstants;
-import cn.idev.excel.annotation.ExcelIgnoreUnannotated;
-import cn.idev.excel.annotation.ExcelProperty;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
+import org.apache.fesod.sheet.annotation.ExcelIgnoreUnannotated;
+import org.apache.fesod.sheet.annotation.ExcelProperty;
 
 import java.time.LocalDateTime;
 
@@ -76,6 +76,12 @@ public class IotProductRespVO {
     @ExcelProperty(value = "序列化类型", converter = DictConvert.class)
     @DictFormat(DictTypeConstants.SERIALIZE_TYPE)
     private String serializeType;
+
+    @Schema(description = "数据解析脚本（JS ES5）")
+    private String scriptContent;
+
+    @Schema(description = "是否启用数据解析脚本", example = "false")
+    private Boolean scriptEnabled;
 
     @Schema(description = "创建时间", requiredMode = Schema.RequiredMode.REQUIRED)
     @ExcelProperty("创建时间")

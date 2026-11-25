@@ -1,23 +1,34 @@
 package cn.iocoder.yudao.module.system.service.permission;
 
 import cn.iocoder.yudao.framework.common.enums.CommonStatusEnum;
+import cn.iocoder.yudao.framework.security.core.LoginUser;
+import cn.iocoder.yudao.framework.security.core.util.SecurityFrameworkUtils;
+import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
+import cn.iocoder.yudao.framework.tenant.core.util.TenantUtils;
 import cn.iocoder.yudao.framework.test.core.ut.BaseDbUnitTest;
 import cn.iocoder.yudao.module.system.controller.admin.permission.vo.menu.MenuListReqVO;
 import cn.iocoder.yudao.module.system.controller.admin.permission.vo.menu.MenuSaveVO;
 import cn.iocoder.yudao.module.system.dal.dataobject.permission.MenuDO;
 import cn.iocoder.yudao.module.system.dal.mysql.permission.MenuMapper;
 import cn.iocoder.yudao.module.system.enums.permission.MenuTypeEnum;
+import cn.iocoder.yudao.module.system.enums.permission.RoleCodeEnum;
 import cn.iocoder.yudao.module.system.service.tenant.TenantService;
+import cn.iocoder.yudao.module.system.service.tenant.handler.TenantMenuHandler;
 import jakarta.annotation.Resource;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
 import org.springframework.context.annotation.Import;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
+import static cn.iocoder.yudao.framework.common.util.collection.CollectionUtils.convertSet;
 import static cn.iocoder.yudao.framework.common.util.collection.SetUtils.asSet;
 import static cn.iocoder.yudao.framework.common.util.object.ObjectUtils.cloneIgnoreId;
 import static cn.iocoder.yudao.framework.test.core.util.AssertUtils.assertPojoEquals;
@@ -25,11 +36,10 @@ import static cn.iocoder.yudao.framework.test.core.util.AssertUtils.assertServic
 import static cn.iocoder.yudao.framework.test.core.util.RandomUtils.*;
 import static cn.iocoder.yudao.module.system.dal.dataobject.permission.MenuDO.ID_ROOT;
 import static cn.iocoder.yudao.module.system.enums.ErrorCodeConstants.*;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.Mockito.doNothing;
-import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.*;
 
 @Import(MenuServiceImpl.class)
 public class MenuServiceImplTest extends BaseDbUnitTest {
@@ -37,13 +47,18 @@ public class MenuServiceImplTest extends BaseDbUnitTest {
     @Resource
     private MenuServiceImpl menuService;
 
-    @Resource
+    @MockitoSpyBean
     private MenuMapper menuMapper;
 
     @MockitoBean
     private PermissionService permissionService;
     @MockitoBean
     private TenantService tenantService;
+
+    @AfterEach
+    public void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
 
     @Test
     public void testCreateMenu_success() {
@@ -188,6 +203,78 @@ public class MenuServiceImplTest extends BaseDbUnitTest {
     }
 
     @Test
+    public void testGetMenuListByTenant_tenantDisable() {
+        // mock 数据
+        MenuDO menu100 = randomPojo(MenuDO.class, o -> o.setId(100L).setStatus(CommonStatusEnum.ENABLE.getStatus()));
+        menuMapper.insert(menu100);
+        MenuDO menu101 = randomPojo(MenuDO.class, o -> o.setId(101L).setStatus(CommonStatusEnum.ENABLE.getStatus()));
+        menuMapper.insert(menu101);
+        // mock 禁用多租户：TenantService 不执行过滤处理器
+        doNothing().when(tenantService).handleTenantMenu(any());
+        // 准备参数
+        MenuListReqVO reqVO = new MenuListReqVO().setStatus(CommonStatusEnum.ENABLE.getStatus());
+
+        // 调用
+        List<MenuDO> result = menuService.getMenuListByTenant(reqVO);
+        // 断言：返回全部菜单
+        assertEquals(asSet(100L, 101L), convertSet(result, MenuDO::getId));
+    }
+
+    @Test
+    public void testGetMenuListByTenant_systemTenant() {
+        // mock 数据
+        MenuDO menu100 = randomPojo(MenuDO.class, o -> o.setId(100L).setStatus(CommonStatusEnum.ENABLE.getStatus()));
+        menuMapper.insert(menu100);
+        MenuDO menu101 = randomPojo(MenuDO.class, o -> o.setId(101L).setStatus(CommonStatusEnum.ENABLE.getStatus()));
+        menuMapper.insert(menu101);
+        // mock 系统租户：处理器得到全量菜单编号
+        doNothing().when(tenantService).handleTenantMenu(argThat(handler -> {
+            handler.handle(asSet(100L, 101L));
+            return true;
+        }));
+        // 准备参数
+        MenuListReqVO reqVO = new MenuListReqVO();
+
+        // 调用
+        List<MenuDO> result = menuService.getMenuListByTenant(reqVO);
+        // 断言：返回全部菜单
+        assertEquals(asSet(100L, 101L), convertSet(result, MenuDO::getId));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void testGetMenuListByTenant_visitTenant(boolean superAdmin) {
+        // mock 数据：访问租户的套餐只开通菜单 100
+        int status = CommonStatusEnum.ENABLE.getStatus();
+        menuMapper.insert(randomPojo(MenuDO.class, o -> o.setId(100L).setStatus(status)));
+        menuMapper.insert(randomPojo(MenuDO.class, o -> o.setId(101L).setStatus(status)));
+        menuMapper.insert(randomPojo(MenuDO.class,
+                o -> o.setId(102L).setStatus(CommonStatusEnum.DISABLE.getStatus())));
+        doAnswer(invocation -> {
+            assertEquals(121L, TenantContextHolder.getTenantId());
+            invocation.<TenantMenuHandler>getArgument(0).handle(asSet(100L));
+            return null;
+        }).when(tenantService).handleTenantMenu(any());
+        // mock 方法：在登录租户查询用户角色
+        SecurityFrameworkUtils.setLoginUser(new LoginUser().setId(10L).setTenantId(1L).setVisitTenantId(121L),
+                new MockHttpServletRequest());
+        when(permissionService.hasAnyRoles(10L, RoleCodeEnum.SUPER_ADMIN.getCode())).thenAnswer(invocation -> {
+            assertEquals(1L, TenantContextHolder.getTenantId());
+            return superAdmin;
+        });
+        MenuListReqVO reqVO = new MenuListReqVO().setStatus(status);
+
+        // 调用
+        TenantUtils.execute(121L, () -> {
+            List<MenuDO> result = menuService.getMenuListByTenant(reqVO);
+            // 断言：超管跳过套餐过滤，两个场景都保留状态筛选和访问租户上下文
+            assertEquals(superAdmin ? asSet(100L, 101L) : asSet(100L), convertSet(result, MenuDO::getId));
+            assertEquals(121L, TenantContextHolder.getTenantId());
+        });
+        verify(permissionService).hasAnyRoles(10L, RoleCodeEnum.SUPER_ADMIN.getCode());
+    }
+
+    @Test
     public void testGetMenuIdListByPermissionFromCache() {
         // mock 数据
         MenuDO menu100 = randomPojo(MenuDO.class);
@@ -219,6 +306,47 @@ public class MenuServiceImplTest extends BaseDbUnitTest {
         // 断言
         assertEquals(1, list.size());
         assertPojoEquals(menu100, list.get(0));
+    }
+
+    @Test
+    public void testGetMenuList_idsEmpty() {
+        // 调用，并断言
+        assertTrue(menuService.getMenuList((Collection<Long>) null).isEmpty());
+        assertTrue(menuService.getMenuList(Collections.<Long>emptyList()).isEmpty());
+        // 断言：不查询数据库
+        verify(menuMapper, never()).selectByIds(anyCollection());
+    }
+
+    @Test
+    public void testGetMenuList_idsMoreThanBatchSize() {
+        // mock 数据（1001 个菜单，超过 Oracle IN 的 1000 个限制）
+        Set<Long> menuIds = new HashSet<>();
+        for (int i = 0; i < 1001; i++) {
+            MenuDO menu = buildMenuDO(MenuTypeEnum.MENU, "menu" + i, ID_ROOT);
+            menuMapper.insert(menu);
+            menuIds.add(menu.getId());
+        }
+        // mock 数据（已删除的菜单）
+        MenuDO deletedMenu = buildMenuDO(MenuTypeEnum.MENU, "deleted", ID_ROOT);
+        menuMapper.insert(deletedMenu);
+        menuMapper.deleteById(deletedMenu.getId());
+        // 准备参数（包含重复、不存在、已删除的编号）
+        List<Long> ids = new ArrayList<>(menuIds);
+        ids.add(ids.get(0));
+        ids.add(Long.MAX_VALUE);
+        ids.add(deletedMenu.getId());
+
+        // 调用
+        List<MenuDO> list = menuService.getMenuList(ids);
+        // 断言：结果完整，且不重复
+        assertEquals(1001, list.size());
+        assertEquals(menuIds, convertSet(list, MenuDO::getId));
+        // 断言：每批 IN 不超过 1000 个（Oracle 限制）
+        ArgumentCaptor<Collection<Long>> batchIdsCaptor = ArgumentCaptor.forClass(Collection.class);
+        verify(menuMapper, atLeastOnce()).selectByIds(batchIdsCaptor.capture());
+        for (Collection<Long> batchIds : batchIdsCaptor.getAllValues()) {
+            assertTrue(batchIds.size() <= 1000);
+        }
     }
 
     @Test

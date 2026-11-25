@@ -1,5 +1,6 @@
 package cn.iocoder.yudao.module.system.service.mail;
 
+import cn.hutool.core.exceptions.ExceptionUtil;
 import cn.hutool.core.map.MapUtil;
 import cn.iocoder.yudao.framework.common.enums.CommonStatusEnum;
 import cn.iocoder.yudao.framework.common.enums.UserTypeEnum;
@@ -17,14 +18,26 @@ import org.dromara.hutool.extra.mail.MailAccount;
 import org.dromara.hutool.extra.mail.MailUtil;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 
 import java.io.File;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 
 import static cn.hutool.core.util.RandomUtil.randomEle;
 import static cn.iocoder.yudao.framework.test.core.util.AssertUtils.assertServiceException;
@@ -85,13 +98,11 @@ public class MailSendServiceImplTest extends BaseMockitoUnitTest {
         // mock MailTemplateService 的方法
         MailTemplateDO template = randomPojo(MailTemplateDO.class, o -> {
             o.setStatus(CommonStatusEnum.ENABLE.getStatus());
+            o.setTitle("{op} 验证码");
             o.setContent("验证码为{code}, 操作为{op}");
             o.setParams(Lists.newArrayList("code", "op"));
         });
         when(mailTemplateService.getMailTemplateByCodeFromCache(eq(templateCode))).thenReturn(template);
-        String title = RandomUtils.randomString();
-        when(mailTemplateService.formatMailTemplateContent(eq(template.getTitle()), eq(templateParams)))
-                .thenReturn(title);
         String content = RandomUtils.randomString();
         when(mailTemplateService.formatMailTemplateContent(eq(template.getContent()), eq(templateParams)))
                 .thenReturn(content);
@@ -116,7 +127,7 @@ public class MailSendServiceImplTest extends BaseMockitoUnitTest {
                 argThat(toMailSet -> toMailSet.contains(user.getEmail()) && toMailSet.contains("admin@test.com")),
                 argThat(ccMailSet -> ccMailSet.contains("cc@test.com")),
                 argThat(bccMailSet -> bccMailSet.contains("bcc@test.com")),
-                eq(account.getId()), eq(template.getNickname()), eq(title), eq(content), isNull());
+                eq(account.getId()), eq(template.getNickname()), eq("login 验证码"), eq(content), isNull());
     }
 
     /**
@@ -136,13 +147,11 @@ public class MailSendServiceImplTest extends BaseMockitoUnitTest {
         // mock MailTemplateService 的方法
         MailTemplateDO template = randomPojo(MailTemplateDO.class, o -> {
             o.setStatus(CommonStatusEnum.ENABLE.getStatus());
+            o.setTitle("验证码通知");
             o.setContent("验证码为{code}, 操作为{op}");
             o.setParams(Lists.newArrayList("code", "op"));
         });
         when(mailTemplateService.getMailTemplateByCodeFromCache(eq(templateCode))).thenReturn(template);
-        String title = RandomUtils.randomString();
-        when(mailTemplateService.formatMailTemplateContent(eq(template.getTitle()), eq(templateParams)))
-                .thenReturn(title);
         String content = RandomUtils.randomString();
         when(mailTemplateService.formatMailTemplateContent(eq(template.getContent()), eq(templateParams)))
                 .thenReturn(content);
@@ -166,7 +175,65 @@ public class MailSendServiceImplTest extends BaseMockitoUnitTest {
                 argThat(toMailSet -> toMailSet.contains(mail)),
                 argThat(Collection::isEmpty),
                 argThat(Collection::isEmpty),
-                eq(account.getId()), eq(template.getNickname()), eq(title), eq(content), isNull());
+                eq(account.getId()), eq(template.getNickname()), eq("验证码通知"), eq(content), isNull());
+    }
+
+    /**
+     * 发送成功，标题按纯文本处理：替换参数、按原有替换链反转义 HTML 实体，不按 HTML 正文解析
+     */
+    @Test
+    public void testSendSingleMail_plainTextTitle() {
+        // 准备参数
+        String templateCode = RandomUtils.randomString();
+        Map<String, Object> templateParams = MapUtil.<String, Object>builder().put("shop", "芋道 <商城>").build();
+        Collection<String> toMails = Lists.newArrayList("admin@test.com");
+
+        // mock MailTemplateService 的方法
+        MailTemplateDO template = randomPojo(MailTemplateDO.class, o -> {
+            o.setStatus(CommonStatusEnum.ENABLE.getStatus());
+            o.setTitle("【{shop}】研发 & 运维 &amp; 测试 <待发货>&nbsp;&amp;lt;急&amp;gt; &amp;amp;");
+            o.setContent("<p>{shop}</p>");
+            o.setParams(Lists.newArrayList("shop"));
+        });
+        when(mailTemplateService.getMailTemplateByCodeFromCache(eq(templateCode))).thenReturn(template);
+        String content = RandomUtils.randomString();
+        when(mailTemplateService.formatMailTemplateContent(eq(template.getContent()), eq(templateParams)))
+                .thenReturn(content);
+        // mock MailAccountService 的方法
+        MailAccountDO account = randomPojo(MailAccountDO.class);
+        when(mailAccountService.getMailAccountFromCache(eq(template.getAccountId()))).thenReturn(account);
+        // mock MailLogService 的方法
+        Long mailLogId = randomLongId();
+        when(mailLogService.createMailLog(isNull(), isNull(), any(), any(), any(),
+                eq(account), eq(template), eq(content), eq(templateParams), eq(true))).thenReturn(mailLogId);
+
+        // 调用
+        mailSendService.sendSingleMail(toMails, null, null, null, null, templateCode, templateParams, (File[]) null);
+        // 断言：MQ 消息中的标题完整保留 &、尖括号，参数被替换；
+        // 实体按原有替换链反转义：&amp;lt; 还原为 <，&nbsp; 为 ASCII 空格，&amp;amp; 只还原一次为 &amp;
+        String expectedTitle = "【芋道 <商城>】研发 & 运维 & 测试 <待发货> <急> &amp;";
+        ArgumentCaptor<String> titleCaptor = ArgumentCaptor.forClass(String.class);
+        verify(mailProducer).sendMailSendMessage(eq(mailLogId), any(), any(), any(),
+                eq(account.getId()), eq(template.getNickname()), titleCaptor.capture(), eq(content), isNull());
+        assertEquals(expectedTitle, titleCaptor.getValue());
+        // 断言：标题没有走 HTML 正文格式化
+        verify(mailTemplateService, never()).formatMailTemplateContent(eq(template.getTitle()), any());
+
+        // 继续执行 MQ 消费，断言最终传给 MailUtil.send 的标题一致
+        try (MockedStatic<MailUtil> mailUtilMock = mockStatic(MailUtil.class)) {
+            MailSendMessage message = randomPojo(MailSendMessage.class, o -> o.setLogId(mailLogId)
+                    .setAccountId(template.getAccountId()).setNickname(template.getNickname())
+                    .setTitle(titleCaptor.getValue()).setContent(content));
+            String messageId = randomString();
+            mailUtilMock.when(() -> MailUtil.send(any(MailAccount.class), eq(message.getToMails()),
+                    eq(message.getCcMails()), eq(message.getBccMails()), eq(expectedTitle), eq(content),
+                    eq(true), eq(message.getAttachments()))).thenReturn(messageId);
+
+            // 调用
+            mailSendService.doSendMail(message);
+            // 断言
+            verify(mailLogService).updateMailSendResult(eq(mailLogId), eq(messageId), isNull());
+        }
     }
 
     /**
@@ -190,9 +257,6 @@ public class MailSendServiceImplTest extends BaseMockitoUnitTest {
             o.setParams(Lists.newArrayList("code", "op"));
         });
         when(mailTemplateService.getMailTemplateByCodeFromCache(eq(templateCode))).thenReturn(template);
-        String title = RandomUtils.randomString();
-        when(mailTemplateService.formatMailTemplateContent(eq(template.getTitle()), eq(templateParams)))
-                .thenReturn(title);
         String content = RandomUtils.randomString();
         when(mailTemplateService.formatMailTemplateContent(eq(template.getContent()), eq(templateParams)))
                 .thenReturn(content);
@@ -273,7 +337,7 @@ public class MailSendServiceImplTest extends BaseMockitoUnitTest {
             // 准备参数
             MailSendMessage message = randomPojo(MailSendMessage.class, o -> o.setNickname("芋艿"));
             // mock 方法（获得邮箱账号）
-            MailAccountDO account = randomPojo(MailAccountDO.class, o -> o.setMail("7685@qq.com"));
+            MailAccountDO account = randomPojo(MailAccountDO.class, o -> o.setMail("7685@qq.com").setTimeout(10000));
             when(mailAccountService.getMailAccountFromCache(eq(message.getAccountId())))
                     .thenReturn(account);
 
@@ -288,6 +352,7 @@ public class MailSendServiceImplTest extends BaseMockitoUnitTest {
                         assertEquals(account.getHost(), mailAccount.getHost());
                         assertEquals(account.getPort(), mailAccount.getPort());
                         assertEquals(account.getSslEnable(), mailAccount.isSslEnable());
+                        assertEquals("10000", mailAccount.getSmtpProps().getProperty("mail.smtp.timeout"));
                         return true;
                     }), eq(message.getToMails()), eq(message.getCcMails()), eq(message.getBccMails()),
                     eq(message.getTitle()), eq(message.getContent()), eq(true), eq(message.getAttachments())))
@@ -306,7 +371,7 @@ public class MailSendServiceImplTest extends BaseMockitoUnitTest {
             // 准备参数
             MailSendMessage message = randomPojo(MailSendMessage.class, o -> o.setNickname("芋艿"));
             // mock 方法（获得邮箱账号）
-            MailAccountDO account = randomPojo(MailAccountDO.class, o -> o.setMail("7685@qq.com"));
+            MailAccountDO account = randomPojo(MailAccountDO.class, o -> o.setMail("7685@qq.com").setTimeout(0));
             when(mailAccountService.getMailAccountFromCache(eq(message.getAccountId())))
                     .thenReturn(account);
 
@@ -320,6 +385,8 @@ public class MailSendServiceImplTest extends BaseMockitoUnitTest {
                         assertEquals(account.getHost(), mailAccount.getHost());
                         assertEquals(account.getPort(), mailAccount.getPort());
                         assertEquals(account.getSslEnable(), mailAccount.isSslEnable());
+                        // 读取超时为 0 时不限制，不写入 SMTP 属性
+                        assertNull(mailAccount.getSmtpProps().getProperty("mail.smtp.timeout"));
                         return true;
                     }), eq(message.getToMails()), eq(message.getCcMails()), eq(message.getBccMails()),
                     eq(message.getTitle()), eq(message.getContent()), eq(true), same(message.getAttachments()))).thenThrow(e);
@@ -329,6 +396,91 @@ public class MailSendServiceImplTest extends BaseMockitoUnitTest {
             // 断言
             verify(mailLogService).updateMailSendResult(eq(message.getLogId()), isNull(), same(e));
         }
+    }
+
+    @Test
+    public void testDoSendMail_readTimeout() throws Exception {
+        // 准备参数：本地 SMTP 服务端只接受连接、不发送问候语，读取超时 500 毫秒
+        ExecutorService executor = Executors.newFixedThreadPool(2, DAEMON_THREAD_FACTORY);
+        ServerSocket server = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"));
+        Future<Socket> accepted = executor.submit(server::accept);
+        try {
+            MailSendMessage message = mockLocalMailAccount(server.getLocalPort(), 500);
+
+            // 调用：经真实 MailUtil 连接本地服务端
+            long start = System.nanoTime();
+            executor.submit(() -> mailSendService.doSendMail(message)).get(5, TimeUnit.SECONDS);
+            long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+            // 断言：等待问候语读取超时，失败结果写入发送日志
+            ArgumentCaptor<Exception> exceptionCaptor = ArgumentCaptor.forClass(Exception.class);
+            verify(mailLogService).updateMailSendResult(eq(message.getLogId()), isNull(), exceptionCaptor.capture());
+            assertTrue(ExceptionUtil.isCausedBy(exceptionCaptor.getValue(), SocketTimeoutException.class));
+            assertTrue(elapsedMillis >= 400 && elapsedMillis < 5000, "实际耗时：" + elapsedMillis + " 毫秒");
+        } finally {
+            closeLocalSmtpServer(server, accepted);
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    public void testDoSendMail_noReadTimeout() throws Exception {
+        // 准备参数：本地 SMTP 服务端只接受连接、不发送问候语，读取超时 0 表示不限制
+        ExecutorService executor = Executors.newFixedThreadPool(2, DAEMON_THREAD_FACTORY);
+        ServerSocket server = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"));
+        Future<Socket> accepted = executor.submit(server::accept);
+        try {
+            MailSendMessage message = mockLocalMailAccount(server.getLocalPort(), 0);
+
+            // 调用：经真实 MailUtil 连接本地服务端
+            Future<?> sending = executor.submit(() -> mailSendService.doSendMail(message));
+            // 断言：超过正值用例的读取超时后，仍在等待问候语
+            Thread.sleep(1500);
+            assertFalse(sending.isDone());
+            verifyNoInteractions(mailLogService);
+
+            // 调用：服务端主动断开连接，结束等待
+            accepted.get(1, TimeUnit.SECONDS).close();
+            sending.get(5, TimeUnit.SECONDS);
+            // 断言：因连接断开而失败，不是读取超时
+            ArgumentCaptor<Exception> exceptionCaptor = ArgumentCaptor.forClass(Exception.class);
+            verify(mailLogService).updateMailSendResult(eq(message.getLogId()), isNull(), exceptionCaptor.capture());
+            assertFalse(ExceptionUtil.isCausedBy(exceptionCaptor.getValue(), SocketTimeoutException.class));
+        } finally {
+            closeLocalSmtpServer(server, accepted);
+            executor.shutdownNow();
+        }
+    }
+
+    /**
+     * 守护线程工厂，避免发送线程意外阻塞时拖住测试进程退出
+     */
+    private static final ThreadFactory DAEMON_THREAD_FACTORY = runnable -> {
+        Thread thread = new Thread(runnable);
+        thread.setDaemon(true);
+        return thread;
+    };
+
+    private MailSendMessage mockLocalMailAccount(int port, int timeout) {
+        MailSendMessage message = randomPojo(MailSendMessage.class, o -> o.setNickname("芋艿")
+                .setToMails(Lists.newArrayList("to@example.com")).setCcMails(Collections.emptyList())
+                .setBccMails(Collections.emptyList()).setAttachments(new File[0]));
+        MailAccountDO account = randomPojo(MailAccountDO.class, o -> o.setMail("from@example.com")
+                .setHost("127.0.0.1").setPort(port).setSslEnable(false).setStarttlsEnable(false)
+                .setTimeout(timeout));
+        when(mailAccountService.getMailAccountFromCache(eq(message.getAccountId()))).thenReturn(account);
+        return message;
+    }
+
+    private static void closeLocalSmtpServer(ServerSocket server, Future<Socket> accepted) throws Exception {
+        // 先关闭已接受的连接，解除仍在等待的发送线程，再关闭监听端口
+        if (accepted.isDone() && !accepted.isCancelled()) {
+            try {
+                accepted.get().close();
+            } catch (ExecutionException ignored) {
+                // 监听端口已关闭，没有接受到连接
+            }
+        }
+        server.close();
     }
 
 }

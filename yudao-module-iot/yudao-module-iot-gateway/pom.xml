@@ -12,8 +12,9 @@
     <name>${project.artifactId}</name>
     <description>
         iot 模块下，设备网关：
-        ① 功能一：接收来自设备的消息，并进行解码（decode）后，发送到消息网关，提供给 iot-biz 进行处理
-        ② 功能二：接收来自消息网关的消息（由 iot-biz 发送），并进行编码（encode）后，发送给设备
+        ① 功能一：接收来自设备的消息，并进行解码（decode）后，发送到消息总线，提供给 iot-biz 进行处理
+        ② 功能二：接收来自消息总线的消息（由 iot-biz 发送），并进行编码（encode）后，发送给设备
+        目前已支持 HTTP、MQTT、EMQX、TCP、UDP、WebSocket、CoAP、Modbus 等协议
     </description>
 
     <dependencies>
@@ -39,6 +40,11 @@
             <artifactId>rocketmq-spring-boot-starter</artifactId>
             <optional>true</optional>
         </dependency>
+        <dependency>
+            <groupId>org.springframework.amqp</groupId>
+            <artifactId>spring-rabbit</artifactId>
+            <optional>true</optional>
+        </dependency>
 
         <!-- 工具类相关 -->
         <dependency>
@@ -58,10 +64,30 @@
             <artifactId>j2mod</artifactId>
         </dependency>
 
+        <!-- OPC UA 相关 - 芋道 Milo -->
+        <dependency>
+            <groupId>cn.iocoder.boot</groupId>
+            <artifactId>yudao-milo-sdk-client</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.iocoder.boot</groupId>
+            <artifactId>yudao-milo-sdk-server</artifactId> <!-- OPC UA Server：北向只读数据服务，默认关闭 -->
+        </dependency>
+
         <!-- CoAP 相关 - Eclipse Californium -->
         <dependency>
             <groupId>org.eclipse.californium</groupId>
             <artifactId>californium-core</artifactId>
+        </dependency>
+
+        <!-- 离线暂存相关 -->
+        <dependency>
+            <groupId>org.xerial</groupId>
+            <artifactId>sqlite-jdbc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-jdbc</artifactId>
         </dependency>
 
         <!-- 测试相关 -->
@@ -76,7 +102,7 @@
         <!-- 设置构建的 jar 包名 -->
         <finalName>${project.artifactId}</finalName>
         <plugins>
-            <!-- 打包 -->
+            <!-- 打包：普通 jar 供 biz 引入，-exec.jar 独立运行 -->
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
@@ -86,6 +112,10 @@
                         <goals>
                             <goal>repackage</goal> <!-- 将引入的 jar 打入其中 -->
                         </goals>
+                        <configuration>
+                            <!-- 可执行 jar 使用 exec 分类，主 artifact 保留为普通可依赖 jar -->
+                            <classifier>exec</classifier>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>

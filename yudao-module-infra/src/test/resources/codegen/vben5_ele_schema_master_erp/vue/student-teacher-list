@@ -5,8 +5,8 @@ import type { InfraStudentApi } from '#/api/infra/demo';
  import StudentTeacherForm from './student-teacher-form.vue'
 import { useVbenModal } from '@vben/common-ui';
 import { ElMessage, ElLoading } from 'element-plus';
-import { ref, computed, nextTick,watch } from 'vue';
-import { $t } from '#/locales';
+import { ref, nextTick, watch } from 'vue';
+ import { $t } from '#/locales';
 import { ACTION_ICON, TableAction, useVbenVxeGrid } from '#/adapter/vxe-table';
 
  import { deleteStudentTeacher, deleteStudentTeacherList, getStudentTeacherPage } from '#/api/infra/demo';
@@ -21,11 +21,6 @@ const props = defineProps<{
   connectedComponent: StudentTeacherForm,
   destroyOnClose: true,
 });
-
-/** 刷新表格 */
-async function handleRefresh() {
-   await gridApi.query();
-}
 
 /** 创建学生班主任 */
 function handleCreate() {
@@ -118,6 +113,11 @@ const [Grid, gridApi] = useVbenVxeGrid({
     checkboxChange: handleRowCheckboxChange,
   }
 });
+
+/** 刷新表格 */
+async function handleRefresh() {
+   await gridApi.query();
+}
 
 /** 监听主表的关联字段的变化，加载对应的子表数据 */
 watch(

@@ -6,7 +6,12 @@ import cn.hutool.core.date.LocalDateTimeUtil;
 import cn.hutool.core.lang.Assert;
 import cn.hutool.core.util.StrUtil;
 import cn.iocoder.yudao.framework.common.enums.DateIntervalEnum;
+import cn.iocoder.yudao.framework.common.util.collection.ArrayUtils;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.sql.Timestamp;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
@@ -14,17 +19,68 @@ import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.TimeZone;
+import java.util.stream.Collectors;
 
 import static cn.hutool.core.date.DatePattern.*;
 
 /**
- * 时间工具类，用于 {@link LocalDateTime}
+ * 时间工具类，用于 {@link LocalDate}、{@link LocalDateTime}
  *
  * @author 芋道源码
  */
 public class LocalDateTimeUtils {
+
+    /**
+     * 按经过的时长计算天数，以 24 小时为一天，按指定精度四舍五入
+     *
+     * @param beginTime 开始时间
+     * @param endTime 结束时间
+     * @param scale 保留的小数位数
+     * @return 按毫秒精度计算的天数，时间缺失时返回 null
+     */
+    public static BigDecimal getDaysBetween(LocalDateTime beginTime, LocalDateTime endTime, int scale) {
+        if (beginTime == null || endTime == null) {
+            return null;
+        }
+        return BigDecimal.valueOf(Duration.between(beginTime, endTime).toMillis())
+                .divide(BigDecimal.valueOf(Duration.ofDays(1).toMillis()), scale, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * 按经过的时长计算天数，以 24 小时为一天，结果向上取整
+     *
+     * 与 {@link #getDaysBetweenInclusive(LocalDateTime, LocalDateTime)} 不同，本方法不按自然日期计数。
+     * 例如跨午夜的 2 小时为 1 天，恰好 24 小时为 1 天，相同时刻为 0 天。
+     *
+     * @param beginTime 开始时间
+     * @param endTime 结束时间
+     * @return 按毫秒精度计算的天数，时间缺失时返回 null；反向区间按相同规则向上取整
+     */
+    public static Integer getDaysBetweenCeiling(LocalDateTime beginTime, LocalDateTime endTime) {
+        if (beginTime == null || endTime == null) {
+            return null;
+        }
+        return BigDecimal.valueOf(Duration.between(beginTime, endTime).toMillis())
+                .divide(BigDecimal.valueOf(Duration.ofDays(1).toMillis()), 0, RoundingMode.CEILING).intValueExact();
+    }
+
+    /**
+     * 计算包含首尾日期的自然日数，不足一天按对应自然日期计算
+     *
+     * @param beginTime 开始时间
+     * @param endTime 结束时间
+     * @return 自然日数，时间缺失时返回 null；结束日期早于开始日期时返回非正数
+     */
+    public static Integer getDaysBetweenInclusive(LocalDateTime beginTime, LocalDateTime endTime) {
+        if (beginTime == null || endTime == null) {
+            return null;
+        }
+        return Math.toIntExact(ChronoUnit.DAYS.between(beginTime.toLocalDate(), endTime.toLocalDate()) + 1);
+    }
 
     /**
      * 空的 LocalDateTime 对象，主要用于 DB 唯一索引的默认值
@@ -54,6 +110,16 @@ public class LocalDateTimeUtils {
         }
     }
 
+    /**
+     * 解析年月字符串为 {@link YearMonth}，格式为 yyyy-MM
+     *
+     * @param month 年月字符串
+     * @return 年月
+     */
+    public static YearMonth parseYearMonth(String month) {
+        return YearMonth.parse(month, NORM_MONTH_FORMATTER);
+    }
+
     public static LocalDateTime addTime(Duration duration) {
         return LocalDateTime.now().plus(duration);
     }
@@ -68,6 +134,370 @@ public class LocalDateTimeUtils {
 
     public static boolean afterNow(LocalDateTime date) {
         return date.isAfter(LocalDateTime.now());
+    }
+
+    public static boolean beforeOrEqualNow(LocalDateTime time) {
+        LocalDateTime now = LocalDateTime.now();
+        return time.isBefore(now) || time.isEqual(now);
+    }
+
+    public static boolean beforeNow(LocalDate date) {
+        return date.isBefore(LocalDate.now());
+    }
+
+    public static boolean beforeOrEqualNow(LocalDate date) {
+        LocalDate today = LocalDate.now();
+        return date.isBefore(today) || date.isEqual(today);
+    }
+
+    public static boolean afterNow(LocalDate date) {
+        return date.isAfter(LocalDate.now());
+    }
+
+    /**
+     * 判断时间是否处于一月
+     *
+     * @param time 时间
+     * @return 是否处于一月
+     */
+    public static boolean isJanuary(LocalDateTime time) {
+        return time.getMonthValue() == 1;
+    }
+
+    /**
+     * 判断第一个日期是否早于或等于第二个日期
+     *
+     * @param firstDate 第一个日期
+     * @param secondDate 第二个日期
+     * @return 是否早于或等于
+     */
+    public static boolean isBeforeOrEqual(LocalDate firstDate, LocalDate secondDate) {
+        return firstDate.isBefore(secondDate) || firstDate.isEqual(secondDate);
+    }
+
+    /**
+     * 判断第一个日期是否晚于或等于第二个日期
+     *
+     * @param firstDate 第一个日期
+     * @param secondDate 第二个日期
+     * @return 是否晚于或等于
+     */
+    public static boolean isAfterOrEqual(LocalDate firstDate, LocalDate secondDate) {
+        return firstDate.isAfter(secondDate) || firstDate.isEqual(secondDate);
+    }
+
+    /**
+     * 判断第一个时间是否早于或等于第二个时间
+     *
+     * @param firstTime 第一个时间
+     * @param secondTime 第二个时间
+     * @return 是否早于或等于
+     */
+    public static boolean isBeforeOrEqual(LocalDateTime firstTime, LocalDateTime secondTime) {
+        return firstTime.isBefore(secondTime) || firstTime.isEqual(secondTime);
+    }
+
+    /**
+     * 判断第一个时间是否晚于或等于第二个时间
+     *
+     * @param firstTime 第一个时间
+     * @param secondTime 第二个时间
+     * @return 是否晚于或等于
+     */
+    public static boolean isAfterOrEqual(LocalDateTime firstTime, LocalDateTime secondTime) {
+        return firstTime.isAfter(secondTime) || firstTime.isEqual(secondTime);
+    }
+
+    /**
+     * 判断时间范围是否有效
+     *
+     * @param beginTime 开始时间
+     * @param endTime 结束时间
+     * @return 开始、结束时间非空，且结束时间晚于开始时间时返回 {@code true}
+     */
+    public static boolean isTimeRangeValid(LocalDateTime beginTime, LocalDateTime endTime) {
+        return beginTime != null && endTime != null && endTime.isAfter(beginTime);
+    }
+
+    /**
+     * 判断时间范围是否存在有效边界
+     *
+     * @param times 时间范围
+     * @return 任一边界非空时返回 {@code true}
+     */
+    public static boolean isTimeRangePresent(LocalDateTime[] times) {
+        return ArrayUtils.get(times, 0) != null || ArrayUtils.get(times, 1) != null;
+    }
+
+    /**
+     * 判断指定日期是否位于闭区间内
+     *
+     * @param beginDate 开始日期
+     * @param endDate 结束日期
+     * @param date 指定日期
+     * @return 是否位于闭区间内
+     */
+    public static boolean isBetween(LocalDate beginDate, LocalDate endDate, LocalDate date) {
+        return beginDate != null && endDate != null && date != null
+                && isAfterOrEqual(date, beginDate) && isBeforeOrEqual(date, endDate);
+    }
+
+    /**
+     * 判断指定日期是否不在闭区间内
+     *
+     * @param beginDate 开始日期
+     * @param endDate 结束日期
+     * @param date 指定日期
+     * @return 是否不在闭区间内；任一参数为空时返回 {@code true}
+     */
+    public static boolean isNotBetween(LocalDate beginDate, LocalDate endDate, LocalDate date) {
+        return !isBetween(beginDate, endDate, date);
+    }
+
+    /**
+     * 判断指定时间是否位于闭区间内
+     *
+     * @param beginTime 开始时间
+     * @param endTime 结束时间
+     * @param time 指定时间
+     * @return 是否位于闭区间内
+     */
+    public static boolean isBetween(LocalDateTime beginTime, LocalDateTime endTime, LocalDateTime time) {
+        return beginTime != null && endTime != null && time != null
+                && isAfterOrEqual(time, beginTime) && isBeforeOrEqual(time, endTime);
+    }
+
+    /**
+     * 判断指定时间是否不在闭区间内
+     *
+     * @param beginTime 开始时间
+     * @param endTime 结束时间
+     * @param time 指定时间
+     * @return 是否不在闭区间内；任一参数为空时返回 {@code true}
+     */
+    public static boolean isNotBetween(LocalDateTime beginTime, LocalDateTime endTime, LocalDateTime time) {
+        return !isBetween(beginTime, endTime, time);
+    }
+
+    /**
+     * 计算两个日期之间经过的完整年数
+     *
+     * @param beginDate 开始日期
+     * @param endDate 结束日期
+     * @return 完整年数；日期为空或开始日期晚于结束日期时，返回 0
+     */
+    public static int getYearsBetween(LocalDate beginDate, LocalDate endDate) {
+        if (beginDate == null || endDate == null || beginDate.isAfter(endDate)) {
+            return 0;
+        }
+        return Period.between(beginDate, endDate).getYears();
+    }
+
+    /**
+     * 计算从起点开始经过指定工作日后的时间，保留起点的时分秒
+     *
+     * 起点当天不计入；例如周五 10:00 加 1 个工作日为下周一 10:00，周六加 1 个工作日同样为下周一。
+     * 工作日只排除周六、周日，不排除法定节假日与调休
+     *
+     * @param start 起点
+     * @param workdays 工作日数，不能为负数
+     * @return 截止时间；起点为空时返回 null
+     */
+    public static LocalDateTime plusWorkdays(LocalDateTime start, int workdays) {
+        if (start == null) {
+            return null;
+        }
+        if (workdays < 0) {
+            throw new IllegalArgumentException("工作日数不能为负数");
+        }
+        LocalDateTime result = start;
+        int remaining = workdays;
+        while (remaining > 0) {
+            result = result.plusDays(1);
+            if (!LocalDateTimeUtil.isWeekend(result)) {
+                remaining--;
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 统计两个时间之间经过的工作日数，按日期计算，起点当天不计入
+     *
+     * 工作日只排除周六、周日，不排除法定节假日与调休
+     *
+     * @param start 起点
+     * @param end 终点
+     * @return 工作日数；任一时间为空或终点不晚于起点时返回 0
+     */
+    public static int countWorkdays(LocalDateTime start, LocalDateTime end) {
+        if (start == null || end == null || !end.isAfter(start)) {
+            return 0;
+        }
+        int count = 0;
+        LocalDate endDate = end.toLocalDate();
+        for (LocalDate date = start.toLocalDate().plusDays(1); !date.isAfter(endDate); date = date.plusDays(1)) {
+            if (!LocalDateTimeUtil.isWeekend(date)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * 从时间范围列表中扣除指定时间范围
+     *
+     * @param sourceRanges 原时间范围列表
+     * @param excludedRange 需要扣除的时间范围
+     * @return 扣除后的时间范围列表
+     */
+    public static List<TimeRange> subtractTimeRanges(List<TimeRange> sourceRanges, TimeRange excludedRange) {
+        List<TimeRange> result = new ArrayList<>();
+        for (TimeRange sourceRange : sourceRanges) {
+            TimeRange overlap = intersectTimeRange(sourceRange, excludedRange);
+            if (overlap == null) {
+                result.add(sourceRange);
+                continue;
+            }
+            if (sourceRange.getStartTime().isBefore(overlap.getStartTime())) {
+                result.add(new TimeRange(sourceRange.getStartTime(), overlap.getStartTime()));
+            }
+            if (overlap.getEndTime().isBefore(sourceRange.getEndTime())) {
+                result.add(new TimeRange(overlap.getEndTime(), sourceRange.getEndTime()));
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 合并重叠或首尾相接的时间范围
+     *
+     * @param timeRanges 时间范围列表
+     * @return 合并后的时间范围列表
+     */
+    public static List<TimeRange> mergeTimeRanges(List<TimeRange> timeRanges) {
+        if (CollUtil.isEmpty(timeRanges)) {
+            return Collections.emptyList();
+        }
+        List<TimeRange> sortedRanges = timeRanges.stream()
+                .sorted(Comparator.comparing(TimeRange::getStartTime))
+                .collect(Collectors.toList());
+        List<TimeRange> result = new ArrayList<>();
+        TimeRange currentRange = CollUtil.getFirst(sortedRanges);
+        for (int i = 1; i < sortedRanges.size(); i++) {
+            TimeRange nextRange = sortedRanges.get(i);
+            if (nextRange.getStartTime().isAfter(currentRange.getEndTime())) {
+                result.add(currentRange);
+                currentRange = nextRange;
+                continue;
+            }
+            LocalDateTime endTime = currentRange.getEndTime().isAfter(nextRange.getEndTime())
+                    ? currentRange.getEndTime() : nextRange.getEndTime();
+            currentRange = new TimeRange(currentRange.getStartTime(), endTime);
+        }
+        result.add(currentRange);
+        return result;
+    }
+
+    /**
+     * 计算两个时间范围列表的交集
+     *
+     * @param firstRanges 第一组时间范围
+     * @param secondRanges 第二组时间范围
+     * @return 合并后的交集时间范围列表
+     */
+    public static List<TimeRange> intersectTimeRanges(
+            List<TimeRange> firstRanges, List<TimeRange> secondRanges) {
+        List<TimeRange> result = new ArrayList<>();
+        for (TimeRange firstRange : firstRanges) {
+            for (TimeRange secondRange : secondRanges) {
+                TimeRange overlap = intersectTimeRange(firstRange, secondRange);
+                if (overlap != null) {
+                    result.add(overlap);
+                }
+            }
+        }
+        return mergeTimeRanges(result);
+    }
+
+    /**
+     * 计算两个时间范围的交集
+     *
+     * @param firstRange 第一个时间范围
+     * @param secondRange 第二个时间范围
+     * @return 交集时间范围；没有交集时返回 {@code null}
+     */
+    public static TimeRange intersectTimeRange(TimeRange firstRange, TimeRange secondRange) {
+        LocalDateTime startTime = firstRange.getStartTime().isAfter(secondRange.getStartTime())
+                ? firstRange.getStartTime() : secondRange.getStartTime();
+        LocalDateTime endTime = firstRange.getEndTime().isBefore(secondRange.getEndTime())
+                ? firstRange.getEndTime() : secondRange.getEndTime();
+        return endTime.isAfter(startTime) ? new TimeRange(startTime, endTime) : null;
+    }
+
+    /**
+     * 计算时间范围的总分钟数
+     *
+     * @param timeRanges 时间范围列表
+     * @return 总分钟数
+     */
+    public static int calculateDurationMinutes(List<TimeRange> timeRanges) {
+        return timeRanges.stream()
+                .mapToInt(range -> Math.toIntExact(Duration.between(
+                        range.getStartTime(), range.getEndTime()).toMinutes()))
+                .sum();
+    }
+
+    /**
+     * 构建日期范围内每天对应的时间范围
+     *
+     * 当结束时刻早于或等于开始时刻时，按跨天时间范围处理。
+     *
+     * @param beginDate 开始日期
+     * @param endDate 结束日期
+     * @param beginTime 每日开始时刻
+     * @param endTime 每日结束时刻
+     * @return 每日时间范围列表
+     */
+    public static List<TimeRange> buildDailyTimeRanges(
+            LocalDate beginDate, LocalDate endDate, LocalTime beginTime, LocalTime endTime) {
+        if (beginDate == null || endDate == null || beginTime == null || endTime == null
+                || beginDate.isAfter(endDate)) {
+            return Collections.emptyList();
+        }
+        List<TimeRange> result = new ArrayList<>();
+        for (LocalDate date = beginDate; isBeforeOrEqual(date, endDate); date = date.plusDays(1)) {
+            LocalDateTime rangeBeginTime = date.atTime(beginTime);
+            LocalDateTime rangeEndTime = date.atTime(endTime);
+            if (rangeEndTime.isBefore(rangeBeginTime) || rangeEndTime.isEqual(rangeBeginTime)) {
+                rangeEndTime = rangeEndTime.plusDays(1);
+            }
+            result.add(new TimeRange(rangeBeginTime, rangeEndTime));
+        }
+        return result;
+    }
+
+    /**
+     * 查找包含指定时刻的每日时间范围
+     *
+     * 每日时间范围允许跨天，因此会同时检查基准日期的前一天、当天和后一天。
+     * 范围匹配使用左右闭区间。
+     *
+     * @param date 基准日期
+     * @param beginTime 每日开始时刻
+     * @param endTime 每日结束时刻
+     * @param time 指定时刻
+     * @return 包含指定时刻的时间范围；不存在时返回 {@code null}
+     */
+    public static TimeRange findDailyTimeRange(
+            LocalDate date, LocalTime beginTime, LocalTime endTime, LocalDateTime time) {
+        if (date == null || time == null) {
+            return null;
+        }
+        List<TimeRange> timeRanges = buildDailyTimeRanges(
+                date.minusDays(1), date.plusDays(1), beginTime, endTime);
+        return CollUtil.findOne(timeRanges, timeRange -> isBetween(
+                timeRange.getStartTime(), timeRange.getEndTime(), time));
     }
 
     /**
@@ -185,6 +615,72 @@ public class LocalDateTimeUtils {
     }
 
     /**
+     * 获得指定日期的开始时间
+     *
+     * @param date 日期
+     * @return 当日开始时间；日期为空时返回 {@code null}
+     */
+    public static LocalDateTime getDayBeginTime(LocalDate date) {
+        return date == null ? null : date.atStartOfDay();
+    }
+
+    /**
+     * 获得指定时间所在日期的开始时间
+     *
+     * @param time 时间
+     * @return 当日开始时间；时间为空时返回 {@code null}
+     */
+    public static LocalDateTime getDayBeginTime(LocalDateTime time) {
+        return time == null ? null : getDayBeginTime(time.toLocalDate());
+    }
+
+    /**
+     * 获得指定日期的结束时间
+     *
+     * @param date 日期
+     * @return 当日结束时间；日期为空时返回 {@code null}
+     */
+    public static LocalDateTime getDayEndTime(LocalDate date) {
+        return date == null ? null : date.atTime(LocalTime.MAX);
+    }
+
+    /**
+     * 获得指定时间所在日期的结束时间
+     *
+     * @param time 时间
+     * @return 当日结束时间；时间为空时返回 {@code null}
+     */
+    public static LocalDateTime getDayEndTime(LocalDateTime time) {
+        return time == null ? null : getDayEndTime(time.toLocalDate());
+    }
+
+    /**
+     * 获得自然日期范围对应的日期时间闭区间
+     *
+     * @param beginDate 开始日期
+     * @param endDate 结束日期
+     * @return 从开始日期零点到结束日期最后时刻的闭区间；两个日期都为空时返回 {@code null}
+     */
+    public static LocalDateTime[] getDateTimeRange(LocalDate beginDate, LocalDate endDate) {
+        if (beginDate == null && endDate == null) {
+            return null;
+        }
+        return new LocalDateTime[]{getDayBeginTime(beginDate), getDayEndTime(endDate)};
+    }
+
+    /**
+     * 获得指定月份的日期时间闭区间
+     *
+     * @param year 年份
+     * @param month 月份
+     * @return 从当月月初零点到月末最后时刻的闭区间
+     */
+    public static LocalDateTime[] getMonthDateTimeRange(int year, int month) {
+        LocalDate monthBeginDate = LocalDate.of(year, month, 1);
+        return getDateTimeRange(monthBeginDate, monthBeginDate.with(TemporalAdjusters.lastDayOfMonth()));
+    }
+
+    /**
      * 获取指定日期所在的月份的开始时间
      * 例如：2023-09-30 00:00:00,000
      *
@@ -196,6 +692,16 @@ public class LocalDateTimeUtils {
     }
 
     /**
+     * 获取指定日期的开始时间
+     *
+     * @param date 日期
+     * @return 当日开始时间
+     */
+    public static LocalDateTime beginOfDay(LocalDateTime date) {
+        return date.with(LocalTime.MIN);
+    }
+
+    /**
      * 获取指定日期所在的月份的最后时间
      * 例如：2023-09-30 23:59:59,999
      *
@@ -204,6 +710,82 @@ public class LocalDateTimeUtils {
      */
     public static LocalDateTime endOfMonth(LocalDateTime date) {
         return date.with(TemporalAdjusters.lastDayOfMonth()).with(LocalTime.MAX);
+    }
+
+    /**
+     * 获得指定年月的月初时间
+     *
+     * @param year 年份
+     * @param month 月份
+     * @return 月初时间
+     */
+    public static LocalDateTime getMonthBeginTime(int year, int month) {
+        return LocalDateTime.of(year, month, 1, 0, 0);
+    }
+
+    /**
+     * 获得指定年月的月初时间
+     *
+     * @param month 年月
+     * @return 月初时间
+     */
+    public static LocalDateTime getMonthBeginTime(YearMonth month) {
+        return getMonthBeginTime(month.getYear(), month.getMonthValue());
+    }
+
+    /**
+     * 获得指定年月的下月月初时间
+     *
+     * @param year 年份
+     * @param month 月份
+     * @return 下月月初时间
+     */
+    public static LocalDateTime getNextMonthBeginTime(int year, int month) {
+        return getMonthBeginTime(year, month).plusMonths(1);
+    }
+
+    /**
+     * 获得指定年月的下月月初时间
+     *
+     * @param month 年月
+     * @return 下月月初时间
+     */
+    public static LocalDateTime getNextMonthBeginTime(YearMonth month) {
+        return getMonthBeginTime(month).plusMonths(1);
+    }
+
+    /**
+     * 判断两个时间段是否存在正时长的重叠
+     *
+     * @param beginTime1 第一个范围的开始时间
+     * @param endTime1 第一个范围的结束时间
+     * @param beginTime2 第二个范围的开始时间
+     * @param endTime2 第二个范围的结束时间
+     * @return 是否存在正时长的重叠
+     */
+    public static boolean isOverlap(LocalDateTime beginTime1, LocalDateTime endTime1,
+                                    LocalDateTime beginTime2, LocalDateTime endTime2) {
+        if (beginTime1 == null || endTime1 == null || beginTime2 == null || endTime2 == null) {
+            return false;
+        }
+        return beginTime1.isBefore(endTime2) && endTime1.isAfter(beginTime2);
+    }
+
+    /**
+     * 判断两个左右闭合的时间范围是否重叠
+     *
+     * @param beginTime1 第一个范围的开始时间
+     * @param endTime1 第一个范围的结束时间
+     * @param beginTime2 第二个范围的开始时间
+     * @param endTime2 第二个范围的结束时间
+     * @return 是否重叠
+     */
+    public static boolean isClosedRangeOverlap(LocalDateTime beginTime1, LocalDateTime endTime1,
+                                               LocalDateTime beginTime2, LocalDateTime endTime2) {
+        if (beginTime1 == null || endTime1 == null || beginTime2 == null || endTime2 == null) {
+            return false;
+        }
+        return isBeforeOrEqual(beginTime1, endTime2) && isAfterOrEqual(endTime1, beginTime2);
     }
 
     /**
@@ -353,7 +935,11 @@ public class LocalDateTimeUtils {
      * @return 日期列表，包含开始日期
      */
     public static List<LocalDate> getDateList(LocalDate startDate, int days) {
-        return startDate.datesUntil(startDate.plusDays(days)).toList();
+        List<LocalDate> dateList = new ArrayList<>(days);
+        for (int i = 0; i < days; i++) {
+            dateList.add(startDate.plusDays(i));
+        }
+        return dateList;
     }
 
     /**
@@ -431,6 +1017,25 @@ public class LocalDateTimeUtils {
      */
     public static Long toEpochSecond(LocalDateTime sourceDateTime, ZoneId zoneId) {
         return sourceDateTime.atZone(zoneId).toEpochSecond();
+    }
+
+    /**
+     * 时间范围
+     */
+    @Getter
+    @AllArgsConstructor
+    @SuppressWarnings("ClassCanBeRecord")
+    public static class TimeRange {
+
+        /**
+         * 开始时间
+         */
+        private final LocalDateTime startTime;
+        /**
+         * 结束时间
+         */
+        private final LocalDateTime endTime;
+
     }
 
 }

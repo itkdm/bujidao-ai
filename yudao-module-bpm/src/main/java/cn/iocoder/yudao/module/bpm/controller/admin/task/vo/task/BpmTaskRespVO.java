@@ -35,6 +35,12 @@ public class BpmTaskRespVO {
     @Schema(description = "审批理由", requiredMode = Schema.RequiredMode.REQUIRED, example = "2")
     private String reason;
 
+    @Schema(description = "签名", example = "https://www.iocoder.cn/sign.png")
+    private String signPicUrl;
+
+    @Schema(description = "附件", example = "[https://test.yudao.iocoder.cn/20260609/test.txt]")
+    private List<String> attachments;
+
     @Schema(description = "任务负责人编号", requiredMode = Schema.RequiredMode.NOT_REQUIRED, example = "2048")
     @JsonIgnore // 不返回，只是方便后续读取，赋值给 ownerUser
     private Long owner;
@@ -84,6 +90,9 @@ public class BpmTaskRespVO {
 
     @Schema(description = "是否填写审批意见", example = "false")
     private Boolean reasonRequire;
+
+    @Schema(description = "退回修改的批次编号", example = "a1b2c3") // 待办任务退回修改过时返回，审批时传递
+    private String revisionId;
 
     @Schema(description = "节点类型", example = "10")
     private Integer nodeType; // 参见 BpmSimpleModelNodeTypeEnum 枚举。
