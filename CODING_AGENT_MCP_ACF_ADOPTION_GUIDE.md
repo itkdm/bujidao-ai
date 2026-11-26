@@ -9,7 +9,7 @@
 目标项目完成后应具备：
 
 1. 后端存在 ACF 能力声明、注册、执行、权限校验、幂等控制、确认 challenge、调用日志能力。
-2. 后端存在 Remote MCP Server，支持 `tools/list`、`tools/call`、`resources/list`、`resources/templates/list` 等基础协议兼容。
+2. 后端存在 Remote MCP Server（MCP Java SDK 2.2.0，modern API，新规范 2026-07-28），支持 `server/discover`、`tools/list`、`tools/call`。没有 `initialize` 握手：客户端先调 `server/discover` 拿协议版本与能力声明，再直接调工具；`resources/list`、`resources/templates/list`、`prompts/*` 未注册（新规范下可选，未注册的方法返回 METHOD_NOT_FOUND）。
 3. MCP 认证复用 ruoyi-vue-pro 上游已有 OAuth2、用户、租户、权限体系，不要求目标公司二开 `yudao-module-system` OAuth 基础代码。
 4. 前端存在 MCP 授权页和 ACF 管理页。若目标前端不是 Vue3 版本，则按同等接口和页面语义在目标前端栈中实现。
 5. 数据库只执行公开仓库 `sql/` 目录声明的正式增量 SQL。
@@ -180,6 +180,13 @@ yudao:
         - https://${YOUR_ADMIN_DOMAIN}
       allowed-hosts:
         - ${YOUR_API_DOMAIN}
+      # MRTR 确认的 requestState 签名密钥：多实例部署必须配同一个值（标准 Base64，
+      # 解码后至少 32 字节），否则 A 实例发出的确认在 B 实例打不开；单实例可不配
+      # （每进程随机生成，启动日志有警告）。密钥只能来自环境变量或密钥管理服务，
+      # 绝不要把真实值写进配置文件；轮换后旧 state 立即失效（进行中的确认需重调一次工具）。
+      # request-state:
+      #   shared-key: ${MCP_REQUEST_STATE_SHARED_KEY}
+      # request-timeout 已废弃：2.2.0 modern Builder 没有等价项，配了也不生效，不要再配。
       # 如果后端在反向代理后无法正确推导外部地址，显式配置下面几项
       public-resource-uri: https://${YOUR_API_DOMAIN}/mcp
       authorization-server-issuer: https://${YOUR_API_DOMAIN}
@@ -314,7 +321,7 @@ mvn package -DskipTests -pl yudao-server -am
 3. `/.well-known/oauth-authorization-server` 或 MCP metadata 中的 endpoint 指向正确域名。
 4. `/mcp` 未带 token 返回 401，并带 `WWW-Authenticate` metadata。
 5. 带无 scope token 返回 403。
-6. 带 `mcp:access` token 可以初始化 MCP。
+6. 带 `mcp:access` token 可以调 `server/discover` 并看到工具列表（新规范无 initialize 握手，不要再测 initialize）。
 
 ### 前端验证
 
@@ -341,6 +348,8 @@ mvn package -DskipTests -pl yudao-server -am
 5. 只读工具可正常返回数据。
 6. 写工具在缺少幂等键时应给出明确提示；客户端支持后应带幂等键调用。
 7. ACF 调用日志能记录成功和失败。
+
+需要确认的能力走 MRTR 标准确认（新规范 2026-07-28），不再有独立的确认工具：首轮调用返回 `input_required`，用表单 elicitation 请用户确认；用户接受后客户端带 `inputResponses` 重试，服务端换 token 再执行；拒绝后 challenge 作废，需重新调用。客户端必须声明 elicitation（form）能力才能完成确认，不支持的客户端会收到 `CONFIRMATION_UNAVAILABLE`；确认总开关默认关闭，未开启时能力直接执行或按旧逻辑返回确认错误。
 
 ## 部署提醒
 

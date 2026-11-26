@@ -311,6 +311,11 @@ yudao:
         - mcp:access
       dynamic-client-registration-enabled: true # OAuth metadata 暴露 DCR 注册端点，供通用 MCP 客户端自动认证
       # allowed-origins / allowed-hosts 默认只放通 localhost、127.0.0.1，部署到其他域名时必须显式配置
+      # MRTR 确认的 requestState 签名密钥：多实例部署必须配同一个值（标准 Base64，解码后至少 32 字节），
+      # 否则 A 实例发出的确认在 B 实例打不开；单实例可不配（每进程随机生成，启动日志有警告）。
+      # 密钥只能来自环境变量或密钥管理服务，绝不要把真实值写进配置文件。
+      # request-state:
+      #   shared-key: ${MCP_REQUEST_STATE_SHARED_KEY}
     acf:
       enabled: true # ACF 能力由代码声明，MCP tools/list 按当前用户权限动态过滤
       oauth:
