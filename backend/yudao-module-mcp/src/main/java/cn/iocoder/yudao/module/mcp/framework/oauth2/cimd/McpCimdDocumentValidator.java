@@ -118,7 +118,7 @@ public class McpCimdDocumentValidator {
         if (tokenEndpointAuthMethod == null) {
             tokenEndpointAuthMethod = AUTH_METHOD_NONE;
         } else if (!AUTH_METHOD_NONE.equals(tokenEndpointAuthMethod)) {
-            // 只支持 none，与 DCR“只支持 none”一致。shared-secret 类方法
+            // 只支持 none。shared-secret 类方法
             // （client_secret_basic / client_secret_post / client_secret_jwt 等）
             // 要求服务端保管客户端密钥，与 CIMD“客户端自带身份、无预注册密钥”的模型冲突，一律拒绝；
             // private_key_jwt（MCP 规范的可选能力）现阶段也不支持：Resolver 会把
@@ -238,8 +238,8 @@ public class McpCimdDocumentValidator {
      * http 只放行 loopback host；其他 scheme（自定义 / 私有 scheme）一律拒绝。
      *
      * <p>注意：本块对 CIMD 客户端的 redirect_uri 不放行自定义 scheme，即使
-     * McpOAuthProperties.allowPrivateUseUriSchemeRedirects=true（那是 DCR 注册路径的开关，
-     * CIMD 路径的客户端身份未经预注册，收紧处理）。
+     * McpOAuthProperties.allowPrivateUseUriSchemeRedirects=true（CIMD 路径的
+     * 客户端身份未经预注册，收紧处理）。
      */
     public static void validateRedirectUri(String redirectUri, Collection<String> localRedirectHosts)
             throws McpCimdException {

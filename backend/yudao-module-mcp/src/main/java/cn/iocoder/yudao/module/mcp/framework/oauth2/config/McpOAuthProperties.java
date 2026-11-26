@@ -31,11 +31,6 @@ public class McpOAuthProperties {
     private boolean enabled = true;
 
     /**
-     * 是否开启 OAuth2 Dynamic Client Registration。
-     */
-    private boolean dynamicClientRegistrationEnabled = true;
-
-    /**
      * 动态客户端编号前缀。
      */
     @NotBlank
@@ -76,13 +71,13 @@ public class McpOAuthProperties {
     private Integer refreshTokenValiditySeconds = 2592000;
 
     /**
-     * DCR 请求未提供 client_name 时使用的默认名称。
+     * 未提供 client_name 时使用的默认名称。
      */
     @NotBlank
     private String defaultClientName = "MCP Client";
 
     /**
-     * OAuth2 Client 表要求 logo 非空，DCR 请求未提供时使用该占位图标。
+     * OAuth2 Client 表要求 logo 非空，未提供 logo 时使用该占位图标。
      */
     @NotBlank
     private String defaultLogo = "https://www.iocoder.cn/favicon.ico";

@@ -27,7 +27,7 @@ import java.util.Map;
  * MCP OAuth 客户端解析器：按 client_id 形态分流，解析出一个可用的 {@link OAuth2ClientDO}。
  *
  * <ul>
- *     <li>非 URL 形态（DCR 注册的 {@code mcp-dcr-...} 之类不透明 id）：走现有上游路径
+ *     <li>非 URL 形态（已入库的不透明 id，如历史动态注册的 {@code mcp-dcr-...}）：走现有上游路径
  *     {@link OAuth2ClientService#getOAuth2ClientFromCache(String)}，查不到返回 null，行为与原来一致。
  *     该分支仅作兼容：它不对客户端做 status / secret / grant 校验，调用方必须先按形态分流，
  *     DB 形态仍走上游 {@code validOAuthClientFromCache} 校验，不要把这里返回的客户端当作已校验。</li>
@@ -164,9 +164,8 @@ public class McpOAuthClientResolver {
 
     /**
      * 解析文档 scope：无 scope 时取 {@code defaultScopes}；有 scope 时必须是
-     * {@code defaultScopes} 的子集，超限抛 {@code invalid_scope}（与 DCR 的
-     * {@code normalizeScopes} 行为一致：静默丢弃超限 scope 会让客户端以为自己拿到了
-     * 没拿到的权限，所以直接拒绝）。
+     * {@code defaultScopes} 的子集，超限抛 {@code invalid_scope}（静默丢弃超限 scope
+     * 会让客户端以为自己拿到了没拿到的权限，所以直接拒绝）。
      */
     private List<String> parseScopes(String scope) {
         if (StrUtil.isBlank(scope)) {
