@@ -1,0 +1,50 @@
+package cn.iocoder.yudao.module.mcp.framework.oauth2.cimd;
+
+import java.util.List;
+
+/**
+ * CIMD 文档解析后的不可变值对象。
+ *
+ * <p>字段对应 draft-ietf-oauth-client-id-metadata-document 的客户端元数据字段。
+ * 其中 {@code jwks} 保留原始 JSON 文本（文档里它通常是 JSON 对象，序列化后存放）；
+ * {@code grantTypes} / {@code responseTypes} 缺省时分别补默认值
+ * {@code [authorization_code]} / {@code [code]}，由校验器负责填充。
+ *
+ * @author bujidao
+ */
+public record McpCimdMetadata(
+
+        /** 拉取文档用的 client_id URL，与文档内 client_id 逐字节相等。 */
+        String clientId,
+        /** 客户端展示名，非空。 */
+        String clientName,
+        /** 注册的回调地址列表，非空。 */
+        List<String> redirectUris,
+        /** 允许的授权类型，缺省 [authorization_code]。 */
+        List<String> grantTypes,
+        /** 允许的响应类型，缺省 [code]。 */
+        List<String> responseTypes,
+        /** token 端点认证方式，只允许 none 或 private_key_jwt，缺省 none。 */
+        String tokenEndpointAuthMethod,
+        /** JWKS 地址，private_key_jwt 时与 jwks 二选一必填。 */
+        String jwksUri,
+        /** JWKS 原始 JSON，可选。 */
+        String jwks,
+        /** 客户端主页，可选。 */
+        String clientUri,
+        /** 客户端 logo，可选。 */
+        String logoUri,
+        /** 申请的 scope，空格分隔，可选。 */
+        String scope,
+        /** 应用类型，缺省 web。 */
+        String applicationType
+
+) {
+
+    public McpCimdMetadata {
+        redirectUris = redirectUris == null ? List.of() : List.copyOf(redirectUris);
+        grantTypes = grantTypes == null ? List.of() : List.copyOf(grantTypes);
+        responseTypes = responseTypes == null ? List.of() : List.copyOf(responseTypes);
+    }
+
+}
