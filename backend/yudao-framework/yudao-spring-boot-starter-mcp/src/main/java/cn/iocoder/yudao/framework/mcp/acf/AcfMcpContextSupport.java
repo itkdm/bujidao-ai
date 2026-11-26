@@ -24,6 +24,7 @@ final class AcfMcpContextSupport {
 
     static CapabilityContext fromTransport(McpTransportContext transportContext, String clientRequestId) {
         return CapabilityContext.builder()
+                .traceId(clientRequestId)
                 .userId(value(transportContext, McpTransportContextKeys.USER_ID, Long.class))
                 .tenantId(value(transportContext, McpTransportContextKeys.TENANT_ID, Long.class))
                 .source(SOURCE)

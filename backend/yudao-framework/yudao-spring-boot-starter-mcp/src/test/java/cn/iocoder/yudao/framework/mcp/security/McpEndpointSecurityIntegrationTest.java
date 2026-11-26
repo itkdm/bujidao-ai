@@ -58,13 +58,15 @@ import static org.mockito.Mockito.when;
                 "yudao.web.admin-ui.url=http://localhost"})
 class McpEndpointSecurityIntegrationTest {
 
-    private static final String INITIALIZE_REQUEST = """
-            {"jsonrpc":"2.0","id":1,"method":"initialize","params":{
-              "protocolVersion":"2025-11-25","capabilities":{},
-              "clientInfo":{"name":"security-test","version":"1.0.0"}}}
+    private static final String DISCOVER_REQUEST = """
+            {"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{
+              "io.modelcontextprotocol/protocolVersion":"2026-07-28",
+              "io.modelcontextprotocol/clientCapabilities":{}}}}
             """;
     private static final String TOOLS_LIST_REQUEST = """
-            {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
+            {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{"_meta":{
+              "io.modelcontextprotocol/protocolVersion":"2026-07-28",
+              "io.modelcontextprotocol/clientCapabilities":{}}}}
             """;
 
     @LocalServerPort
@@ -81,7 +83,7 @@ class McpEndpointSecurityIntegrationTest {
 
     @Test
     void shouldRejectAnonymousRequestThroughYudaoSecurityFilterChain() {
-        ResponseEntity<String> response = postInitialize(new HttpHeaders());
+        ResponseEntity<String> response = postDiscover(new HttpHeaders());
 
         assertThat(response.getStatusCode().value()).isEqualTo(401);
     }
@@ -122,16 +124,22 @@ class McpEndpointSecurityIntegrationTest {
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth("valid-token");
 
-        ResponseEntity<String> initializeResponse = postInitialize(headers);
-        assertThat(initializeResponse.getStatusCode().is2xxSuccessful()).isTrue();
+        ResponseEntity<String> discoverResponse = postDiscover(headers);
+        assertThat(discoverResponse.getStatusCode().is2xxSuccessful()).isTrue();
 
         HttpHeaders toolHeaders = new HttpHeaders();
         toolHeaders.setBearerAuth("valid-token");
         toolHeaders.setContentType(MediaType.APPLICATION_JSON);
         toolHeaders.setAccept(List.of(MediaType.APPLICATION_JSON, MediaType.TEXT_EVENT_STREAM));
+        toolHeaders.set("Mcp-Method", "tools/call");
+        toolHeaders.set("MCP-Protocol-Version", "2026-07-28");
+        toolHeaders.set("Mcp-Name", "demo.echo");
         String callRequest = """
                 {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{
-                  "name":"demo.echo","arguments":{"message":"hello"}}}
+                  "name":"demo.echo","arguments":{"message":"hello"},
+                  "_meta":{
+                    "io.modelcontextprotocol/protocolVersion":"2026-07-28",
+                    "io.modelcontextprotocol/clientCapabilities":{}}}}
                 """;
         ResponseEntity<String> callResponse = restTemplate.postForEntity(endpoint(),
                 new HttpEntity<>(callRequest, toolHeaders), String.class);
@@ -165,7 +173,7 @@ class McpEndpointSecurityIntegrationTest {
         headers.setBearerAuth("valid-token");
         headers.set("tenant-id", "9999");
 
-        ResponseEntity<String> response = postInitialize(headers);
+        ResponseEntity<String> response = postDiscover(headers);
 
         assertThat(response.getStatusCode().value()).isEqualTo(403);
     }
@@ -175,7 +183,7 @@ class McpEndpointSecurityIntegrationTest {
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth("token-without-mcp-scope");
 
-        ResponseEntity<String> response = postInitialize(headers);
+        ResponseEntity<String> response = postDiscover(headers);
 
         assertThat(response.getStatusCode().value()).isEqualTo(403);
         verify(capabilityToolInvoker, never()).invoke(any());
@@ -187,20 +195,37 @@ class McpEndpointSecurityIntegrationTest {
         headers.setBearerAuth("valid-token");
         headers.setOrigin("https://attacker.example");
 
-        ResponseEntity<String> response = postInitialize(headers);
+        ResponseEntity<String> response = postDiscover(headers);
 
         assertThat(response.getStatusCode().value()).isEqualTo(403);
         verify(capabilityToolInvoker, never()).invoke(any());
+    }
+
+    @Test
+    void shouldAllowRequestFromAllowedOrigin() {
+        // 正向用例：只证伪“validator 接线断裂”不够，要证实允许的 Origin 确实放行。
+        // 默认允许的 Origin 含 http://127.0.0.1:*，Host 由 HTTP 客户端自动带上
+        // 127.0.0.1:<port>，同样在允许列表里。
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth("valid-token");
+        headers.setOrigin("http://127.0.0.1:" + port);
+
+        ResponseEntity<String> response = postDiscover(headers);
+
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(response.getBody()).contains("\"supportedVersions\"");
     }
 
     // 非法 Host 的 421 判定在 YudaoMcpAutoConfigurationTest 中通过 Validator 直接覆盖。
     // 此处不做端到端用例：Host 属于 HttpURLConnection 受限 Header，自定义值会被静默丢弃，
     // 放开需要 JVM 级系统属性，且 Origin 用例已经证明 Validator 已接入 Transport。
 
-    private ResponseEntity<String> postInitialize(HttpHeaders headers) {
+    private ResponseEntity<String> postDiscover(HttpHeaders headers) {
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setAccept(List.of(MediaType.APPLICATION_JSON, MediaType.TEXT_EVENT_STREAM));
-        return restTemplate.postForEntity(endpoint(), new HttpEntity<>(INITIALIZE_REQUEST, headers), String.class);
+        headers.set("Mcp-Method", "server/discover");
+        headers.set("MCP-Protocol-Version", "2026-07-28");
+        return restTemplate.postForEntity(endpoint(), new HttpEntity<>(DISCOVER_REQUEST, headers), String.class);
     }
 
     private ResponseEntity<String> postToolsList(HttpHeaders headers) {
@@ -210,6 +235,8 @@ class McpEndpointSecurityIntegrationTest {
     private ResponseEntity<String> postToolsList(HttpHeaders headers, String queryString) {
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setAccept(List.of(MediaType.APPLICATION_JSON, MediaType.TEXT_EVENT_STREAM));
+        headers.set("Mcp-Method", "tools/list");
+        headers.set("MCP-Protocol-Version", "2026-07-28");
         return restTemplate.postForEntity(endpoint() + queryString,
                 new HttpEntity<>(TOOLS_LIST_REQUEST, headers), String.class);
     }

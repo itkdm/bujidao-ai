@@ -10,11 +10,15 @@ import cn.iocoder.yudao.framework.mcp.security.McpStrictAccessTokenFilter;
 import cn.iocoder.yudao.framework.web.config.WebProperties;
 import cn.iocoder.yudao.framework.mcp.security.McpScopeAuthorizationFilter;
 import cn.iocoder.yudao.framework.mcp.security.McpTenantContextFilter;
-import io.modelcontextprotocol.server.McpStatelessSyncServer;
+import io.modelcontextprotocol.modern.server.HmacRequestStateCodec;
+import io.modelcontextprotocol.modern.server.McpServer;
+import io.modelcontextprotocol.modern.server.RequestStateCodec;
+import io.modelcontextprotocol.modern.server.transport.HttpServletMcpTransport;
 import io.modelcontextprotocol.server.McpTransportContextExtractor;
-import io.modelcontextprotocol.server.transport.HttpServletStatelessServerTransport;
+import io.modelcontextprotocol.server.transport.DefaultServerTransportSecurityValidator;
+import io.modelcontextprotocol.server.transport.HeaderAccessor;
+import io.modelcontextprotocol.server.transport.ServerHttpHeaderValidator;
 import io.modelcontextprotocol.server.transport.ServerTransportSecurityException;
-import io.modelcontextprotocol.server.transport.ServerTransportSecurityValidator;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.jackson.JacksonAutoConfiguration;
@@ -22,7 +26,11 @@ import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.security.web.SecurityFilterChain;
 
+import java.util.List;
+import java.util.Map;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
 class YudaoMcpAutoConfigurationTest {
@@ -42,22 +50,27 @@ class YudaoMcpAutoConfigurationTest {
     @Test
     void shouldRemainDisabledByDefault() {
         contextRunner.run(context -> {
-            assertThat(context).doesNotHaveBean(McpStatelessSyncServer.class);
-            assertThat(context).doesNotHaveBean(HttpServletStatelessServerTransport.class);
+            assertThat(context).doesNotHaveBean(McpServer.class);
+            assertThat(context).doesNotHaveBean(HttpServletMcpTransport.class);
         });
     }
 
     @Test
-    void shouldRegisterStatelessServerWhenEnabled() {
+    void shouldRegisterModernServerWhenEnabled() {
         contextRunner.withPropertyValues("yudao.mcp.server.enabled=true")
                 .run(context -> {
-                    assertThat(context).hasSingleBean(McpStatelessSyncServer.class);
-                    assertThat(context).hasSingleBean(HttpServletStatelessServerTransport.class);
+                    assertThat(context).hasSingleBean(McpServer.class);
+                    assertThat(context).hasSingleBean(HttpServletMcpTransport.class);
+                    assertThat(context).hasSingleBean(RequestStateCodec.class);
+                    assertThat(context.getBean(RequestStateCodec.class))
+                            .isInstanceOf(HmacRequestStateCodec.class);
+                    assertThat(context).hasSingleBean(ServerHttpHeaderValidator.class);
+                    assertThat(context.getBean(ServerHttpHeaderValidator.class))
+                            .isInstanceOf(DefaultServerTransportSecurityValidator.class);
                     assertThat(context).hasSingleBean(YudaoMcpServerProperties.class);
                     assertThat(context).hasSingleBean(YudaoMcpAcfProperties.class);
                     assertThat(context).hasSingleBean(McpOAuthMetadataController.class);
                     assertThat(context).hasSingleBean(McpTransportContextExtractor.class);
-                    assertThat(context).hasSingleBean(ServerTransportSecurityValidator.class);
                     assertThat(context).hasSingleBean(McpTenantContextFilter.class);
                     assertThat(context).hasSingleBean(McpScopeAuthorizationFilter.class);
                     assertThat(context).hasSingleBean(McpStrictAccessTokenFilter.class);
@@ -89,21 +102,52 @@ class YudaoMcpAutoConfigurationTest {
     void shouldValidateAllowedOriginAndHost() {
         contextRunner.withPropertyValues("yudao.mcp.server.enabled=true")
                 .run(context -> {
-                    ServerTransportSecurityValidator validator = context.getBean(ServerTransportSecurityValidator.class);
-                    validator.validateHeaders(java.util.Map.of(
-                            "Origin", java.util.List.of("http://localhost:8080"),
-                            "Host", java.util.List.of("localhost:8080")));
+                    ServerHttpHeaderValidator validator = context.getBean(ServerHttpHeaderValidator.class);
+                    // 合法 Origin + Host：不抛异常。
+                    validator.validate(headerAccessor(Map.of(
+                            "Origin", List.of("http://localhost:8080"),
+                            "Host", List.of("localhost:8080"))));
 
-                    assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> validator.validateHeaders(
-                            java.util.Map.of("Origin", java.util.List.of("https://attacker.example"),
-                                    "Host", java.util.List.of("localhost:8080")))))
+                    assertThatThrownBy(() -> validator.validate(headerAccessor(Map.of(
+                            "Origin", List.of("https://attacker.example"),
+                            "Host", List.of("localhost:8080")))))
                             .isInstanceOf(ServerTransportSecurityException.class)
-                            .hasMessage("Invalid Origin header");
-                    assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> validator.validateHeaders(
-                            java.util.Map.of("Host", java.util.List.of("attacker.example")))))
+                            .hasMessage("Invalid Origin header")
+                            .satisfies(exception -> assertThat(
+                                    ((ServerTransportSecurityException) exception).getStatusCode())
+                                    .isEqualTo(403));
+                    assertThatThrownBy(() -> validator.validate(headerAccessor(Map.of(
+                            "Host", List.of("attacker.example")))))
                             .isInstanceOf(ServerTransportSecurityException.class)
-                            .hasMessage("Invalid Host header");
+                            .hasMessage("Invalid Host header")
+                            .satisfies(exception -> assertThat(
+                                    ((ServerTransportSecurityException) exception).getStatusCode())
+                                    .isEqualTo(421));
                 });
+    }
+
+    @Test
+    void shouldRegisterRequestStateCodecWithSharedKey() {
+        // 32 个零字节的 Base64：AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+        contextRunner.withPropertyValues("yudao.mcp.server.enabled=true",
+                        "yudao.mcp.server.request-state.shared-key="
+                                + "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+                .run(context -> assertThat(context).hasSingleBean(RequestStateCodec.class));
+    }
+
+    @Test
+    void shouldRejectShortRequestStateSharedKey() {
+        // 16 字节，不足 32 字节下限。
+        contextRunner.withPropertyValues("yudao.mcp.server.enabled=true",
+                        "yudao.mcp.server.request-state.shared-key=AAAAAAAAAAAAAAAAAAAAAA==")
+                .run(context -> assertThat(context).hasFailed());
+    }
+
+    @Test
+    void shouldRejectNonBase64RequestStateSharedKey() {
+        contextRunner.withPropertyValues("yudao.mcp.server.enabled=true",
+                        "yudao.mcp.server.request-state.shared-key=not-base64!!!")
+                .run(context -> assertThat(context).hasFailed());
     }
 
     @Test
@@ -128,6 +172,24 @@ class YudaoMcpAutoConfigurationTest {
                         "yudao.mcp.server.enabled=true",
                         "yudao.mcp.server.required-scopes=")
                 .run(context -> assertThat(context).hasFailed());
+    }
+
+    private static HeaderAccessor headerAccessor(Map<String, List<String>> headers) {
+        return new HeaderAccessor() {
+            @Override
+            public List<String> getHeader(String name) {
+                return headers.entrySet().stream()
+                        .filter(entry -> entry.getKey().equalsIgnoreCase(name))
+                        .map(Map.Entry::getValue)
+                        .findFirst()
+                        .orElse(List.of());
+            }
+
+            @Override
+            public List<String> getHeaderNames() {
+                return List.copyOf(headers.keySet());
+            }
+        };
     }
 
     private static WebProperties createWebProperties() {

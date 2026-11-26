@@ -419,7 +419,8 @@ public class AcfMcpToolCallHandler {
                                                       CapabilityResult result,
                                                       CapabilityConfirmationChallenge challenge) {
         if (confirmationService == null) {
-            return errorResult(result.getStatus(), result.getErrorCode(),
+            return errorResult(CapabilityStatus.FAILURE,
+                    AcfCapabilityErrorCodes.CONFIRMATION_UNAVAILABLE,
                     "Capability requires confirmation before execution, "
                             + "but no confirmation service is configured.",
                     result.isRetryable(), result.getTraceId(), challenge);

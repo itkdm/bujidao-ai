@@ -23,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -128,6 +129,66 @@ class AcfCapabilityConfirmationServiceTest {
 
         assertThat(check.isValid()).isFalse();
         assertThat(check.getErrorCode()).isEqualTo(AcfCapabilityErrorCodes.CONFIRM_TOKEN_INVALID);
+    }
+
+    @Test
+    void shouldDeclinePendingChallengeAndBlockLaterConfirm() {
+        AcfConfirmationChallengeDO challenge = challenge();
+        when(mapper.selectByChallengeIdForUpdate("challenge-001")).thenReturn(challenge);
+
+        service.decline("challenge-001", context());
+
+        assertThat(challenge.getStatus()).isEqualTo(AcfConfirmationChallengeStatus.DECLINED.name());
+        verify(mapper).updateById(challenge);
+        // DECLINED 是终态：之后再 confirm 必须因“非 pending”被拒绝。
+        assertThatThrownBy(() -> service.confirm("challenge-001", context(), "approved"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("not pending");
+    }
+
+    @Test
+    void shouldSilentlyIgnoreDeclineWhenChallengeNotFound() {
+        when(mapper.selectByChallengeIdForUpdate("challenge-001")).thenReturn(null);
+
+        service.decline("challenge-001", context());
+
+        verify(mapper, never()).updateById(any());
+    }
+
+    @Test
+    void shouldMarkExpiredChallengeWhenDecliningAfterExpiry() {
+        AcfConfirmationChallengeDO challenge = challenge();
+        challenge.setExpiresAt(LocalDateTime.now().minusMinutes(1));
+        when(mapper.selectByChallengeIdForUpdate("challenge-001")).thenReturn(challenge);
+
+        service.decline("challenge-001", context());
+
+        assertThat(challenge.getStatus()).isEqualTo(AcfConfirmationChallengeStatus.EXPIRED.name());
+        verify(mapper).updateById(challenge);
+    }
+
+    @Test
+    void shouldSilentlyIgnoreDeclineWhenChallengeBelongsToAnotherClient() {
+        AcfConfirmationChallengeDO challenge = challenge();
+        challenge.setConsumerClientId("workbuddy");
+        when(mapper.selectByChallengeIdForUpdate("challenge-001")).thenReturn(challenge);
+
+        service.decline("challenge-001", context());
+
+        assertThat(challenge.getStatus()).isEqualTo(AcfConfirmationChallengeStatus.PENDING.name());
+        verify(mapper, never()).updateById(any());
+    }
+
+    @Test
+    void shouldSilentlyIgnoreDeclineWhenChallengeAlreadyConfirmed() {
+        AcfConfirmationChallengeDO challenge = challenge();
+        challenge.setStatus(AcfConfirmationChallengeStatus.CONFIRMED.name());
+        when(mapper.selectByChallengeIdForUpdate("challenge-001")).thenReturn(challenge);
+
+        service.decline("challenge-001", context());
+
+        assertThat(challenge.getStatus()).isEqualTo(AcfConfirmationChallengeStatus.CONFIRMED.name());
+        verify(mapper, never()).updateById(any());
     }
 
     private static CapabilityDefinition definition() {
