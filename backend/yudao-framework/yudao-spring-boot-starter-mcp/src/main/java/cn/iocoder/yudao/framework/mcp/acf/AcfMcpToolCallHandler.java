@@ -11,9 +11,12 @@ import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvocationInput;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import cn.iocoder.yudao.framework.mcp.tool.McpSchemaAdapter;
 import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
-import io.modelcontextprotocol.common.McpTransportContext;
 import io.modelcontextprotocol.json.McpJsonMapper;
-import io.modelcontextprotocol.spec.McpSchema;
+import io.modelcontextprotocol.modern.McpSchema;
+import io.modelcontextprotocol.modern.McpSchema.CallToolOutcome;
+import io.modelcontextprotocol.modern.McpSchema.TextContent;
+import io.modelcontextprotocol.modern.server.McpRequestContext;
+import io.modelcontextprotocol.modern.server.McpSyncResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -56,20 +59,25 @@ public class AcfMcpToolCallHandler {
         this.toolContractSupport = toolContractSupport;
     }
 
-    public McpSchema.CallToolResult handle(McpTransportContext transportContext,
-                                           CapabilityToolDescriptor descriptor,
-                                           McpSchema.CallToolRequest request) {
+    /**
+     * Modern sync tool handler：第一个参数是 {@link McpRequestContext}，身份从
+     * {@code requestContext.transportContext()} 取，控制字段从 {@code requestContext.meta()}
+     *（即请求 _meta）取；返回值包一层 {@link McpSyncResponse#result(Object)}。
+     */
+    public McpSyncResponse<CallToolOutcome> handle(McpRequestContext requestContext,
+                                                   CapabilityToolDescriptor descriptor,
+                                                   McpSchema.CallToolRequest request) {
         AcfMcpToolProtocolMetadata.ToolCallControl control;
         try {
-            control = AcfMcpToolProtocolMetadata.readCallControl(request.meta());
+            control = AcfMcpToolProtocolMetadata.readCallControl(requestContext.meta());
         } catch (IllegalArgumentException exception) {
-            return errorResult(CapabilityStatus.FAILURE, "BAD_REQUEST", exception.getMessage(),
-                    false, null, null);
+            return McpSyncResponse.result(errorResult(CapabilityStatus.FAILURE, "BAD_REQUEST",
+                    exception.getMessage(), false, null, null));
         }
         try {
             CapabilityToolInvocationInput invocationInput = toolContractSupport.resolveInvocationInput(
                     request.arguments());
-            CapabilityContext context = AcfMcpContextSupport.fromTransport(transportContext,
+            CapabilityContext context = AcfMcpContextSupport.fromTransport(requestContext.transportContext(),
                     firstPresent(invocationInput.getClientRequestId(), control.clientRequestId()));
             CapabilityToolCall call = CapabilityToolCall.builder()
                     .capabilityName(descriptor.getCapabilityName())
@@ -79,15 +87,15 @@ public class AcfMcpToolCallHandler {
                     .confirmationToken(firstPresent(invocationInput.getConfirmationToken(),
                             control.confirmationToken()))
                     .build();
-            return invokeWithTenantContext(descriptor, call, context.getTenantId());
+            return McpSyncResponse.result(invokeWithTenantContext(descriptor, call, context.getTenantId()));
         } catch (IllegalArgumentException exception) {
-            return errorResult(CapabilityStatus.FAILURE, "BAD_REQUEST", exception.getMessage(),
-                    false, null, null);
+            return McpSyncResponse.result(errorResult(CapabilityStatus.FAILURE, "BAD_REQUEST",
+                    exception.getMessage(), false, null, null));
         } catch (RuntimeException exception) {
             LOGGER.warn("Unexpected MCP tool invocation failure: capability={}, exceptionType={}",
                     descriptor.getCapabilityName(), exception.getClass().getName());
-            return errorResult(CapabilityStatus.FAILURE, INTERNAL_ERROR_CODE, INTERNAL_ERROR_MESSAGE,
-                    false, null, null);
+            return McpSyncResponse.result(errorResult(CapabilityStatus.FAILURE, INTERNAL_ERROR_CODE,
+                    INTERNAL_ERROR_MESSAGE, false, null, null));
         }
     }
 
@@ -140,12 +148,12 @@ public class AcfMcpToolCallHandler {
         Object structuredContent = structuredContentNormalizer.normalize(
                 adaptStructuredContent(descriptor, result.getData()));
         McpSchema.CallToolResult.Builder builder = McpSchema.CallToolResult.builder()
-                .addTextContent(serializeStructuredContent(structuredContent))
+                .addContent(TextContent.builder(serializeStructuredContent(structuredContent)).build())
                 .structuredContent(structuredContent)
                 .meta(resultMetadata(result))
                 .isError(false);
         if (result.getMessage() != null && !result.getMessage().isBlank()) {
-            builder.addTextContent(result.getMessage());
+            builder.addContent(TextContent.builder(result.getMessage()).build());
         }
         return builder.build();
     }
@@ -171,8 +179,10 @@ public class AcfMcpToolCallHandler {
         if (challenge != null) {
             metadata.put(AcfMcpToolProtocolMetadata.CONFIRMATION_CHALLENGE, confirmationChallenge(challenge));
         }
+        // Modern TextContent.builder(text) 要求 text 非空，异常 message 可能为 null 时给默认值。
+        String text = message == null ? "Capability invocation failed" : message;
         return McpSchema.CallToolResult.builder()
-                .addTextContent(message)
+                .addContent(TextContent.builder(text).build())
                 .meta(metadata)
                 .isError(true)
                 .build();

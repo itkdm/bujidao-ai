@@ -5,8 +5,11 @@ import cn.iocoder.yudao.framework.acf.core.model.CapabilityContext;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityConfirmationService;
 import cn.iocoder.yudao.framework.acf.core.standard.AcfCapabilityErrorCodes;
 import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
-import io.modelcontextprotocol.common.McpTransportContext;
-import io.modelcontextprotocol.spec.McpSchema;
+import io.modelcontextprotocol.modern.McpSchema;
+import io.modelcontextprotocol.modern.McpSchema.CallToolOutcome;
+import io.modelcontextprotocol.modern.McpSchema.TextContent;
+import io.modelcontextprotocol.modern.server.McpRequestContext;
+import io.modelcontextprotocol.modern.server.McpSyncResponse;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
@@ -33,11 +36,10 @@ public class AcfMcpConfirmationTool {
     }
 
     public McpSchema.Tool tool() {
-        return McpSchema.Tool.builder()
-                .name(NAME)
+        // Modern Tool.builder(name, inputSchema)：name 与 inputSchema 是必填构造参数。
+        return McpSchema.Tool.builder(NAME, inputSchema())
                 .title("Confirm ACF capability")
                 .description("Confirm a previously challenged ACF capability invocation")
-                .inputSchema(inputSchema())
                 .outputSchema(outputSchema())
                 .annotations(McpSchema.ToolAnnotations.builder()
                         .title("Confirm ACF capability")
@@ -49,16 +51,17 @@ public class AcfMcpConfirmationTool {
                 .build();
     }
 
-    public McpSchema.CallToolResult handle(McpTransportContext transportContext,
-                                           McpSchema.CallToolRequest request) {
+    public McpSyncResponse<CallToolOutcome> handle(McpRequestContext requestContext,
+                                                   McpSchema.CallToolRequest request) {
         Map<String, Object> arguments = request.arguments() == null ? Map.of() : request.arguments();
         String challengeId = optionalString(arguments.get(CHALLENGE_ID));
         if (!StringUtils.hasText(challengeId)) {
-            return errorResult(AcfCapabilityErrorCodes.BAD_REQUEST, "challengeId is required");
+            return McpSyncResponse.result(errorResult(AcfCapabilityErrorCodes.BAD_REQUEST,
+                    "challengeId is required"));
         }
         String confirmRemark = optionalString(arguments.get(CONFIRM_REMARK));
-        CapabilityContext context = AcfMcpContextSupport.fromTransport(transportContext, null);
-        return confirmWithTenantContext(context, challengeId, confirmRemark);
+        CapabilityContext context = AcfMcpContextSupport.fromTransport(requestContext.transportContext(), null);
+        return McpSyncResponse.result(confirmWithTenantContext(context, challengeId, confirmRemark));
     }
 
     private McpSchema.CallToolResult confirmWithTenantContext(CapabilityContext context, String challengeId,
@@ -84,15 +87,19 @@ public class AcfMcpConfirmationTool {
         structuredContent.put("expiresAt", format(token.getExpiresAt()));
         structuredContent.put("nextAction", "Retry the original tool with the same idempotencyKey and this confirmationToken.");
         return McpSchema.CallToolResult.builder()
-                .addTextContent("Confirmation accepted. Retry the original tool with the same idempotencyKey and the returned confirmationToken.")
+                .addContent(TextContent.builder(
+                        "Confirmation accepted. Retry the original tool with the same idempotencyKey and the returned confirmationToken.")
+                        .build())
                 .structuredContent(structuredContent)
                 .isError(false)
                 .build();
     }
 
     private static McpSchema.CallToolResult errorResult(String errorCode, String message) {
+        // Modern TextContent.builder(text) 要求 text 非空，异常 message 可能为 null 时给默认值。
+        String text = message == null ? "Capability confirmation failed" : message;
         return McpSchema.CallToolResult.builder()
-                .addTextContent(message)
+                .addContent(TextContent.builder(text).build())
                 .meta(Map.of(AcfMcpToolProtocolMetadata.STATUS, "FAILURE",
                         AcfMcpToolProtocolMetadata.ERROR_CODE, errorCode,
                         AcfMcpToolProtocolMetadata.RETRYABLE, false))
