@@ -165,8 +165,9 @@ public class OAuth2TokenServiceImplTest extends BaseDbAndRedisUnitTest {
     @Test
     public void testCreateAccessToken_clientDONull() {
         // 调用，并断言
-        assertThrows(IllegalArgumentException.class, () -> oauth2TokenService.createAccessToken(
-                randomLongId(), UserTypeEnum.ADMIN.getValue(), (OAuth2ClientDO) null, List.of("mcp:access")));
+        assertServiceException(() -> oauth2TokenService.createAccessToken(
+                randomLongId(), UserTypeEnum.ADMIN.getValue(), (OAuth2ClientDO) null, List.of("mcp:access")),
+                new ErrorCode(400, "clientDO must not be null"));
     }
 
     @Test
@@ -330,8 +331,9 @@ public class OAuth2TokenServiceImplTest extends BaseDbAndRedisUnitTest {
     @Test
     public void testRefreshAccessToken_clientDONull() {
         // 调用，并断言
-        assertThrows(IllegalArgumentException.class, () -> oauth2TokenService.refreshAccessToken(
-                randomString(), (OAuth2ClientDO) null));
+        assertServiceException(() -> oauth2TokenService.refreshAccessToken(
+                randomString(), (OAuth2ClientDO) null),
+                new ErrorCode(400, "clientDO must not be null"));
     }
 
     @Test

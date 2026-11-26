@@ -30,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -141,13 +142,17 @@ class McpOAuthTokenExchangeServiceTest {
     void shouldRejectRefreshWhenGrantTypeNotAllowedForCimdClient() {
         OAuth2ClientDO client = cimdClient().setAuthorizedGrantTypes(List.of("authorization_code"));
         when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
+        // 刷新先查令牌再解析客户端：令牌匹配才能走到 grant 校验
+        when(oauth2RefreshTokenMapper.selectByRefreshToken("refresh-token-1"))
+                .thenReturn(new OAuth2RefreshTokenDO().setRefreshToken("refresh-token-1")
+                        .setClientId(CLIENT_ID_URL).setTenantId(1L));
         when(clientResolver.resolve(CLIENT_ID_URL, null)).thenReturn(client);
 
         assertThatThrownBy(() -> service.refreshAccessToken(CLIENT_ID_URL, "refresh-token-1"))
                 .isInstanceOf(McpOAuthException.class)
                 .extracting("status", "error")
                 .containsExactly(HttpStatus.BAD_REQUEST, "invalid_grant");
-        verify(oauth2RefreshTokenMapper, never()).selectByRefreshToken(anyString());
+        verify(oauth2TokenService, never()).refreshAccessToken(eq("refresh-token-1"), eq(client));
     }
 
     @Test
@@ -241,7 +246,6 @@ class McpOAuthTokenExchangeServiceTest {
     @Test
     void shouldRevokeTokenForCimdClient() {
         when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
-        when(clientResolver.resolve(CLIENT_ID_URL, null)).thenReturn(cimdClient());
         when(oauth2TokenService.getAccessToken("access-token-1"))
                 .thenReturn(new OAuth2AccessTokenDO().setAccessToken("access-token-1")
                         .setClientId(CLIENT_ID_URL));
@@ -254,13 +258,30 @@ class McpOAuthTokenExchangeServiceTest {
     @Test
     void shouldNotRevokeTokenForOtherClient() {
         when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
-        when(clientResolver.resolve(CLIENT_ID_URL, null)).thenReturn(cimdClient());
         when(oauth2TokenService.getAccessToken("access-token-1"))
                 .thenReturn(new OAuth2AccessTokenDO().setAccessToken("access-token-1")
                         .setClientId("mcp-dcr-other"));
 
         assertThat(service.revokeToken(CLIENT_ID_URL, "access-token-1")).isFalse();
         verify(oauth2TokenService, never()).removeAccessToken(anyString());
+    }
+
+    @Test
+    void shouldRevokeTokenForCimdClientWhenDocumentUnavailable() {
+        // CIMD 文档不可用时（元数据 host 挂了），已有令牌仍能吊销：吊销只做形态判定，不拉取文档。
+        // lenient 打桩表述“文档不可用”的前提，生产代码根本不应调 resolve()，故该打桩永不命中。
+        when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
+        lenient().when(clientResolver.resolve(CLIENT_ID_URL, null))
+                .thenThrow(McpOAuthException.invalidClient("client metadata document is invalid (FETCH_FAILED)"));
+        when(oauth2TokenService.getAccessToken("access-token-1"))
+                .thenReturn(new OAuth2AccessTokenDO().setAccessToken("access-token-1")
+                        .setClientId(CLIENT_ID_URL));
+        when(oauth2TokenService.removeAccessToken("access-token-1"))
+                .thenReturn(new OAuth2AccessTokenDO().setAccessToken("access-token-1"));
+
+        assertThat(service.revokeToken(CLIENT_ID_URL, "access-token-1")).isTrue();
+        verify(clientResolver, never()).resolve(anyString(), any());
+        verifyNoInteractions(oauth2ClientService);
     }
 
     private static OAuth2ClientDO cimdClient() {

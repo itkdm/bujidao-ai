@@ -45,12 +45,14 @@ public class McpOAuthProperties {
     /**
      * 动态客户端 access token 有效期。
      */
+    @NotNull
     @Min(60)
     private Integer accessTokenValiditySeconds = 1800;
 
     /**
      * 动态客户端 refresh token 有效期。
      */
+    @NotNull
     @Min(300)
     private Integer refreshTokenValiditySeconds = 2592000;
 

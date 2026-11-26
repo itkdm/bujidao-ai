@@ -1,6 +1,8 @@
 package cn.iocoder.yudao.module.mcp.framework.oauth2.cimd;
 
+import cn.iocoder.yudao.framework.common.util.json.JsonUtils;
 import cn.iocoder.yudao.module.mcp.framework.oauth2.config.McpOAuthProperties;
+import cn.iocoder.yudao.module.mcp.framework.oauth2.core.McpOAuthRateLimiter;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,6 +23,7 @@ class McpCimdClientServiceTest {
     private HttpServer server;
     private int port;
     private McpOAuthProperties properties;
+    private McpOAuthRateLimiter rateLimiter;
     private McpCimdClientService service;
     private AtomicInteger hits;
 
@@ -31,7 +34,18 @@ class McpCimdClientServiceTest {
         hits = new AtomicInteger();
         properties = new McpOAuthProperties();
         properties.getCimd().setAllowPrivateAddresses(true);
-        service = new McpCimdClientService(properties);
+        // 与生产一致：限流器是共享的，由调用方注入，不由 Service 自建
+        rateLimiter = new McpOAuthRateLimiter(McpOAuthProperties.rateLimitOrDefault(properties));
+        service = newService(properties);
+    }
+
+    /** 按当前 properties 构造 Service：fetcher 与 cache 都用共享 rateLimiter / 当前配置现建。 */
+    private McpCimdClientService newService(McpOAuthProperties props) {
+        McpOAuthProperties.Cimd cimd = McpOAuthProperties.cimdOrDefault(props);
+        McpCimdFetcher fetcher = new McpCimdFetcher(cimd, JsonUtils.getObjectMapper(), rateLimiter);
+        McpCimdMetadataCache cache = new McpCimdMetadataCache(
+                cimd.getCacheMaxAge(), cimd.getCacheDefaultTtl(), cimd.getCacheMaxEntries());
+        return new McpCimdClientService(props, fetcher, cache);
     }
 
     @AfterEach
@@ -154,7 +168,7 @@ class McpCimdClientServiceTest {
     void shouldRejectNullProperties() {
         // properties 为 null 时 cimd 能兜底，但 getLocalRedirectHosts() 会 NPE：
         // 构造器应明确拒绝 null，而不是在 resolve() 的某条分支上才暴露
-        assertThatThrownBy(() -> new McpCimdClientService(null))
+        assertThatThrownBy(() -> newService(null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("properties must not be null");
     }
@@ -165,8 +179,8 @@ class McpCimdClientServiceTest {
 
         // 构造不 NPE；解析时用默认 cimd（allowPrivateAddresses=false），http 本地 URL 应被形状校验拒绝，
         // 而不是空指针
-        McpCimdClientService nullSafeService = new McpCimdClientService(properties);
-        assertThatCode(() -> new McpCimdClientService(properties)).doesNotThrowAnyException();
+        McpCimdClientService nullSafeService = newService(properties);
+        assertThatCode(() -> newService(properties)).doesNotThrowAnyException();
         assertThatThrownBy(() -> nullSafeService.resolve(
                 clientIdUrl("/client"), redirectUri()))
                 .isInstanceOf(McpCimdException.class)

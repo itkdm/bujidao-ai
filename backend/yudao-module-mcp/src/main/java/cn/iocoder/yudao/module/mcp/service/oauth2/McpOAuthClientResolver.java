@@ -153,7 +153,7 @@ public class McpOAuthClientResolver {
                 .setStatus(CommonStatusEnum.ENABLE.getStatus())
                 .setRedirectUris(List.copyOf(metadata.redirectUris()))
                 .setAuthorizedGrantTypes(List.copyOf(grantTypes))
-                .setScopes(scopes)
+                .setScopes(List.copyOf(scopes))
                 .setAutoApproveScopes(List.of())
                 .setAuthorities(List.of())
                 .setResourceIds(List.of())

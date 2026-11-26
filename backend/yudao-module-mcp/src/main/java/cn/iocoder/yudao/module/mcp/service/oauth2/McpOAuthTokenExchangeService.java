@@ -64,9 +64,6 @@ public class McpOAuthTokenExchangeService {
         validateAuthorizationCode(codeDO, codeExtra, clientId, redirectUri, resource, codeVerifier);
         codeExtraRedisDAO.delete(code);
 
-        if (clientResolver.isCimdClientId(clientId) && client == null) {
-            throw McpOAuthException.invalidClient("client_id is invalid");
-        }
         OAuth2AccessTokenDO accessToken = TenantUtils.execute(codeExtra.getTenantId(),
                 () -> clientResolver.isCimdClientId(clientId)
                         ? oauth2TokenService.createAccessToken(codeDO.getUserId(), codeDO.getUserType(),
@@ -81,14 +78,14 @@ public class McpOAuthTokenExchangeService {
     }
 
     public OAuth2OpenAccessTokenRespVO refreshAccessToken(String clientId, String refreshToken) {
-        OAuth2ClientDO client = validatePublicClient(clientId, OAuth2GrantTypeEnum.REFRESH_TOKEN.getGrantType(), null);
+        // 先查刷新令牌：垃圾 refresh_token 不应触发 CIMD 文档拉取。
+        // 注意与 exchangeAuthorizationCode 的顺序不同：授权码消费是一次性的，必须先解析
+        // 客户端、校验通过后再消费授权码，否则无效客户端也能把授权码消耗掉。
         OAuth2RefreshTokenDO refreshTokenDO = oauth2RefreshTokenMapper.selectByRefreshToken(refreshToken);
         if (refreshTokenDO == null || ObjectUtil.notEqual(clientId, refreshTokenDO.getClientId())) {
             throw McpOAuthException.invalidGrant("refresh_token is invalid");
         }
-        if (clientResolver.isCimdClientId(clientId) && client == null) {
-            throw McpOAuthException.invalidClient("client_id is invalid");
-        }
+        OAuth2ClientDO client = validatePublicClient(clientId, OAuth2GrantTypeEnum.REFRESH_TOKEN.getGrantType(), null);
         OAuth2AccessTokenDO accessToken = TenantUtils.execute(refreshTokenDO.getTenantId(),
                 () -> clientResolver.isCimdClientId(clientId)
                         ? oauth2TokenService.refreshAccessToken(refreshToken, client)
@@ -101,7 +98,14 @@ public class McpOAuthTokenExchangeService {
     }
 
     public boolean revokeToken(String clientId, String accessToken) {
-        validatePublicClient(clientId, null, null);
+        if (StrUtil.isBlank(clientId)) {
+            throw McpOAuthException.invalidClient("client_id is required");
+        }
+        if (!clientResolver.isCimdClientId(clientId)) {
+            // DB 分支：保持走 validatePublicClient（查库校验客户端）。
+            validatePublicClient(clientId, null, null);
+        }
+        // CIMD 分支只做形态判定，不拉取文档：元数据 host 挂了，已发令牌仍要能吊销。
         OAuth2AccessTokenDO accessTokenDO = oauth2TokenService.getAccessToken(accessToken);
         if (accessTokenDO == null || ObjectUtil.notEqual(clientId, accessTokenDO.getClientId())) {
             return false;

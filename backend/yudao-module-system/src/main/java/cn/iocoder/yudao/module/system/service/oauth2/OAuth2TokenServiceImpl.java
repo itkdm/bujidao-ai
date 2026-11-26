@@ -90,7 +90,7 @@ public class OAuth2TokenServiceImpl implements OAuth2TokenService {
     @Transactional(rollbackFor = Exception.class)
     public OAuth2AccessTokenDO createAccessToken(Long userId, Integer userType, OAuth2ClientDO clientDO, List<String> scopes) {
         if (clientDO == null) {
-            throw new IllegalArgumentException("clientDO must not be null");
+            throw exception0(GlobalErrorCodeConstants.BAD_REQUEST.getCode(), "clientDO must not be null");
         }
         // 创建刷新令牌
         OAuth2RefreshTokenDO refreshTokenDO = createOAuth2RefreshToken(userId, userType, clientDO, scopes);
@@ -101,6 +101,12 @@ public class OAuth2TokenServiceImpl implements OAuth2TokenService {
     @Override
     @Transactional(noRollbackFor = ServiceException.class)
     public OAuth2AccessTokenDO refreshAccessToken(String refreshToken, String clientId) {
+        // 顺序与旧版一致：先校验刷新令牌存在，再校验客户端。令牌与 clientId 同时无效时，
+        // 仍先报“无效的刷新令牌”；重载内会在同一事务里再查一次同一行令牌，可接受。
+        OAuth2RefreshTokenDO refreshTokenDO = oauth2RefreshTokenMapper.selectByRefreshToken(refreshToken);
+        if (refreshTokenDO == null) {
+            throw exception0(GlobalErrorCodeConstants.BAD_REQUEST.getCode(), "无效的刷新令牌");
+        }
         OAuth2ClientDO clientDO = oauth2ClientService.validOAuthClientFromCache(clientId);
         return refreshAccessToken(refreshToken, clientDO);
     }
@@ -112,7 +118,7 @@ public class OAuth2TokenServiceImpl implements OAuth2TokenService {
     @Transactional(noRollbackFor = ServiceException.class)
     public OAuth2AccessTokenDO refreshAccessToken(String refreshToken, OAuth2ClientDO clientDO) {
         if (clientDO == null) {
-            throw new IllegalArgumentException("clientDO must not be null");
+            throw exception0(GlobalErrorCodeConstants.BAD_REQUEST.getCode(), "clientDO must not be null");
         }
         // 查询访问令牌
         OAuth2RefreshTokenDO refreshTokenDO = oauth2RefreshTokenMapper.selectByRefreshToken(refreshToken);

@@ -1,6 +1,5 @@
 package cn.iocoder.yudao.module.mcp.framework.oauth2.cimd;
 
-import cn.iocoder.yudao.framework.common.util.json.JsonUtils;
 import cn.iocoder.yudao.module.mcp.framework.oauth2.config.McpOAuthProperties;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -24,15 +23,6 @@ public class McpCimdClientService {
     private final McpOAuthProperties properties;
     private final McpCimdFetcher fetcher;
     private final McpCimdMetadataCache cache;
-
-    public McpCimdClientService(McpOAuthProperties properties) {
-        this(properties,
-                new McpCimdFetcher(McpOAuthProperties.cimdOrDefault(properties), JsonUtils.getObjectMapper()),
-                new McpCimdMetadataCache(
-                        McpOAuthProperties.cimdOrDefault(properties).getCacheMaxAge(),
-                        McpOAuthProperties.cimdOrDefault(properties).getCacheDefaultTtl(),
-                        McpOAuthProperties.cimdOrDefault(properties).getCacheMaxEntries()));
-    }
 
     @Autowired
     public McpCimdClientService(McpOAuthProperties properties, McpCimdFetcher fetcher,
