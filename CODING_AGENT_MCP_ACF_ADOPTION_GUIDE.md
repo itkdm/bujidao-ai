@@ -186,7 +186,6 @@ yudao:
       # 绝不要把真实值写进配置文件；轮换后旧 state 立即失效（进行中的确认需重调一次工具）。
       # request-state:
       #   shared-key: ${MCP_REQUEST_STATE_SHARED_KEY}
-      # request-timeout 已废弃：2.2.0 modern Builder 没有等价项，配了也不生效，不要再配。
       # 如果后端在反向代理后无法正确推导外部地址，显式配置下面几项
       public-resource-uri: https://${YOUR_API_DOMAIN}/mcp
       authorization-server-issuer: https://${YOUR_API_DOMAIN}

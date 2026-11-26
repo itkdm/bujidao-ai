@@ -291,7 +291,7 @@ public class YudaoMcpAutoConfiguration {
                                 ObjectProvider<McpSyncToolRepository> toolRepositories) {
         // Modern server 没有 capabilities() / requestTimeout()：capabilities 由注册的 feature
         // 自行贡献（ToolsFeature 贡献 tools）；requestTimeout 在 2.2.0 modern Builder 里没有
-        // 等价项，YudaoMcpServerProperties.requestTimeout 目前不再生效（字段已标注废弃）。
+        // 等价项，该配置项已随 2.2.0 迁移删除；工具调用目前无超时上限，如需超时控制要另找机制。
         // Resources / Prompts 不注册 feature，server/discover 不宣告，对应方法返回 METHOD_NOT_FOUND。
         // ToolsFeature 始终注册：无仓库时用空仓库，tools/list 返回 200 空列表、tools/call
         // 答 Unknown tool，与原来注册空工具列表的语义一致；多个仓库时合成一个。

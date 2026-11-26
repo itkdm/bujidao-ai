@@ -8,7 +8,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.util.unit.DataSize;
 import org.springframework.validation.annotation.Validated;
 
-import java.time.Duration;
 import java.util.Base64;
 import java.util.List;
 
@@ -99,13 +98,6 @@ public class YudaoMcpServerProperties {
     private String version = "1.0.0";
 
     private String instructions;
-
-    /**
-     * 已废弃：2.2.0 modern Builder 没有 requestTimeout 的等价项，配了也不生效。
-     * 工具调用目前无超时上限，挂起调用会一直占容器线程；如需超时控制要另找机制。
-     */
-    @Deprecated
-    private Duration requestTimeout = Duration.ofSeconds(30);
 
     /**
      * 单次 MCP 请求允许读取的最大请求体，避免 chunked 请求绕过 Content-Length 检查。
