@@ -27,7 +27,7 @@ import java.util.List;
 /**
  * 按当前 MCP 调用身份动态返回 tools/list。
  *
- * <p>MCP Java SDK 2.0.1 的 stateless server 只维护静态工具列表。ACF 需要 discover-time
+ * <p>MCP Java SDK 2.2.0 的 stateless server 只维护静态工具列表。ACF 需要 discover-time
  * authorization，因此这里在 MCP 安全链完成认证和租户上下文绑定后拦截 tools/list，
  * 只返回当前用户可见的能力工具；tools/call 仍由 SDK 路由并进入 ACF 执行阶段二次校验。</p>
  *
