@@ -61,20 +61,31 @@ public class McpOAuthTokenExchangeService {
         validateAuthorizationCode(codeDO, codeExtra, clientId, redirectUri, resource, codeVerifier);
         codeExtraRedisDAO.delete(code);
 
+        if (clientResolver.isCimdClientId(clientId) && client == null) {
+            throw McpOAuthException.invalidClient("client_id is invalid");
+        }
         OAuth2AccessTokenDO accessToken = TenantUtils.execute(codeExtra.getTenantId(),
-                () -> oauth2TokenService.createAccessToken(codeDO.getUserId(), codeDO.getUserType(),
-                        codeDO.getClientId(), codeDO.getScopes()));
+                () -> clientResolver.isCimdClientId(clientId)
+                        ? oauth2TokenService.createAccessToken(codeDO.getUserId(), codeDO.getUserType(),
+                                client, codeDO.getScopes())
+                        : oauth2TokenService.createAccessToken(codeDO.getUserId(), codeDO.getUserType(),
+                                codeDO.getClientId(), codeDO.getScopes()));
         return OAuth2OpenConvert.INSTANCE.convert(accessToken);
     }
 
     public OAuth2OpenAccessTokenRespVO refreshAccessToken(String clientId, String refreshToken) {
-        validatePublicClient(clientId, OAuth2GrantTypeEnum.REFRESH_TOKEN.getGrantType(), null);
+        OAuth2ClientDO client = validatePublicClient(clientId, OAuth2GrantTypeEnum.REFRESH_TOKEN.getGrantType(), null);
         OAuth2RefreshTokenDO refreshTokenDO = oauth2RefreshTokenMapper.selectByRefreshToken(refreshToken);
         if (refreshTokenDO == null || ObjectUtil.notEqual(clientId, refreshTokenDO.getClientId())) {
             throw McpOAuthException.invalidGrant("refresh_token is invalid");
         }
+        if (clientResolver.isCimdClientId(clientId) && client == null) {
+            throw McpOAuthException.invalidClient("client_id is invalid");
+        }
         OAuth2AccessTokenDO accessToken = TenantUtils.execute(refreshTokenDO.getTenantId(),
-                () -> oauth2TokenService.refreshAccessToken(refreshToken, clientId));
+                () -> clientResolver.isCimdClientId(clientId)
+                        ? oauth2TokenService.refreshAccessToken(refreshToken, client)
+                        : oauth2TokenService.refreshAccessToken(refreshToken, clientId));
         return OAuth2OpenConvert.INSTANCE.convert(accessToken);
     }
 
