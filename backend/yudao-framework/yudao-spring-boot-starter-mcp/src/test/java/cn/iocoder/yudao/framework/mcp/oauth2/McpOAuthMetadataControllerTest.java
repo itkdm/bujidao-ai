@@ -49,15 +49,13 @@ class McpOAuthMetadataControllerTest {
     }
 
     @Test
-    void shouldExposeRegistrationEndpointWhenEnabled() {
-        YudaoMcpServerProperties properties = new YudaoMcpServerProperties();
-        properties.setDynamicClientRegistrationEnabled(true);
-
+    void shouldNeverExposeRegistrationEndpoint() {
+        // DCR 已移除：YudaoMcpServerProperties 不再有注册开关 / 注册端点配置，
+        // 元数据默认也不含 registration_endpoint。
         Map<String, Object> metadata = new McpOAuthMetadataController(
-                properties, emptyBeanProvider()).authorizationServerMetadata(request());
+                new YudaoMcpServerProperties(), emptyBeanProvider()).authorizationServerMetadata(request());
 
-        assertThat(metadata.get("registration_endpoint"))
-                .isEqualTo("https://erp.example.com/admin-api/mcp/oauth2/register");
+        assertThat(metadata).doesNotContainKey("registration_endpoint");
     }
 
     @Test
@@ -81,16 +79,20 @@ class McpOAuthMetadataControllerTest {
     }
 
     @Test
-    void shouldUseConfiguredRegistrationEndpoint() {
+    void shouldNotExposeRegistrationEndpointWithConfiguredEndpoints() {
+        // DCR 已移除：即使配了 issuer / 各端点，元数据也不含 registration_endpoint。
         YudaoMcpServerProperties properties = new YudaoMcpServerProperties();
-        properties.setDynamicClientRegistrationEnabled(true);
-        properties.setRegistrationEndpoint("https://auth.example.com/oauth/register");
+        properties.setAuthorizationServerIssuer("https://auth.example.com");
+        properties.setAuthorizationEndpoint("https://auth.example.com/sso");
+        properties.setTokenEndpoint("https://auth.example.com/admin-api/system/oauth2/token");
+        properties.setRevocationEndpoint("https://auth.example.com/admin-api/system/oauth2/token");
 
         Map<String, Object> metadata = new McpOAuthMetadataController(
                 properties, emptyBeanProvider()).authorizationServerMetadata(request());
 
-        assertThat(metadata.get("registration_endpoint"))
-                .isEqualTo("https://auth.example.com/oauth/register");
+        assertThat(metadata.get("issuer")).isEqualTo("https://auth.example.com");
+        assertThat(metadata.get("authorization_endpoint")).isEqualTo("https://auth.example.com/sso");
+        assertThat(metadata).doesNotContainKey("registration_endpoint");
     }
 
     private static MockHttpServletRequest request() {

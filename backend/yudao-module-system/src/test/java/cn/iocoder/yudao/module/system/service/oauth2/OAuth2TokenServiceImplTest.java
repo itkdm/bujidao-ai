@@ -46,6 +46,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -119,6 +120,53 @@ public class OAuth2TokenServiceImplTest extends BaseDbAndRedisUnitTest {
         assertPojoEquals(accessTokenDO, refreshTokenDO, "id", "expiresTime", "createTime", "updateTime", "deleted");
         assertEquals(now.plusSeconds(60), refreshTokenDO.getExpiresTime());
         assertFalse(DateUtils.isExpired(refreshTokenDO.getExpiresTime()));
+    }
+
+    @Test
+    public void testCreateAccessToken_clientDO() {
+        TenantContextHolder.setTenantId(0L);
+        // 准备参数：CIMD 合成的临时客户端（client_id 为 URL 形态，不入库）
+        Long userId = randomLongId();
+        Integer userType = UserTypeEnum.ADMIN.getValue();
+        String clientIdUrl = "https://client.example.com/app";
+        List<String> scopes = Lists.newArrayList("mcp:access");
+        LocalDateTime now = LocalDateTime.now().withNano(0);
+        // mock 方法：OAuth2ClientDO 重载直接用调用方解析好的客户端，不查库
+        OAuth2ClientDO clientDO = randomPojo(OAuth2ClientDO.class).setClientId(clientIdUrl)
+                .setAccessTokenValiditySeconds(30).setRefreshTokenValiditySeconds(60);
+        // mock 数据（用户）
+        AdminUserDO user = randomPojo(AdminUserDO.class);
+        when(adminUserService.getUser(userId)).thenReturn(user);
+
+        // 调用
+        OAuth2AccessTokenDO accessTokenDO;
+        try (MockedStatic<LocalDateTime> mockedTime = mockStatic(LocalDateTime.class, CALLS_REAL_METHODS)) {
+            mockedTime.when(LocalDateTime::now).thenReturn(now);
+            accessTokenDO = oauth2TokenService.createAccessToken(userId, userType, clientDO, scopes);
+        }
+        // 断言访问令牌
+        OAuth2AccessTokenDO dbAccessTokenDO = oauth2AccessTokenMapper.selectByAccessToken(accessTokenDO.getAccessToken());
+        assertPojoEquals(accessTokenDO, dbAccessTokenDO, "createTime", "updateTime", "deleted");
+        assertEquals(userId, accessTokenDO.getUserId());
+        assertEquals(userType, accessTokenDO.getUserType());
+        assertEquals(clientIdUrl, accessTokenDO.getClientId());
+        assertEquals(scopes, accessTokenDO.getScopes());
+        assertEquals(now.plusSeconds(30), accessTokenDO.getExpiresTime());
+        assertFalse(DateUtils.isExpired(accessTokenDO.getExpiresTime()));
+        // 断言刷新令牌
+        OAuth2RefreshTokenDO refreshTokenDO = oauth2RefreshTokenMapper.selectList().get(0);
+        assertEquals(clientIdUrl, refreshTokenDO.getClientId());
+        assertEquals(now.plusSeconds(60), refreshTokenDO.getExpiresTime());
+        assertFalse(DateUtils.isExpired(refreshTokenDO.getExpiresTime()));
+        // 断言，重载不经过 DB 查库
+        verifyNoInteractions(oauth2ClientService);
+    }
+
+    @Test
+    public void testCreateAccessToken_clientDONull() {
+        // 调用，并断言
+        assertThrows(IllegalArgumentException.class, () -> oauth2TokenService.createAccessToken(
+                randomLongId(), UserTypeEnum.ADMIN.getValue(), (OAuth2ClientDO) null, List.of("mcp:access")));
     }
 
     @Test
@@ -226,6 +274,64 @@ public class OAuth2TokenServiceImplTest extends BaseDbAndRedisUnitTest {
         // 断言，新的访问令牌的缓存
         OAuth2AccessTokenDO redisAccessTokenDO = oauth2AccessTokenRedisDAO.get(newAccessTokenDO.getAccessToken());
         assertPojoEquals(newAccessTokenDO, redisAccessTokenDO, "createTime", "updateTime", "deleted");
+    }
+
+    @Test
+    public void testRefreshAccessToken_clientDO_success() {
+        TenantContextHolder.setTenantId(0L);
+        // 准备参数：CIMD 合成的临时客户端（client_id 为 URL 形态，不入库）
+        String refreshToken = randomString();
+        String clientIdUrl = "https://client.example.com/app";
+        LocalDateTime now = LocalDateTime.now().withNano(0);
+        // mock 方法：OAuth2ClientDO 重载直接用调用方解析好的客户端，不查库
+        OAuth2ClientDO clientDO = randomPojo(OAuth2ClientDO.class).setClientId(clientIdUrl)
+                .setAccessTokenValiditySeconds(30);
+        // mock 数据（刷新令牌）
+        OAuth2RefreshTokenDO refreshTokenDO = randomPojo(OAuth2RefreshTokenDO.class, o ->
+                o.setRefreshToken(refreshToken).setClientId(clientIdUrl)
+                        .setExpiresTime(LocalDateTime.now().plusDays(1))
+                        .setUserType(UserTypeEnum.ADMIN.getValue())
+                        .setTenantId(TenantContextHolder.getTenantId()));
+        oauth2RefreshTokenMapper.insert(refreshTokenDO);
+        // mock 数据（访问令牌）
+        OAuth2AccessTokenDO accessTokenDO = randomPojo(OAuth2AccessTokenDO.class).setRefreshToken(refreshToken)
+                .setUserType(refreshTokenDO.getUserType())
+                .setExpiresTime(LocalDateTime.now().plusDays(1).withNano(0));
+        oauth2AccessTokenMapper.insert(accessTokenDO);
+        oauth2AccessTokenRedisDAO.set(accessTokenDO);
+        // mock 数据（用户）
+        AdminUserDO user = randomPojo(AdminUserDO.class);
+        when(adminUserService.getUser(refreshTokenDO.getUserId())).thenReturn(user);
+
+        // 调用
+        OAuth2AccessTokenDO newAccessTokenDO;
+        try (MockedStatic<LocalDateTime> mockedTime = mockStatic(LocalDateTime.class, CALLS_REAL_METHODS)) {
+            mockedTime.when(LocalDateTime::now).thenReturn(now);
+            newAccessTokenDO = oauth2TokenService.refreshAccessToken(refreshToken, clientDO);
+        }
+        // 断言，老的访问令牌保留，由其有效期自然结束（多标签页场景：https://github.com/YunaiV/ruoyi-vue-pro/issues/1332）
+        assertNotNull(oauth2AccessTokenMapper.selectByAccessToken(accessTokenDO.getAccessToken()));
+        assertNotNull(oauth2AccessTokenRedisDAO.get(accessTokenDO.getAccessToken()));
+        // 断言，新的访问令牌
+        OAuth2AccessTokenDO dbAccessTokenDO = oauth2AccessTokenMapper.selectByAccessToken(newAccessTokenDO.getAccessToken());
+        assertPojoEquals(newAccessTokenDO, dbAccessTokenDO, "createTime", "updateTime", "deleted");
+        assertPojoEquals(newAccessTokenDO, refreshTokenDO, "id", "expiresTime", "createTime", "updateTime", "deleted",
+                "creator", "updater");
+        assertEquals(clientIdUrl, newAccessTokenDO.getClientId());
+        assertEquals(now.plusSeconds(30), newAccessTokenDO.getExpiresTime());
+        assertFalse(DateUtils.isExpired(newAccessTokenDO.getExpiresTime()));
+        // 断言，新的访问令牌的缓存
+        OAuth2AccessTokenDO redisAccessTokenDO = oauth2AccessTokenRedisDAO.get(newAccessTokenDO.getAccessToken());
+        assertPojoEquals(newAccessTokenDO, redisAccessTokenDO, "createTime", "updateTime", "deleted");
+        // 断言，重载不经过 DB 查库
+        verifyNoInteractions(oauth2ClientService);
+    }
+
+    @Test
+    public void testRefreshAccessToken_clientDONull() {
+        // 调用，并断言
+        assertThrows(IllegalArgumentException.class, () -> oauth2TokenService.refreshAccessToken(
+                randomString(), (OAuth2ClientDO) null));
     }
 
     @Test

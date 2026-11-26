@@ -1,5 +1,7 @@
 package cn.iocoder.yudao.module.mcp.framework.oauth2.cimd;
 
+import cn.iocoder.yudao.module.mcp.framework.oauth2.config.McpOAuthProperties;
+import cn.iocoder.yudao.module.mcp.framework.oauth2.core.McpOAuthRateLimiter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
@@ -402,6 +404,52 @@ class McpCimdFetcherTest {
                 .isInstanceOf(McpCimdException.class)
                 .extracting(exception -> ((McpCimdException) exception).getError())
                 .isEqualTo(McpCimdError.DOCUMENT_TOO_LARGE);
+    }
+
+    // ========== 限流 ==========
+
+    @Test
+    void shouldRejectFetchWhenCimdRateLimited() throws Exception {
+        String clientIdUrl = localUrl("/client");
+        String otherUrl = localUrl("/other");
+        respondJson("/client", "{\"client_id\":\"" + clientIdUrl + "\"}", null);
+        respondJson("/other", "{\"client_id\":\"" + otherUrl + "\"}", null);
+        server.start();
+
+        McpOAuthProperties.RateLimit config = new McpOAuthProperties.RateLimit();
+        config.setCimdPerHostPerMinute(1);
+        McpCimdFetcher fetcher = new McpCimdFetcher(TIMEOUT, 5120, true, new ObjectMapper(),
+                new McpOAuthRateLimiter(config));
+
+        McpCimdFetcher.FetchedDocument fetched = fetcher.fetch(clientIdUrl);
+        assertThat(fetched.document().get("client_id")).isEqualTo(clientIdUrl);
+        // 同一 host 第二次拉取：单 host 窗口已满，直接抛 RATE_LIMITED，不发请求
+        assertThatThrownBy(() -> fetcher.fetch(otherUrl))
+                .isInstanceOf(McpCimdException.class)
+                .extracting(exception -> ((McpCimdException) exception).getError())
+                .isEqualTo(McpCimdError.RATE_LIMITED);
+    }
+
+    @Test
+    void shouldRejectFetchWhenCimdSlotsExhausted() throws Exception {
+        String clientIdUrl = localUrl("/client");
+        respondJson("/client", "{\"client_id\":\"" + clientIdUrl + "\"}", null);
+        server.start();
+
+        McpOAuthProperties.RateLimit config = new McpOAuthProperties.RateLimit();
+        config.setCimdMaxConcurrentFetches(1);
+        McpOAuthRateLimiter limiter = new McpOAuthRateLimiter(config);
+        McpCimdFetcher fetcher = new McpCimdFetcher(TIMEOUT, 5120, true, new ObjectMapper(), limiter);
+
+        assertThat(limiter.tryAcquireCimdSlot()).isTrue();
+        // 并发槽被占满：不发请求，直接抛 RATE_LIMITED
+        assertThatThrownBy(() -> fetcher.fetch(clientIdUrl))
+                .isInstanceOf(McpCimdException.class)
+                .extracting(exception -> ((McpCimdException) exception).getError())
+                .isEqualTo(McpCimdError.RATE_LIMITED);
+        // 释放槽后恢复
+        limiter.releaseCimdSlot();
+        assertThat(fetcher.fetch(clientIdUrl).document().get("client_id")).isEqualTo(clientIdUrl);
     }
 
     @Test

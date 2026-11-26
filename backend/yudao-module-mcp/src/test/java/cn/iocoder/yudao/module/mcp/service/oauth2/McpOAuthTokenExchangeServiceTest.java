@@ -66,11 +66,13 @@ class McpOAuthTokenExchangeServiceTest {
 
     @Test
     void shouldExchangeAuthorizationCodeForCimdClient() {
+        OAuth2ClientDO client = cimdClient();
         when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
-        when(clientResolver.resolve(CLIENT_ID_URL, null)).thenReturn(cimdClient());
+        when(clientResolver.resolve(CLIENT_ID_URL, null)).thenReturn(client);
         when(codeExtraRedisDAO.get("code-123")).thenReturn(codeExtra());
         when(oauth2CodeService.consumeAuthorizationCode("code-123")).thenReturn(codeDO());
-        when(oauth2TokenService.createAccessToken(eq(1L), eq(2), eq(CLIENT_ID_URL), eq(List.of("mcp:access"))))
+        // CIMD 客户端走上游 OAuth2ClientDO 重载（不查库），不用 String 重载
+        when(oauth2TokenService.createAccessToken(eq(1L), eq(2), eq(client), eq(List.of("mcp:access"))))
                 .thenReturn(accessTokenDO());
 
         OAuth2OpenAccessTokenRespVO respVO = service.exchangeAuthorizationCode(
@@ -80,6 +82,8 @@ class McpOAuthTokenExchangeServiceTest {
         assertThat(respVO.getScope()).isEqualTo("mcp:access");
         verify(codeExtraRedisDAO).delete("code-123");
         verifyNoInteractions(oauth2ClientService);
+        // 明确走 clientDO 重载：解析出的临时客户端原样传给上游，不经过 DB 查库
+        verify(oauth2TokenService).createAccessToken(eq(1L), eq(2), eq(client), eq(List.of("mcp:access")));
     }
 
     @Test
@@ -115,18 +119,22 @@ class McpOAuthTokenExchangeServiceTest {
 
     @Test
     void shouldRefreshAccessTokenForCimdClient() {
+        OAuth2ClientDO client = cimdClient();
         when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
-        when(clientResolver.resolve(CLIENT_ID_URL, null)).thenReturn(cimdClient());
+        when(clientResolver.resolve(CLIENT_ID_URL, null)).thenReturn(client);
         when(oauth2RefreshTokenMapper.selectByRefreshToken("refresh-token-1"))
                 .thenReturn(new OAuth2RefreshTokenDO().setRefreshToken("refresh-token-1")
                         .setClientId(CLIENT_ID_URL).setTenantId(1L));
-        when(oauth2TokenService.refreshAccessToken("refresh-token-1", CLIENT_ID_URL))
+        // CIMD 客户端走上游 OAuth2ClientDO 重载（不查库），不用 String 重载
+        when(oauth2TokenService.refreshAccessToken("refresh-token-1", client))
                 .thenReturn(accessTokenDO());
 
         OAuth2OpenAccessTokenRespVO respVO = service.refreshAccessToken(CLIENT_ID_URL, "refresh-token-1");
 
         assertThat(respVO.getAccessToken()).isEqualTo("access-token-1");
         verifyNoInteractions(oauth2ClientService);
+        // 明确走 clientDO 重载：解析出的临时客户端原样传给上游，不经过 DB 查库
+        verify(oauth2TokenService).refreshAccessToken("refresh-token-1", client);
     }
 
     @Test

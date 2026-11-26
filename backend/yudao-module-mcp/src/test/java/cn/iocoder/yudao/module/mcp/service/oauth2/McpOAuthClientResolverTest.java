@@ -158,6 +158,24 @@ class McpOAuthClientResolverTest {
     }
 
     @Test
+    void shouldThrowInvalidClientWhenCimdFetchIsRateLimited() throws Exception {
+        givenCimdServiceAvailable();
+        when(cimdClientService.resolveMetadata(CLIENT_ID_URL))
+                .thenThrow(new McpCimdException(McpCimdError.RATE_LIMITED, "CIMD fetch rate limited"));
+
+        // 限流与拉取失败一样转 OAuth invalid_client（400），不产生 500；
+        // 描述里保留 RATE_LIMITED 类别，便于区分限流与其它拉取失败
+        assertThatThrownBy(() -> resolver.resolve(CLIENT_ID_URL, null))
+                .isInstanceOf(McpOAuthException.class)
+                .satisfies(exception -> {
+                    McpOAuthException oauthException = (McpOAuthException) exception;
+                    assertThat(oauthException.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+                    assertThat(oauthException.getError()).isEqualTo("invalid_client");
+                    assertThat(oauthException.getDescription()).contains("RATE_LIMITED");
+                });
+    }
+
+    @Test
     void shouldThrowInvalidClientWhenRedirectUriNotRegistered() throws Exception {
         givenCimdServiceAvailable();
         when(cimdClientService.resolve(CLIENT_ID_URL, "https://client.example.com/other"))
