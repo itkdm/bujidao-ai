@@ -50,11 +50,23 @@ class McpOAuthMetadataControllerTest {
 
     @Test
     void shouldNeverExposeRegistrationEndpoint() {
-        // DCR 已移除：YudaoMcpServerProperties 不再有注册开关 / 注册端点配置，
-        // 元数据默认也不含 registration_endpoint。
-        Map<String, Object> metadata = new McpOAuthMetadataController(
+        // DCR 已移除：默认配置与配了 issuer / 各端点的配置下，元数据都不含 registration_endpoint。
+        Map<String, Object> defaultMetadata = new McpOAuthMetadataController(
                 new YudaoMcpServerProperties(), emptyBeanProvider()).authorizationServerMetadata(request());
 
+        assertThat(defaultMetadata).doesNotContainKey("registration_endpoint");
+
+        YudaoMcpServerProperties properties = new YudaoMcpServerProperties();
+        properties.setAuthorizationServerIssuer("https://auth.example.com");
+        properties.setAuthorizationEndpoint("https://auth.example.com/sso");
+        properties.setTokenEndpoint("https://auth.example.com/admin-api/system/oauth2/token");
+        properties.setRevocationEndpoint("https://auth.example.com/admin-api/system/oauth2/token");
+
+        Map<String, Object> metadata = new McpOAuthMetadataController(
+                properties, emptyBeanProvider()).authorizationServerMetadata(request());
+
+        assertThat(metadata.get("issuer")).isEqualTo("https://auth.example.com");
+        assertThat(metadata.get("authorization_endpoint")).isEqualTo("https://auth.example.com/sso");
         assertThat(metadata).doesNotContainKey("registration_endpoint");
     }
 
@@ -76,23 +88,6 @@ class McpOAuthMetadataControllerTest {
                 .isEqualTo("https://erp.example.com/console-api/mcp/oauth2/token");
         assertThat(metadata.get("revocation_endpoint"))
                 .isEqualTo("https://erp.example.com/console-api/mcp/oauth2/revoke");
-    }
-
-    @Test
-    void shouldNotExposeRegistrationEndpointWithConfiguredEndpoints() {
-        // DCR 已移除：即使配了 issuer / 各端点，元数据也不含 registration_endpoint。
-        YudaoMcpServerProperties properties = new YudaoMcpServerProperties();
-        properties.setAuthorizationServerIssuer("https://auth.example.com");
-        properties.setAuthorizationEndpoint("https://auth.example.com/sso");
-        properties.setTokenEndpoint("https://auth.example.com/admin-api/system/oauth2/token");
-        properties.setRevocationEndpoint("https://auth.example.com/admin-api/system/oauth2/token");
-
-        Map<String, Object> metadata = new McpOAuthMetadataController(
-                properties, emptyBeanProvider()).authorizationServerMetadata(request());
-
-        assertThat(metadata.get("issuer")).isEqualTo("https://auth.example.com");
-        assertThat(metadata.get("authorization_endpoint")).isEqualTo("https://auth.example.com/sso");
-        assertThat(metadata).doesNotContainKey("registration_endpoint");
     }
 
     private static MockHttpServletRequest request() {

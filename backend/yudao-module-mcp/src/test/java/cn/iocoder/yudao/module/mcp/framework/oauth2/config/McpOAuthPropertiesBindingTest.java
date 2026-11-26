@@ -29,6 +29,15 @@ class McpOAuthPropertiesBindingTest {
                     McpOAuthConfiguration.class))
             .withBean(McpCimdClientService.class);
 
+    /**
+     * 不带 McpCimdClientService 的 Runner：rate-limit 的 enabled=false 会让
+     * McpOAuthConfiguration 里的 Fetcher / Cache Bean 都不建，ClientService
+     * （构造器要 Fetcher + Cache）也就建不出来；只验 Properties 绑定时不用它。
+     */
+    private final ApplicationContextRunner propertiesOnlyContextRunner = new ApplicationContextRunner()
+            .withConfiguration(AutoConfigurations.of(ValidationAutoConfiguration.class,
+                    McpOAuthConfiguration.class));
+
     @Test
     void shouldBindCimdProperties() {
         contextRunner
@@ -54,6 +63,48 @@ class McpOAuthPropertiesBindingTest {
                     assertThat(context).hasSingleBean(McpCimdMetadataCache.class);
                     assertThat(context).hasSingleBean(McpCimdClientService.class);
                 });
+    }
+
+    @Test
+    void shouldBindRateLimitProperties() {
+        // enabled=false 时 Fetcher / Cache Bean 都不建（见 propertiesOnlyContextRunner 的说明），
+        // 这里只断言 Properties 绑定本身，不验那几个 Bean。
+        propertiesOnlyContextRunner
+                .withPropertyValues(
+                        "yudao.mcp.oauth.rate-limit.enabled=false",
+                        "yudao.mcp.oauth.rate-limit.cimd-per-host-per-minute=10",
+                        "yudao.mcp.oauth.rate-limit.cimd-global-per-minute=100",
+                        "yudao.mcp.oauth.rate-limit.cimd-max-concurrent-fetches=5",
+                        "yudao.mcp.oauth.rate-limit.authorize-per-ip-per-minute=30",
+                        "yudao.mcp.oauth.rate-limit.token-per-ip-per-minute=45")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(McpOAuthProperties.class);
+                    McpOAuthProperties.RateLimit rateLimit =
+                            context.getBean(McpOAuthProperties.class).getRateLimit();
+                    assertThat(rateLimit.isEnabled()).isFalse();
+                    assertThat(rateLimit.getCimdPerHostPerMinute()).isEqualTo(10);
+                    assertThat(rateLimit.getCimdGlobalPerMinute()).isEqualTo(100);
+                    assertThat(rateLimit.getCimdMaxConcurrentFetches()).isEqualTo(5);
+                    assertThat(rateLimit.getAuthorizePerIpPerMinute()).isEqualTo(30);
+                    assertThat(rateLimit.getTokenPerIpPerMinute()).isEqualTo(45);
+                });
+    }
+
+    @Test
+    void shouldUseRateLimitDefaults() {
+        contextRunner.run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context).hasSingleBean(McpOAuthProperties.class);
+            McpOAuthProperties.RateLimit rateLimit =
+                    context.getBean(McpOAuthProperties.class).getRateLimit();
+            assertThat(rateLimit.isEnabled()).isTrue();
+            assertThat(rateLimit.getCimdPerHostPerMinute()).isEqualTo(60);
+            assertThat(rateLimit.getCimdGlobalPerMinute()).isEqualTo(600);
+            assertThat(rateLimit.getCimdMaxConcurrentFetches()).isEqualTo(20);
+            assertThat(rateLimit.getAuthorizePerIpPerMinute()).isEqualTo(60);
+            assertThat(rateLimit.getTokenPerIpPerMinute()).isEqualTo(60);
+        });
     }
 
     @Test

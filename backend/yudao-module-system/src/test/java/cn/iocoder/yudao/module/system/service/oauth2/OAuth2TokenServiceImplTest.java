@@ -120,6 +120,8 @@ public class OAuth2TokenServiceImplTest extends BaseDbAndRedisUnitTest {
         assertPojoEquals(accessTokenDO, refreshTokenDO, "id", "expiresTime", "createTime", "updateTime", "deleted");
         assertEquals(now.plusSeconds(60), refreshTokenDO.getExpiresTime());
         assertFalse(DateUtils.isExpired(refreshTokenDO.getExpiresTime()));
+        // String 重载走查库：锁定 validOAuthClientFromCache 确实被调到（不是悄悄绕过）
+        verify(oauth2ClientService).validOAuthClientFromCache(eq(clientId));
     }
 
     @Test
@@ -198,6 +200,8 @@ public class OAuth2TokenServiceImplTest extends BaseDbAndRedisUnitTest {
         // 调用，并断言
         assertServiceException(() -> oauth2TokenService.refreshAccessToken(refreshToken, clientId),
                 new ErrorCode(400, "刷新令牌的客户端编号不正确"));
+        // String 重载走查库：令牌与 clientId 不匹配时也先查过客户端
+        verify(oauth2ClientService).validOAuthClientFromCache(eq(clientId));
     }
 
     @Test
@@ -226,6 +230,8 @@ public class OAuth2TokenServiceImplTest extends BaseDbAndRedisUnitTest {
         assertNull(oauth2RefreshTokenMapper.selectByRefreshToken(refreshToken));
         assertEquals(0, oauth2AccessTokenMapper.selectCount());
         assertNull(oauth2AccessTokenRedisDAO.get(accessTokenDO.getAccessToken()));
+        // String 重载走查库：过期分支抛错前也查过客户端
+        verify(oauth2ClientService).validOAuthClientFromCache(eq(clientId));
     }
 
     @Test
@@ -275,6 +281,8 @@ public class OAuth2TokenServiceImplTest extends BaseDbAndRedisUnitTest {
         // 断言，新的访问令牌的缓存
         OAuth2AccessTokenDO redisAccessTokenDO = oauth2AccessTokenRedisDAO.get(newAccessTokenDO.getAccessToken());
         assertPojoEquals(newAccessTokenDO, redisAccessTokenDO, "createTime", "updateTime", "deleted");
+        // String 重载走查库：锁定 validOAuthClientFromCache 确实被调到（不是悄悄绕过）
+        verify(oauth2ClientService).validOAuthClientFromCache(eq(clientId));
     }
 
     @Test

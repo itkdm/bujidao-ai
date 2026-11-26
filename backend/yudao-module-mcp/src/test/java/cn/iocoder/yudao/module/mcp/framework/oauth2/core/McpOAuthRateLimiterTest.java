@@ -7,6 +7,13 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -60,6 +67,70 @@ class McpOAuthRateLimiterTest {
         // 滑过 60 秒窗口：旧记录过期，恢复放行
         clock.advance(Duration.ofSeconds(2));
         assertThat(limiter.tryAcquireToken("1.2.3.4")).isTrue();
+    }
+
+    @Test
+    void shouldExpireEntriesExactlyAtSixtySecondBoundary() {
+        McpOAuthProperties.RateLimit config = new McpOAuthProperties.RateLimit();
+        config.setTokenPerIpPerMinute(1);
+        MutableClock clock = new MutableClock(START);
+        McpOAuthRateLimiter limiter = new McpOAuthRateLimiter(config, clock);
+
+        assertThat(limiter.tryAcquireToken("1.2.3.4")).isTrue();
+        assertThat(limiter.tryAcquireToken("1.2.3.4")).isFalse();
+        // 59 秒：旧记录仍在窗口内，继续拒绝
+        clock.advance(Duration.ofSeconds(59));
+        assertThat(limiter.tryAcquireToken("1.2.3.4")).isFalse();
+        // 恰满 60 秒即过期：实现按 peekFirst <= now - 60000 驱逐，旧记录被清掉、恢复放行（不是 61 秒）
+        clock.advance(Duration.ofSeconds(1));
+        assertThat(limiter.tryAcquireToken("1.2.3.4")).isTrue();
+    }
+
+    @Test
+    void shouldAllowExactlyLimitConcurrentTokenAcquires() throws Exception {
+        int limit = 10;
+        McpOAuthProperties.RateLimit config = new McpOAuthProperties.RateLimit();
+        config.setTokenPerIpPerMinute(limit);
+        McpOAuthRateLimiter limiter = new McpOAuthRateLimiter(config, new MutableClock(START));
+
+        int threads = 32;
+        ExecutorService executor = Executors.newFixedThreadPool(threads);
+        CountDownLatch ready = new CountDownLatch(threads);
+        CountDownLatch start = new CountDownLatch(1);
+        AtomicInteger allowed = new AtomicInteger();
+        List<Future<?>> futures = new ArrayList<>();
+        try {
+            for (int i = 0; i < threads; i++) {
+                futures.add(executor.submit(() -> {
+                    ready.countDown();
+                    start.await();
+                    if (limiter.tryAcquireToken("1.2.3.4")) {
+                        allowed.incrementAndGet();
+                    }
+                    return null;
+                }));
+            }
+            // 等全部线程就绪再一起放行，逼出真正的并发抢窗口
+            ready.await();
+            start.countDown();
+            for (Future<?> future : futures) {
+                future.get();
+            }
+        } finally {
+            executor.shutdownNow();
+        }
+        // 上限 10：32 个并发里恰好放行 10 个，多一个也不行
+        assertThat(allowed.get()).isEqualTo(limit);
+    }
+
+    @Test
+    void shouldUseDefaultsWhenConfigIsNull() {
+        McpOAuthRateLimiter limiter = new McpOAuthRateLimiter(null);
+
+        assertThat(limiter.isEnabled()).isTrue();
+        assertThat(limiter.tryAcquireToken("1.2.3.4")).isTrue();
+        assertThat(limiter.tryAcquireCimdSlot()).isTrue();
+        limiter.releaseCimdSlot();
     }
 
     @Test

@@ -453,6 +453,47 @@ class McpCimdFetcherTest {
     }
 
     @Test
+    void shouldReleaseCimdSlotAfterSuccessfulFetch() throws Exception {
+        String clientIdUrl = localUrl("/client");
+        respondJson("/client", "{\"client_id\":\"" + clientIdUrl + "\"}", null);
+        server.start();
+
+        McpCimdFetcher fetcher = singleSlotFetcher();
+
+        assertThat(fetcher.fetch(clientIdUrl).document().get("client_id")).isEqualTo(clientIdUrl);
+        // 成功 fetch 后并发槽已在 finally 里释放：立即再拉一次仍成功
+        // （槽未释放的话，maxConcurrentFetches=1 的第二次 fetch 会抛 RATE_LIMITED）
+        assertThat(fetcher.fetch(clientIdUrl).document().get("client_id")).isEqualTo(clientIdUrl);
+    }
+
+    @Test
+    void shouldReleaseCimdSlotAfterFailedFetch() throws Exception {
+        server.createContext("/client", exchange -> {
+            exchange.sendResponseHeaders(404, -1);
+            exchange.close();
+        });
+        respondJson("/ok", "{\"client_id\":\"" + localUrl("/ok") + "\"}", null);
+        server.start();
+
+        McpCimdFetcher fetcher = singleSlotFetcher();
+
+        assertThatThrownBy(() -> fetcher.fetch(localUrl("/client")))
+                .isInstanceOf(McpCimdException.class)
+                .extracting(exception -> ((McpCimdException) exception).getError())
+                .isEqualTo(McpCimdError.INVALID_STATUS);
+        // 404 失败 fetch 也要在 finally 里放槽：再拉一次仍成功
+        assertThat(fetcher.fetch(localUrl("/ok")).document().get("client_id")).isEqualTo(localUrl("/ok"));
+    }
+
+    /** 并发槽上限为 1 的拉取器：槽不释放时第二次 fetch 必被拒绝，最能验出漏放槽。 */
+    private McpCimdFetcher singleSlotFetcher() {
+        McpOAuthProperties.RateLimit config = new McpOAuthProperties.RateLimit();
+        config.setCimdMaxConcurrentFetches(1);
+        return new McpCimdFetcher(TIMEOUT, 5120, true, new ObjectMapper(),
+                new McpOAuthRateLimiter(config));
+    }
+
+    @Test
     void shouldRejectInvalidJsonWithoutLeakingBody() throws Exception {
         String body = "{not json SECRET_MARKER_12345";
         respondJson("/client", body, null);

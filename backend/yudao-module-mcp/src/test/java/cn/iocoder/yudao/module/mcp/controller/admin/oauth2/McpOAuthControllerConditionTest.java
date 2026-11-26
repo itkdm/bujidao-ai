@@ -1,15 +1,22 @@
 package cn.iocoder.yudao.module.mcp.controller.admin.oauth2;
 
 import cn.iocoder.yudao.module.mcp.framework.oauth2.cimd.McpCimdClientService;
+import cn.iocoder.yudao.module.mcp.framework.oauth2.config.McpOAuthConfiguration;
 import cn.iocoder.yudao.module.mcp.framework.oauth2.config.McpOAuthProperties;
+import cn.iocoder.yudao.module.mcp.framework.oauth2.core.McpOAuthResourceUriResolver;
+import cn.iocoder.yudao.module.mcp.service.oauth2.McpOAuthAuthorizationService;
+import cn.iocoder.yudao.module.mcp.service.oauth2.McpOAuthTokenExchangeService;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -21,6 +28,43 @@ class McpOAuthControllerConditionTest {
         assertEnabledCondition(McpOAuthTokenController.class);
         // CIMD 入口 Service 与两个 Controller 用同一个开关管控
         assertEnabledCondition(McpCimdClientService.class);
+    }
+
+    @Test
+    void shouldNotCreateControllerBeansWhenDisabled() {
+        // 运行时断言（不是只读注解）：enabled=false 时两个 Controller Bean 都不应建出来。
+        // withBean 注册时类上的 @ConditionalOnProperty 同样会被求值，Bean 直接跳过注册。
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(McpOAuthConfiguration.class))
+                .withBean(McpOAuthAuthorizationController.class)
+                .withBean(McpOAuthTokenController.class)
+                .withPropertyValues("yudao.mcp.oauth.enabled=false")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).doesNotHaveBean(McpOAuthAuthorizationController.class);
+                    assertThat(context).doesNotHaveBean(McpOAuthTokenController.class);
+                });
+    }
+
+    @Test
+    void shouldCreateControllerBeansWhenEnabled() {
+        // 正向对照：开关开着时两个 Controller 都应建出来，排除“注册方式本身就建不出 Bean”的空断言。
+        // rateLimiter 由 McpOAuthConfiguration 提供；Service / Resolver 用 mock 补齐依赖。
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(McpOAuthConfiguration.class))
+                .withBean(McpOAuthAuthorizationController.class)
+                .withBean(McpOAuthTokenController.class)
+                .withBean("authorizationService", McpOAuthAuthorizationService.class,
+                        () -> mock(McpOAuthAuthorizationService.class))
+                .withBean("tokenExchangeService", McpOAuthTokenExchangeService.class,
+                        () -> mock(McpOAuthTokenExchangeService.class))
+                .withBean("resourceUriResolver", McpOAuthResourceUriResolver.class,
+                        () -> mock(McpOAuthResourceUriResolver.class))
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(McpOAuthAuthorizationController.class);
+                    assertThat(context).hasSingleBean(McpOAuthTokenController.class);
+                });
     }
 
     @Test

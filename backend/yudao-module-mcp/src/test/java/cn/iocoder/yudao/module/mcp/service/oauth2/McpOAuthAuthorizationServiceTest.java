@@ -129,7 +129,53 @@ class McpOAuthAuthorizationServiceTest {
 
         assertThat(redirect).startsWith(REDIRECT_URI).contains("code=code-123").contains("state=state-1");
         verify(codeExtraRedisDAO).set(any());
-        verify(oauth2ApproveService, never()).checkForPreApproval(any(), any(), anyString(), anyCollection());
+    }
+
+    @Test
+    void shouldRedirectWithAccessDeniedWhenUserDenies() {
+        when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
+        when(clientResolver.resolve(CLIENT_ID_URL, REDIRECT_URI)).thenReturn(cimdClient());
+        when(oauth2ApproveService.updateAfterApproval(isNull(), eq(2), eq(CLIENT_ID_URL), any()))
+                .thenReturn(false);
+        when(authorizationRequestRedisDAO.markUsed(anyString())).thenReturn(true);
+
+        String redirect = service.approveOrDeny("code", CLIENT_ID_URL, "{\"mcp:access\":true}",
+                REDIRECT_URI, false, "state-1", s256Challenge(CODE_VERIFIER), "S256", RESOURCE, RESOURCE);
+
+        assertThat(redirect).startsWith(REDIRECT_URI)
+                .contains("error=access_denied").contains("state=state-1");
+        verify(oauth2CodeService, never()).createAuthorizationCode(any(), any(), anyString(),
+                any(), anyString(), anyString());
+    }
+
+    @Test
+    void shouldFailWhenAuthorizationRequestAlreadyUsed() {
+        when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
+        when(clientResolver.resolve(CLIENT_ID_URL, REDIRECT_URI)).thenReturn(cimdClient());
+        when(oauth2ApproveService.updateAfterApproval(isNull(), eq(2), eq(CLIENT_ID_URL), any()))
+                .thenReturn(true);
+        when(authorizationRequestRedisDAO.markUsed(anyString())).thenReturn(false);
+
+        assertThatThrownBy(() -> service.approveOrDeny("code", CLIENT_ID_URL, "{\"mcp:access\":true}",
+                REDIRECT_URI, false, "state-1", s256Challenge(CODE_VERIFIER), "S256", RESOURCE, RESOURCE))
+                .isInstanceOf(ServiceException.class)
+                .hasMessageContaining("授权请求已处理")
+                .extracting(exception -> ((ServiceException) exception).getCode())
+                .isEqualTo(400);
+        verify(oauth2CodeService, never()).createAuthorizationCode(any(), any(), anyString(),
+                any(), anyString(), anyString());
+    }
+
+    @Test
+    void shouldFailWhenResponseTypeIsNotCode() {
+        // response_type 校验在客户端解析之前：不合法直接 400，不碰客户端与授权码
+        assertThatThrownBy(() -> service.approveOrDeny("token", CLIENT_ID_URL, "{\"mcp:access\":true}",
+                REDIRECT_URI, false, "state-1", s256Challenge(CODE_VERIFIER), "S256", RESOURCE, RESOURCE))
+                .isInstanceOf(ServiceException.class)
+                .hasMessageContaining("response_type")
+                .extracting(exception -> ((ServiceException) exception).getCode())
+                .isEqualTo(400);
+        verifyNoInteractions(clientResolver);
     }
 
     @Test

@@ -50,6 +50,7 @@ public class McpOAuthAuthorizationController {
     @Operation(summary = "获得 MCP OAuth 授权信息")
     @Parameter(name = "clientId", required = true, description = "客户端编号", example = "mcp-dcr-xxx")
     public CommonResult<OAuth2OpenAuthorizeInfoRespVO> authorize(@RequestParam("clientId") String clientId) {
+        // 有意不限流：仅取授权信息、不发授权码；限流只管发码入口 POST /authorize。
         return success(authorizationService.getAuthorizeInfo(clientId));
     }
 

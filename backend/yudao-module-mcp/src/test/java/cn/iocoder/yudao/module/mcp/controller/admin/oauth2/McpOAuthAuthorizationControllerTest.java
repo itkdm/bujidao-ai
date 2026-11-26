@@ -70,7 +70,8 @@ class McpOAuthAuthorizationControllerTest {
 
         // 同一 IP 第二次授权同意：超限抛 ServiceException(TOO_MANY_REQUESTS, 429)，且不调用 Service。
         // 注意：本单测只锁定控制器抛出的异常本身；异常出控制器后由 GlobalExceptionHandler
-        // 的 serviceExceptionHandler 分支接手，转成 CommonResult(429)，不落到 500 兜底。
+        // 的 serviceExceptionHandler 分支接手，转成 body code 429 的 CommonResult，
+        // HTTP 状态仍为 200（芋道通用约定：无 @ResponseStatus、也不返回 ResponseEntity）。
         assertThatThrownBy(() -> approve(request()))
                 .isInstanceOf(ServiceException.class)
                 .hasMessage(GlobalErrorCodeConstants.TOO_MANY_REQUESTS.getMsg())
@@ -79,6 +80,24 @@ class McpOAuthAuthorizationControllerTest {
         verify(authorizationService, times(1)).approveOrDeny(eq("code"), eq(CLIENT_ID),
                 eq("mcp:access"), eq(REDIRECT_URI), eq(true), eq("state-1"), eq("challenge-1"),
                 eq("S256"), eq(RESOURCE), eq(RESOURCE));
+    }
+
+    @Test
+    void shouldApproveWithoutRateLimiterWhenNotInjected() {
+        // rateLimiter 字段为 null（手工 new 出来的 Controller，没走 Spring 注入）时不限流，
+        // 仍能正常授权：checkRateLimit 的 null 兜底不能把正常请求挡掉
+        McpOAuthAuthorizationController noLimiterController = new McpOAuthAuthorizationController();
+        ReflectionTestUtils.setField(noLimiterController, "authorizationService", authorizationService);
+        ReflectionTestUtils.setField(noLimiterController, "resourceUriResolver", resourceUriResolver);
+        when(resourceUriResolver.resolve(any())).thenReturn(RESOURCE);
+        when(authorizationService.approveOrDeny(eq("code"), eq(CLIENT_ID), eq("mcp:access"),
+                eq(REDIRECT_URI), eq(true), eq("state-1"), eq("challenge-1"), eq("S256"),
+                eq(RESOURCE), eq(RESOURCE))).thenReturn("code-xxx");
+
+        CommonResult<String> result = noLimiterController.approveOrDeny(request(), "code", CLIENT_ID,
+                "mcp:access", REDIRECT_URI, true, "state-1", "challenge-1", "S256", RESOURCE);
+
+        assertThat(result.getData()).isEqualTo("code-xxx");
     }
 
 }

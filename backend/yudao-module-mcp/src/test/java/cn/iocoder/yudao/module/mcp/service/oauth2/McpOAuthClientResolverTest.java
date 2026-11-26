@@ -110,6 +110,14 @@ class McpOAuthClientResolverTest {
         assertThat(client.getScopes()).containsExactly("mcp:access");
         assertThat(client.getAuthorizedGrantTypes()).containsExactly("authorization_code");
         assertThat(client.getAdditionalInformation()).contains("\"token_endpoint_auth_method\":\"none\"");
+        // 元数据缺省时的合成默认值：与完整元数据同一条映射链
+        assertThat(client.getStatus()).isEqualTo(0);
+        assertThat(client.getSecret()).isEmpty();
+        assertThat(client.getId()).isNull();
+        assertThat(client.getAccessTokenValiditySeconds())
+                .isEqualTo(properties.getAccessTokenValiditySeconds());
+        assertThat(client.getRefreshTokenValiditySeconds())
+                .isEqualTo(properties.getRefreshTokenValiditySeconds());
     }
 
     @Test

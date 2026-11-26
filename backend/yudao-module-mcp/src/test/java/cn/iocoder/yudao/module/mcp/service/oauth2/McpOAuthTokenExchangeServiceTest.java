@@ -212,6 +212,87 @@ class McpOAuthTokenExchangeServiceTest {
     }
 
     @Test
+    void shouldFailExchangeWhenCodeExtraIsMissing() {
+        when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
+        when(clientResolver.resolve(CLIENT_ID_URL, null)).thenReturn(cimdClient());
+        when(codeExtraRedisDAO.get("code-123")).thenReturn(null);
+
+        assertThatThrownBy(() -> service.exchangeAuthorizationCode(
+                CLIENT_ID_URL, "code-123", REDIRECT_URI, CODE_VERIFIER, RESOURCE, RESOURCE))
+                .isInstanceOf(McpOAuthException.class)
+                .extracting("status", "error")
+                .containsExactly(HttpStatus.BAD_REQUEST, "invalid_grant");
+        verify(oauth2CodeService, never()).consumeAuthorizationCode(anyString());
+    }
+
+    @Test
+    void shouldFailExchangeWhenConsumeAuthorizationCodeReturnsNull() {
+        when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
+        when(clientResolver.resolve(CLIENT_ID_URL, null)).thenReturn(cimdClient());
+        when(codeExtraRedisDAO.get("code-123")).thenReturn(codeExtra());
+        when(oauth2CodeService.consumeAuthorizationCode("code-123")).thenReturn(null);
+
+        assertThatThrownBy(() -> service.exchangeAuthorizationCode(
+                CLIENT_ID_URL, "code-123", REDIRECT_URI, CODE_VERIFIER, RESOURCE, RESOURCE))
+                .isInstanceOf(McpOAuthException.class)
+                .extracting("status", "error")
+                .containsExactly(HttpStatus.BAD_REQUEST, "invalid_grant");
+        verify(codeExtraRedisDAO, never()).delete(anyString());
+    }
+
+    @Test
+    void shouldExchangeAuthorizationCodeWhenAdditionalInformationUsesCamelTokenEndpointAuthMethod() {
+        // isPublicClient 的驼峰 key 回退：tokenEndpointAuthMethod（驼峰）也要认
+        OAuth2ClientDO client = cimdClient()
+                .setAdditionalInformation("{\"tokenEndpointAuthMethod\":\"none\"}");
+        when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
+        when(clientResolver.resolve(CLIENT_ID_URL, null)).thenReturn(client);
+        when(codeExtraRedisDAO.get("code-123")).thenReturn(codeExtra());
+        when(oauth2CodeService.consumeAuthorizationCode("code-123")).thenReturn(codeDO());
+        when(oauth2TokenService.createAccessToken(eq(1L), eq(2), eq(client), eq(List.of("mcp:access"))))
+                .thenReturn(accessTokenDO());
+
+        OAuth2OpenAccessTokenRespVO respVO = service.exchangeAuthorizationCode(
+                CLIENT_ID_URL, "code-123", REDIRECT_URI, CODE_VERIFIER, RESOURCE, RESOURCE);
+
+        assertThat(respVO.getAccessToken()).isEqualTo("access-token-1");
+    }
+
+    @Test
+    void shouldExchangeAuthorizationCodeWhenAdditionalInformationUsesCamelPublicClient() {
+        // isPublicClient 的驼峰 key 回退：publicClient（驼峰）也要认
+        OAuth2ClientDO client = cimdClient()
+                .setAdditionalInformation("{\"publicClient\":true}");
+        when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
+        when(clientResolver.resolve(CLIENT_ID_URL, null)).thenReturn(client);
+        when(codeExtraRedisDAO.get("code-123")).thenReturn(codeExtra());
+        when(oauth2CodeService.consumeAuthorizationCode("code-123")).thenReturn(codeDO());
+        when(oauth2TokenService.createAccessToken(eq(1L), eq(2), eq(client), eq(List.of("mcp:access"))))
+                .thenReturn(accessTokenDO());
+
+        OAuth2OpenAccessTokenRespVO respVO = service.exchangeAuthorizationCode(
+                CLIENT_ID_URL, "code-123", REDIRECT_URI, CODE_VERIFIER, RESOURCE, RESOURCE);
+
+        assertThat(respVO.getAccessToken()).isEqualTo("access-token-1");
+    }
+
+    @Test
+    void shouldFailExchangeWhenAdditionalInformationIsInvalidJson() {
+        // additionalInformation 非法 JSON：解析失败按“不是公开客户端”处理，抛 invalid_client，
+        // 而不是把解析异常漏出去变成 500
+        OAuth2ClientDO client = cimdClient().setAdditionalInformation("not-json{");
+        when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
+        when(clientResolver.resolve(CLIENT_ID_URL, null)).thenReturn(client);
+
+        assertThatThrownBy(() -> service.exchangeAuthorizationCode(
+                CLIENT_ID_URL, "code-123", REDIRECT_URI, CODE_VERIFIER, RESOURCE, RESOURCE))
+                .isInstanceOf(McpOAuthException.class)
+                .extracting("status", "error")
+                .containsExactly(HttpStatus.BAD_REQUEST, "invalid_client");
+        verify(codeExtraRedisDAO, never()).get(anyString());
+    }
+
+    @Test
     void shouldRejectExchangeWhenClientIsNotPublicForCimdClient() {
         OAuth2ClientDO client = cimdClient()
                 .setAdditionalInformation("{\"token_endpoint_auth_method\":\"client_secret_basic\"}");
@@ -224,6 +305,31 @@ class McpOAuthTokenExchangeServiceTest {
                 .extracting("status", "error")
                 .containsExactly(HttpStatus.BAD_REQUEST, "invalid_client");
         verify(oauth2CodeService, never()).consumeAuthorizationCode(anyString());
+    }
+
+    @Test
+    void shouldRejectRefreshWhenRefreshTokenNotFound() {
+        // 刷新先查令牌再解析客户端：令牌不存在直接抛 invalid_grant，不触发任何客户端解析 / 查库
+        when(oauth2RefreshTokenMapper.selectByRefreshToken("refresh-token-1")).thenReturn(null);
+
+        assertThatThrownBy(() -> service.refreshAccessToken(CLIENT_ID_URL, "refresh-token-1"))
+                .isInstanceOf(McpOAuthException.class)
+                .extracting("status", "error")
+                .containsExactly(HttpStatus.BAD_REQUEST, "invalid_grant");
+        verifyNoInteractions(clientResolver, oauth2ClientService);
+    }
+
+    @Test
+    void shouldRejectRefreshWhenRefreshTokenClientMismatches() {
+        when(oauth2RefreshTokenMapper.selectByRefreshToken("refresh-token-1"))
+                .thenReturn(new OAuth2RefreshTokenDO().setRefreshToken("refresh-token-1")
+                        .setClientId("mcp-dcr-other").setTenantId(1L));
+
+        assertThatThrownBy(() -> service.refreshAccessToken(CLIENT_ID_URL, "refresh-token-1"))
+                .isInstanceOf(McpOAuthException.class)
+                .extracting("status", "error")
+                .containsExactly(HttpStatus.BAD_REQUEST, "invalid_grant");
+        verifyNoInteractions(clientResolver, oauth2ClientService);
     }
 
     @Test
@@ -282,6 +388,33 @@ class McpOAuthTokenExchangeServiceTest {
         assertThat(service.revokeToken(CLIENT_ID_URL, "access-token-1")).isTrue();
         verify(clientResolver, never()).resolve(anyString(), any());
         verifyNoInteractions(oauth2ClientService);
+    }
+
+    @Test
+    void shouldReturnFalseWhenRevokingUnknownToken() {
+        when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
+        when(oauth2TokenService.getAccessToken("access-token-1")).thenReturn(null);
+
+        assertThat(service.revokeToken(CLIENT_ID_URL, "access-token-1")).isFalse();
+        verify(oauth2TokenService, never()).removeAccessToken(anyString());
+    }
+
+    @Test
+    void shouldRevokeTokenForDbClient() {
+        // DB 客户端的吊销成功路径：先走上游 validOAuthClientFromCache 校验客户端，再删令牌
+        when(clientResolver.isCimdClientId("mcp-dcr-abc")).thenReturn(false);
+        when(oauth2ClientService.validOAuthClientFromCache("mcp-dcr-abc", null, null, null, null))
+                .thenReturn(dbClient());
+        when(oauth2TokenService.getAccessToken("access-token-1"))
+                .thenReturn(new OAuth2AccessTokenDO().setAccessToken("access-token-1")
+                        .setClientId("mcp-dcr-abc"));
+        when(oauth2TokenService.removeAccessToken("access-token-1"))
+                .thenReturn(new OAuth2AccessTokenDO().setAccessToken("access-token-1"));
+
+        assertThat(service.revokeToken("mcp-dcr-abc", "access-token-1")).isTrue();
+        verify(oauth2ClientService).validOAuthClientFromCache("mcp-dcr-abc", null, null, null, null);
+        verify(clientResolver, never()).resolve(anyString(), any());
+        verify(oauth2TokenService).removeAccessToken("access-token-1");
     }
 
     private static OAuth2ClientDO cimdClient() {
