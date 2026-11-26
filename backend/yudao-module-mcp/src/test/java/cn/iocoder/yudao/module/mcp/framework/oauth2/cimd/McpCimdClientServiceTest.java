@@ -134,6 +134,23 @@ class McpCimdClientServiceTest {
     }
 
     @Test
+    void shouldResolveMetadataWithoutRedirectUriCheck() throws Exception {
+        String clientIdUrl = clientIdUrl("/client");
+        respondJson("/client", validDocJson(clientIdUrl));
+        server.start();
+
+        // 不带 redirect_uri 的场景：只拉取并校验文档，不校验回调地址
+        McpCimdMetadata metadata = service.resolveMetadata(clientIdUrl);
+        assertThat(metadata.clientName()).isEqualTo("Local Client");
+        assertThat(hits.get()).isEqualTo(1);
+
+        // 第二次命中缓存，同样不校验回调地址、不再发请求
+        McpCimdMetadata cached = service.resolveMetadata(clientIdUrl);
+        assertThat(cached).isEqualTo(metadata);
+        assertThat(hits.get()).isEqualTo(1);
+    }
+
+    @Test
     void shouldRejectNullProperties() {
         // properties 为 null 时 cimd 能兜底，但 getLocalRedirectHosts() 会 NPE：
         // 构造器应明确拒绝 null，而不是在 resolve() 的某条分支上才暴露

@@ -15,6 +15,7 @@ import cn.iocoder.yudao.module.system.dal.dataobject.oauth2.OAuth2ClientDO;
 import cn.iocoder.yudao.module.system.dal.dataobject.oauth2.OAuth2CodeDO;
 import cn.iocoder.yudao.module.system.dal.dataobject.oauth2.OAuth2RefreshTokenDO;
 import cn.iocoder.yudao.module.system.dal.mysql.oauth2.OAuth2RefreshTokenMapper;
+import cn.iocoder.yudao.module.system.enums.ErrorCodeConstants;
 import cn.iocoder.yudao.module.system.enums.oauth2.OAuth2GrantTypeEnum;
 import cn.iocoder.yudao.module.system.service.oauth2.OAuth2ClientService;
 import cn.iocoder.yudao.module.system.service.oauth2.OAuth2CodeService;
@@ -23,6 +24,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.Collection;
+
+import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 
 /**
  * MCP OAuth token endpoint Service。
@@ -38,6 +41,7 @@ public class McpOAuthTokenExchangeService {
     private final OAuth2TokenService oauth2TokenService;
     private final OAuth2RefreshTokenMapper oauth2RefreshTokenMapper;
     private final McpOAuthAuthorizationCodeExtraRedisDAO codeExtraRedisDAO;
+    private final McpOAuthClientResolver clientResolver;
 
     public OAuth2OpenAccessTokenRespVO exchangeAuthorizationCode(String clientId, String code, String redirectUri,
                                                                  String codeVerifier, String resource,
@@ -90,11 +94,25 @@ public class McpOAuthTokenExchangeService {
         if (StrUtil.isBlank(clientId)) {
             throw McpOAuthException.invalidClient("client_id is required");
         }
-        OAuth2ClientDO client = oauth2ClientService.validOAuthClientFromCache(clientId, null, grantType, scopes, null);
+        OAuth2ClientDO client;
+        if (clientResolver.isCimdClientId(clientId)) {
+            // URL 形态：不带 redirect_uri，只拉取并校验文档；grant 校验与上游 valid* 保持一致
+            client = clientResolver.resolve(clientId, null);
+            validateCimdGrant(client, grantType);
+        } else {
+            client = oauth2ClientService.validOAuthClientFromCache(clientId, null, grantType, scopes, null);
+        }
         if (!isPublicClient(client)) {
             throw McpOAuthException.invalidClient("only public clients are supported");
         }
         return client;
+    }
+
+    /** CIMD 客户端的 grant 本地校验，与上游 valid* 的 grant 校验用同一错误码。 */
+    private static void validateCimdGrant(OAuth2ClientDO client, String grantType) {
+        if (StrUtil.isNotBlank(grantType) && !client.getAuthorizedGrantTypes().contains(grantType)) {
+            throw exception(ErrorCodeConstants.OAUTH2_CLIENT_AUTHORIZED_GRANT_TYPE_NOT_EXISTS);
+        }
     }
 
     private static void validateRedirectUri(OAuth2ClientDO client, String redirectUri) {

@@ -58,15 +58,31 @@ public class McpCimdClientService {
      * @throws McpCimdException 任一步失败
      */
     public McpCimdMetadata resolve(String clientIdUrl, String redirectUri) throws McpCimdException {
+        McpCimdMetadata metadata = resolveMetadata(clientIdUrl);
+        // 校验请求 redirect_uri：在文档列表里（精确相等）且符合 scheme 规则
+        validateRequestedRedirectUri(metadata, redirectUri);
+        return metadata;
+    }
+
+    /**
+     * 拉取并校验 CIMD 文档，但不校验本次请求的 redirect_uri。
+     *
+     * <p>供 token 刷新 / 吊销等不带 redirect_uri 的场景使用：只证明“文档合法”，
+     * 不证明“某个回调地址在文档里”。调用方不得把这里返回的元数据用于放行回调地址。
+     *
+     * @param clientIdUrl 客户端提供的 client_id URL
+     * @return 校验通过的客户端元数据
+     * @throws McpCimdException 任一步失败
+     */
+    public McpCimdMetadata resolveMetadata(String clientIdUrl) throws McpCimdException {
         McpOAuthProperties.Cimd cimd = McpOAuthProperties.cimdOrDefault(properties);
         // 1. 校验 URL 形状（allowPrivateAddresses=true 时放行 http，仅本地开发 / 测试用）
         McpCimdDocumentValidator.validateClientIdUrl(clientIdUrl, cimd.isAllowPrivateAddresses());
-        // 2. 查缓存：命中也要校验本次请求的 redirect_uri，通过才返回。
-        //    缓存只证明“文档曾经合法”，不证明“本次请求的回调地址在文档里”；
-        //    跳过这步会让任意未注册回调借已缓存文档通过。
+        // 2. 查缓存：命中直接返回。本方法不校验 redirect_uri，所以返回的元数据
+        //    不能用于放行回调地址；需要校验回调的调用方必须走 resolve()，
+        //    它在缓存命中时也会校验本次请求的 redirect_uri。
         McpCimdMetadata cached = cache.get(clientIdUrl);
         if (cached != null) {
-            validateRequestedRedirectUri(cached, redirectUri);
             return cached;
         }
         // 3. 拉取
@@ -74,9 +90,7 @@ public class McpCimdClientService {
         // 4. 校验文档
         McpCimdMetadata metadata = McpCimdDocumentValidator.validateDocument(
                 clientIdUrl, fetched.document(), properties.getLocalRedirectHosts());
-        // 5. 校验请求 redirect_uri：在文档列表里（精确相等）且符合 scheme 规则
-        validateRequestedRedirectUri(metadata, redirectUri);
-        // 6. 入缓存（失败 / 无效文档走不到这里，永不入缓存）
+        // 5. 入缓存（失败 / 无效文档走不到这里，永不入缓存）
         cache.put(clientIdUrl, metadata, fetched.maxAgeSeconds());
         return metadata;
     }
