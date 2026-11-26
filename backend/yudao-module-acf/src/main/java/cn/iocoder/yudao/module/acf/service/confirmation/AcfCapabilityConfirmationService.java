@@ -114,6 +114,33 @@ public class AcfCapabilityConfirmationService implements CapabilityConfirmationS
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void decline(String challengeId, CapabilityContext context) {
+        if (!StringUtils.hasText(challengeId)) {
+            return;
+        }
+        AcfConfirmationChallengeDO challenge = confirmationChallengeMapper.selectByChallengeIdForUpdate(challengeId);
+        if (challenge == null) {
+            return;
+        }
+        // 已终态（已确认、已消费、已过期、已拒绝）时不再流转；拒绝不授权任何
+        // 执行，所以这里不抛异常——拒绝分支的调用方仍按 DENIED 回答。
+        if (!AcfConfirmationChallengeStatus.PENDING.name().equals(challenge.getStatus())) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        if (isExpired(challenge, now)) {
+            markExpired(challenge);
+            return;
+        }
+        if (!belongsToContext(challenge, context)) {
+            return;
+        }
+        challenge.setStatus(AcfConfirmationChallengeStatus.DECLINED.name());
+        confirmationChallengeMapper.updateById(challenge);
+    }
+
+    @Override
     public CapabilityConfirmationCheck verifyAndConsumeToken(CapabilityDefinition definition, CapabilityContext context,
                                                              String confirmationToken, String idempotencyKey,
                                                              String requestDigest) {

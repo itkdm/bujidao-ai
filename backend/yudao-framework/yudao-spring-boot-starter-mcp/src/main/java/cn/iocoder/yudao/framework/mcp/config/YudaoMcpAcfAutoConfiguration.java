@@ -1,14 +1,12 @@
 package cn.iocoder.yudao.framework.mcp.config;
 
-import cn.iocoder.yudao.framework.acf.config.YudaoAcfProperties;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityConfirmationService;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolContractSupport;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolExportService;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
-import cn.iocoder.yudao.framework.mcp.acf.AcfMcpConfirmationTool;
-import cn.iocoder.yudao.framework.mcp.acf.AcfMcpToolMapper;
 import cn.iocoder.yudao.framework.mcp.acf.AcfMcpToolCallHandler;
+import cn.iocoder.yudao.framework.mcp.acf.AcfMcpToolMapper;
 import cn.iocoder.yudao.framework.mcp.acf.AcfMcpToolRepository;
 import cn.iocoder.yudao.framework.mcp.acf.AcfMcpStructuredContentNormalizer;
 import io.modelcontextprotocol.json.McpJsonMapper;
@@ -61,18 +59,12 @@ public class YudaoMcpAcfAutoConfiguration {
     public AcfMcpToolCallHandler acfMcpToolCallHandler(CapabilityToolInvoker capabilityToolInvoker,
                                                        McpJsonMapper jsonMapper,
                                                        AcfMcpStructuredContentNormalizer structuredContentNormalizer,
-                                                       CapabilityToolContractSupport toolContractSupport) {
+                                                       CapabilityToolContractSupport toolContractSupport,
+                                                       ObjectProvider<CapabilityConfirmationService> confirmationService) {
+        // 确认服务用 ObjectProvider 取：模块未接确认服务实现时 handler 仍能启动，
+        // 只是需要确认的调用会回明确的“确认服务未配置”错误，不走 elicitation。
         return new AcfMcpToolCallHandler(capabilityToolInvoker, jsonMapper, structuredContentNormalizer,
-                toolContractSupport);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    @ConditionalOnBean(CapabilityConfirmationService.class)
-    @ConditionalOnProperty(prefix = YudaoAcfProperties.PREFIX + ".confirmation",
-            name = "enabled", havingValue = "true")
-    public AcfMcpConfirmationTool acfMcpConfirmationTool(CapabilityConfirmationService confirmationService) {
-        return new AcfMcpConfirmationTool(confirmationService);
+                toolContractSupport, confirmationService.getIfAvailable());
     }
 
     @Bean
@@ -80,12 +72,11 @@ public class YudaoMcpAcfAutoConfiguration {
     public AcfMcpToolRepository acfMcpToolRepository(
             CapabilityToolCatalog capabilityToolCatalog, AcfMcpToolMapper toolMapper,
             AcfMcpToolCallHandler toolCallHandler,
-            ObjectProvider<CapabilityToolExportService> toolExportService,
-            ObjectProvider<AcfMcpConfirmationTool> confirmationTool) {
+            ObjectProvider<CapabilityToolExportService> toolExportService) {
         // toolExportService 用 ObjectProvider 取：缺失时 repository 退回声明目录，
         // 而不是让整个 ACF 自动配置启动失败。
         return new AcfMcpToolRepository(capabilityToolCatalog, toolMapper, toolCallHandler,
-                toolExportService.getIfAvailable(), confirmationTool.getIfAvailable());
+                toolExportService.getIfAvailable());
     }
 
 }

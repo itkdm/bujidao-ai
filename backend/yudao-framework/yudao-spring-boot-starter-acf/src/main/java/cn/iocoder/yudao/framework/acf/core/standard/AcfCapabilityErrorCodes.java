@@ -16,6 +16,8 @@ public final class AcfCapabilityErrorCodes {
     public static final String CONFIRMATION_ERROR = "CONFIRMATION_ERROR";
     public static final String CONFIRMATION_UNAVAILABLE = "CONFIRMATION_UNAVAILABLE";
     public static final String CONFIRM_TOKEN_INVALID = "CONFIRM_TOKEN_INVALID";
+    /** 用户在 MRTR elicitation 表单上明确拒绝或取消确认，未执行任何操作。 */
+    public static final String CONFIRMATION_DECLINED = "CONFIRMATION_DECLINED";
     public static final String IDEMPOTENCY_KEY_REQUIRED = "IDEMPOTENCY_KEY_REQUIRED";
     public static final String IDEMPOTENCY_UNAVAILABLE = "IDEMPOTENCY_UNAVAILABLE";
     public static final String IDEMPOTENCY_ERROR = "IDEMPOTENCY_ERROR";

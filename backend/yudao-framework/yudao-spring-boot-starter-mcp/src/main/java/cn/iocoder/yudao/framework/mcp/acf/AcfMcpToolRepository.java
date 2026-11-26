@@ -20,11 +20,15 @@ import java.util.List;
  * <p>list：按当前调用身份返回可见工具。可见性由 {@link CapabilityToolExportService}
  * 按 transport context 里的身份判定，顺序与 {@link CapabilityToolCatalog} 一致
  * （能力名称升序，见 CapabilityRegistry），确定性；不支持分页，任何非空 cursor
- * 都按 SDK 约定以 invalid params 拒绝。{@code acf.confirm} 工具（如果启用）追加在末尾。</p>
+ * 都按 SDK 约定以 invalid params 拒绝。</p>
  *
  * <p>find：只按名称查找，不做可见性过滤——无权限的调用仍要进 ACF 执行链，
  * 由治理层返回权限错误，而不是在这里伪装成“工具不存在”。未知名称返回 null，
  * SDK 会答复 Unknown tool。</p>
+ *
+ * <p>确认不走独立工具：需要确认的能力由 {@link AcfMcpToolCallHandler} 在工具调用
+ * 内用 MRTR elicitation 完成，不再有 {@code acf.confirm} 这样的合成工具挂在
+ * 目录里。</p>
  *
  * @author bujidao
  */
@@ -34,31 +38,21 @@ public class AcfMcpToolRepository implements McpSyncToolRepository {
     private final AcfMcpToolMapper toolMapper;
     private final AcfMcpToolCallHandler toolCallHandler;
     private final CapabilityToolExportService toolExportService;
-    private final AcfMcpConfirmationTool confirmationTool;
 
     public AcfMcpToolRepository(CapabilityToolCatalog capabilityToolCatalog,
                                 AcfMcpToolMapper toolMapper,
                                 AcfMcpToolCallHandler toolCallHandler) {
-        this(capabilityToolCatalog, toolMapper, toolCallHandler, null, null);
+        this(capabilityToolCatalog, toolMapper, toolCallHandler, null);
     }
 
     public AcfMcpToolRepository(CapabilityToolCatalog capabilityToolCatalog,
                                 AcfMcpToolMapper toolMapper,
                                 AcfMcpToolCallHandler toolCallHandler,
                                 CapabilityToolExportService toolExportService) {
-        this(capabilityToolCatalog, toolMapper, toolCallHandler, toolExportService, null);
-    }
-
-    public AcfMcpToolRepository(CapabilityToolCatalog capabilityToolCatalog,
-                                AcfMcpToolMapper toolMapper,
-                                AcfMcpToolCallHandler toolCallHandler,
-                                CapabilityToolExportService toolExportService,
-                                AcfMcpConfirmationTool confirmationTool) {
         this.capabilityToolCatalog = capabilityToolCatalog;
         this.toolMapper = toolMapper;
         this.toolCallHandler = toolCallHandler;
         this.toolExportService = toolExportService;
-        this.confirmationTool = confirmationTool;
     }
 
     @Override
@@ -67,9 +61,6 @@ public class AcfMcpToolRepository implements McpSyncToolRepository {
             throw McpException.invalidParams("Unknown cursor: " + cursor);
         }
         List<McpSchema.Tool> tools = new ArrayList<>(listVisibleTools(ctx));
-        if (confirmationTool != null) {
-            tools.add(confirmationTool.tool());
-        }
         return ToolsPage.of(tools);
     }
 
@@ -78,15 +69,14 @@ public class AcfMcpToolRepository implements McpSyncToolRepository {
         if (name == null) {
             return null;
         }
-        // 声明目录优先：若某声明能力恰好重名 acf.confirm，不应被确认工具遮蔽。
         for (CapabilityToolDescriptor descriptor : capabilityToolCatalog.listDeclared()) {
             if (descriptor.getCapabilityName().equals(name)) {
+                // 不在这里声明 elicitation 必需能力：是否真的 elicite 取决于确认总开关
+                // 与执行器当次的判定（默认关闭），静态声明会把本可直接成功的调用也
+                // 以 -32021 拒掉；handler 在真正要 elicite 前会按当次客户端能力检查。
                 return McpSyncTool.of(toolMapper.toTool(descriptor),
                         (requestContext, request) -> toolCallHandler.handle(requestContext, descriptor, request));
             }
-        }
-        if (confirmationTool != null && AcfMcpConfirmationTool.NAME.equals(name)) {
-            return McpSyncTool.of(confirmationTool.tool(), confirmationTool::handle);
         }
         return null;
     }

@@ -22,6 +22,10 @@ public enum AcfConfirmationChallengeStatus {
     /**
      * 已过期
      */
-    EXPIRED
+    EXPIRED,
+    /**
+     * 已被用户拒绝（decline / cancel），终态，不可再被确认
+     */
+    DECLINED
 
 }

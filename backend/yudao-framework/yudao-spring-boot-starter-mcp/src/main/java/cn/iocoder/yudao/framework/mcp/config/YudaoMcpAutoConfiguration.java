@@ -9,6 +9,7 @@ import cn.iocoder.yudao.framework.mcp.security.McpQueryTokenRejectingFilter;
 import cn.iocoder.yudao.framework.mcp.security.McpScopeAuthorizationFilter;
 import cn.iocoder.yudao.framework.mcp.security.McpStrictAccessTokenFilter;
 import cn.iocoder.yudao.framework.mcp.security.McpTenantContextFilter;
+import cn.iocoder.yudao.framework.mcp.security.McpTransportContextKeys;
 import cn.iocoder.yudao.framework.common.biz.system.oauth2.OAuth2TokenCommonApi;
 import cn.iocoder.yudao.framework.mcp.transport.McpRequestBodyCharsetFilter;
 import cn.iocoder.yudao.framework.mcp.transport.McpRequestSizeLimitFilter;
@@ -21,7 +22,9 @@ import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.modern.McpSchema.CacheScope;
 import io.modelcontextprotocol.modern.McpSchema.Implementation;
+import io.modelcontextprotocol.modern.server.HmacRequestStateCodec;
 import io.modelcontextprotocol.modern.server.McpServer;
+import io.modelcontextprotocol.modern.server.RequestStateCodec;
 import io.modelcontextprotocol.modern.server.feature.McpSyncToolRepository;
 import io.modelcontextprotocol.modern.server.feature.ToolsFeature;
 import io.modelcontextprotocol.modern.server.transport.HttpServletMcpTransport;
@@ -48,6 +51,9 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+
+import java.util.Base64;
+import java.util.List;
 
 /**
  * MCP Stateless Server 自动配置。
@@ -237,10 +243,50 @@ public class YudaoMcpAutoConfiguration {
         return registration;
     }
 
+    @Bean
+    @ConditionalOnMissingBean(RequestStateCodec.class)
+    public RequestStateCodec mcpRequestStateCodec(McpJsonMapper jsonMapper,
+                                                  YudaoMcpServerProperties properties) {
+        // principal 绑定：transport context 里的已认证用户 id → 字符串；取不到时
+        // 返回 null，state 不绑定用户（与 SDK 默认行为一致，如 STDIO 下无身份）。
+        HmacRequestStateCodec.Builder codec = HmacRequestStateCodec.builder()
+                .jsonMapper(jsonMapper)
+                .principalExtractor(transportContext -> {
+                    if (transportContext == null) {
+                        return null;
+                    }
+                    Object userId = transportContext.get(McpTransportContextKeys.USER_ID);
+                    return userId == null ? null : String.valueOf(userId);
+                });
+        String sharedKey = properties.getRequestState().getSharedKey();
+        if (sharedKey != null && !sharedKey.isBlank()) {
+            codec.key(decodeRequestStateSharedKey(sharedKey));
+        }
+        // 不显式设 ttl：SDK 默认 10 分钟，与确认 challenge 的 10 分钟有效期一致；
+        // 单实例不配 key 时 SDK 生成随机进程 key 并打一条警告日志。
+        return codec.build();
+    }
+
+    private static byte[] decodeRequestStateSharedKey(String sharedKey) {
+        final byte[] key;
+        try {
+            key = Base64.getDecoder().decode(sharedKey.trim());
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalStateException(
+                    "yudao.mcp.server.request-state.shared-key must be valid Base64", exception);
+        }
+        if (key.length < 32) {
+            throw new IllegalStateException(
+                    "yudao.mcp.server.request-state.shared-key must decode to at least 32 bytes");
+        }
+        return key;
+    }
+
     @Bean(destroyMethod = "closeGracefully")
     @ConditionalOnMissingBean(McpServer.class)
     public McpServer mcpServer(McpJsonMapper jsonMapper,
                                 YudaoMcpServerProperties properties,
+                                RequestStateCodec requestStateCodec,
                                 ObjectProvider<McpSyncToolRepository> toolRepositories) {
         // Modern server 没有 capabilities() / requestTimeout()：capabilities 由注册的 feature
         // 自行贡献（ToolsFeature 贡献 tools）；requestTimeout 在 2.2.0 modern Builder 里没有
@@ -251,6 +297,7 @@ public class YudaoMcpAutoConfiguration {
         McpServer.Builder builder = McpServer.builder()
                 .serverInfo(Implementation.builder(properties.getName(), properties.getVersion()).build())
                 .instructions(properties.getInstructions())
+                .requestStateCodec(requestStateCodec)
                 .jsonMapper(jsonMapper);
         List<McpSyncToolRepository> repositories = toolRepositories.orderedStream().toList();
         McpSyncToolRepository toolRepository = repositories.isEmpty()

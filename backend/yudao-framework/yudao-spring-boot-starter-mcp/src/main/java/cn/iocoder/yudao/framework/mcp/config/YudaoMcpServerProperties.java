@@ -9,6 +9,7 @@ import org.springframework.util.unit.DataSize;
 import org.springframework.validation.annotation.Validated;
 
 import java.time.Duration;
+import java.util.Base64;
 import java.util.List;
 
 /**
@@ -110,6 +111,50 @@ public class YudaoMcpServerProperties {
      * 单次 MCP 请求允许读取的最大请求体，避免 chunked 请求绕过 Content-Length 检查。
      */
     private DataSize maxRequestSize = DataSize.ofMegabytes(1);
+
+    /**
+     * MRTR {@code requestState} 的签名配置。
+     */
+    private final RequestState requestState = new RequestState();
+
+    /**
+     * MRTR {@code requestState} 的签名配置。
+     *
+     * <p>服务端把 challengeId 放进 {@code requestState} 随 InputRequiredResult 返回，
+     * SDK 在发送前用 HMAC-SHA256 签名（默认 10 分钟过期，绑定 tools/call 方法与工具名、
+     * 以及当前用户），重试时先验签开封。注意签名不是加密：payload 是 base64url 编码
+     * 的明文 JSON，客户端可读，但改不了。密钥只影响“哪个实例能开封”，不影响 challenge
+     * 本身的校验（用户、租户、幂等键、请求摘要、过期仍由服务端 challenge 记录校验）。</p>
+     */
+    @Data
+    public static class RequestState {
+
+        /**
+         * 多实例共享的 HMAC-SHA256 密钥，标准 Base64 编码，解码后至少 32 字节。
+         *
+         * <p>不配时 SDK 每个进程随机生成一个 key（启动日志有警告）：单实例够用；
+         * 多实例部署下 A 实例签名的 requestState 在 B 实例打不开，重试会报
+         * invalid params，确认流程走不下去。配了共享 key 后任意实例都能开封。</p>
+         *
+         * <p>密钥只能来自环境变量或密钥管理服务，绝不要把真实值写进仓库里的配置
+         * 文件；轮换后旧 state 立即失效（进行中的确认需重调一次工具）。</p>
+         */
+        private String sharedKey;
+
+    }
+
+    @AssertTrue(message = "request-state.shared-key must be Base64 and decode to at least 32 bytes")
+    public boolean isRequestStateSharedKeyValid() {
+        if (requestState == null || requestState.getSharedKey() == null
+                || requestState.getSharedKey().isBlank()) {
+            return true;
+        }
+        try {
+            return Base64.getDecoder().decode(requestState.getSharedKey().trim()).length >= 32;
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
+    }
 
     @AssertTrue(message = "max-request-size must be greater than zero and fit in an int")
     public boolean isMaxRequestSizeValid() {

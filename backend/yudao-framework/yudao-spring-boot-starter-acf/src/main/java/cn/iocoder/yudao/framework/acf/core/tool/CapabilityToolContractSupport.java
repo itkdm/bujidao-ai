@@ -33,7 +33,11 @@ public class CapabilityToolContractSupport {
         addControlProperty(properties, IDEMPOTENCY_KEY,
                 "Required for side-effecting or confirmation-required capabilities. Generate a stable unique key for this business intent and reuse it on retries.");
         addControlProperty(properties, CONFIRMATION_TOKEN,
-                "Confirmation token returned by the approval flow. Provide it only when retrying after confirmation.");
+                "Confirmation token issued by the server-side confirmation flow. "
+                        + "MCP clients normally leave this empty: a confirmation-required call is "
+                        + "answered with an elicitation request, and the server mints the token "
+                        + "after the user accepts. Only send a token if another approved flow "
+                        + "has issued one for this call.");
         if (idempotencyRequired) {
             LinkedHashSet<String> required = new LinkedHashSet<>(readRequired(schema));
             required.add(IDEMPOTENCY_KEY);

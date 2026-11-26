@@ -27,4 +27,14 @@ public interface CapabilityConfirmationService {
         throw new UnsupportedOperationException("Capability confirmation is not configured");
     }
 
+    /**
+     * 用户拒绝确认：把仍在 {@code PENDING} 的 challenge 置为终态，之后再用它
+     * 调 {@link #confirm} 会因“非 pending”被拒绝。拒绝不授权任何执行，所以
+     * 本方法是幂等的、尽力而为的：challenge 不存在、已终态、已过期或不属于
+     * 当前调用方时直接返回，不抛异常。
+     */
+    default void decline(String challengeId, CapabilityContext context) {
+        throw new UnsupportedOperationException("Capability confirmation is not configured");
+    }
+
 }
