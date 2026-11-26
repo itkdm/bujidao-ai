@@ -9,10 +9,8 @@ import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import cn.iocoder.yudao.framework.mcp.acf.AcfMcpConfirmationTool;
 import cn.iocoder.yudao.framework.mcp.acf.AcfMcpToolMapper;
 import cn.iocoder.yudao.framework.mcp.acf.AcfMcpToolCallHandler;
-import cn.iocoder.yudao.framework.mcp.acf.AcfMcpToolSpecificationProvider;
+import cn.iocoder.yudao.framework.mcp.acf.AcfMcpToolRepository;
 import cn.iocoder.yudao.framework.mcp.acf.AcfMcpStructuredContentNormalizer;
-import cn.iocoder.yudao.framework.mcp.acf.AcfMcpToolsListFilter;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -21,7 +19,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 
 /**
@@ -32,7 +29,7 @@ import org.springframework.context.annotation.Bean;
 @AutoConfiguration(after = YudaoMcpAutoConfiguration.class)
 @ConditionalOnClass(name = {
         "cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog",
-        "io.modelcontextprotocol.server.McpStatelessServerFeatures"
+        "io.modelcontextprotocol.modern.server.feature.ToolsFeature"
 })
 @ConditionalOnProperty(prefix = YudaoMcpServerProperties.PREFIX, name = "enabled", havingValue = "true")
 @ConditionalOnProperty(prefix = YudaoMcpAcfProperties.PREFIX, name = "enabled", havingValue = "true",
@@ -40,9 +37,6 @@ import org.springframework.context.annotation.Bean;
 @ConditionalOnBean({CapabilityToolCatalog.class, CapabilityToolInvoker.class})
 @EnableConfigurationProperties(YudaoMcpAcfProperties.class)
 public class YudaoMcpAcfAutoConfiguration {
-
-    public static final String ACF_MCP_TOOLS_LIST_FILTER_REGISTRATION_NAME =
-            "bujidaoAcfMcpToolsListFilterRegistration";
 
     @Bean
     @ConditionalOnMissingBean(CapabilityToolContractSupport.class)
@@ -83,32 +77,15 @@ public class YudaoMcpAcfAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public AcfMcpToolSpecificationProvider acfMcpToolSpecificationProvider(
+    public AcfMcpToolRepository acfMcpToolRepository(
             CapabilityToolCatalog capabilityToolCatalog, AcfMcpToolMapper toolMapper,
-            AcfMcpToolCallHandler toolCallHandler, ObjectProvider<AcfMcpConfirmationTool> confirmationTool) {
-        return new AcfMcpToolSpecificationProvider(capabilityToolCatalog, toolMapper, toolCallHandler,
-                confirmationTool.getIfAvailable());
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    @ConditionalOnBean(CapabilityToolExportService.class)
-    public AcfMcpToolsListFilter acfMcpToolsListFilter(CapabilityToolExportService toolExportService,
-                                                       AcfMcpToolMapper toolMapper,
-                                                       ObjectMapper objectMapper,
-                                                       ObjectProvider<AcfMcpConfirmationTool> confirmationTool) {
-        return new AcfMcpToolsListFilter(toolExportService, toolMapper, objectMapper,
-                confirmationTool.getIfAvailable());
-    }
-
-    @Bean(name = ACF_MCP_TOOLS_LIST_FILTER_REGISTRATION_NAME)
-    @ConditionalOnMissingBean(name = ACF_MCP_TOOLS_LIST_FILTER_REGISTRATION_NAME)
-    @ConditionalOnBean(AcfMcpToolsListFilter.class)
-    public FilterRegistrationBean<AcfMcpToolsListFilter> acfMcpToolsListFilterRegistration(
-            AcfMcpToolsListFilter filter) {
-        FilterRegistrationBean<AcfMcpToolsListFilter> registration = new FilterRegistrationBean<>(filter);
-        registration.setEnabled(false);
-        return registration;
+            AcfMcpToolCallHandler toolCallHandler,
+            ObjectProvider<CapabilityToolExportService> toolExportService,
+            ObjectProvider<AcfMcpConfirmationTool> confirmationTool) {
+        // toolExportService 用 ObjectProvider 取：缺失时 repository 退回声明目录，
+        // 而不是让整个 ACF 自动配置启动失败。
+        return new AcfMcpToolRepository(capabilityToolCatalog, toolMapper, toolCallHandler,
+                toolExportService.getIfAvailable(), confirmationTool.getIfAvailable());
     }
 
 }

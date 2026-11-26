@@ -1,8 +1,8 @@
 package cn.iocoder.yudao.framework.mcp.config;
 
 import cn.iocoder.yudao.framework.common.enums.WebFilterOrderEnum;
+import cn.iocoder.yudao.framework.mcp.acf.AcfMcpToolRepository;
 import cn.iocoder.yudao.framework.mcp.oauth2.McpOAuthMetadataController;
-import cn.iocoder.yudao.framework.mcp.acf.AcfMcpToolsListFilter;
 import cn.iocoder.yudao.framework.mcp.security.McpAuthenticatedTransportContextExtractor;
 import cn.iocoder.yudao.framework.mcp.security.McpAuthenticationEntryPoint;
 import cn.iocoder.yudao.framework.mcp.security.McpQueryTokenRejectingFilter;
@@ -10,23 +10,24 @@ import cn.iocoder.yudao.framework.mcp.security.McpScopeAuthorizationFilter;
 import cn.iocoder.yudao.framework.mcp.security.McpStrictAccessTokenFilter;
 import cn.iocoder.yudao.framework.mcp.security.McpTenantContextFilter;
 import cn.iocoder.yudao.framework.common.biz.system.oauth2.OAuth2TokenCommonApi;
-import cn.iocoder.yudao.framework.mcp.tool.McpToolSpecificationProvider;
 import cn.iocoder.yudao.framework.mcp.transport.McpRequestBodyCharsetFilter;
 import cn.iocoder.yudao.framework.mcp.transport.McpRequestSizeLimitFilter;
 import cn.iocoder.yudao.framework.security.config.SecurityProperties;
 import cn.iocoder.yudao.framework.security.core.filter.TokenAuthenticationFilter;
 import cn.iocoder.yudao.framework.web.config.WebProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.modelcontextprotocol.json.McpJsonDefaults;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
-import io.modelcontextprotocol.server.McpServer;
-import io.modelcontextprotocol.server.McpStatelessServerFeatures;
-import io.modelcontextprotocol.server.McpStatelessSyncServer;
+import io.modelcontextprotocol.modern.McpSchema.CacheScope;
+import io.modelcontextprotocol.modern.McpSchema.Implementation;
+import io.modelcontextprotocol.modern.server.McpServer;
+import io.modelcontextprotocol.modern.server.feature.McpSyncToolRepository;
+import io.modelcontextprotocol.modern.server.feature.ToolsFeature;
+import io.modelcontextprotocol.modern.server.transport.HttpServletMcpTransport;
 import io.modelcontextprotocol.server.McpTransportContextExtractor;
 import io.modelcontextprotocol.server.transport.DefaultServerTransportSecurityValidator;
-import io.modelcontextprotocol.server.transport.HttpServletStatelessServerTransport;
-import io.modelcontextprotocol.server.transport.ServerTransportSecurityValidator;
-import io.modelcontextprotocol.spec.McpSchema;
+import io.modelcontextprotocol.server.transport.ServerHttpHeaderValidator;
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.ObjectProvider;
@@ -46,10 +47,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-
-import java.util.List;
 
 /**
  * MCP Stateless Server 自动配置。
@@ -58,7 +56,7 @@ import java.util.List;
  */
 @AutoConfiguration(after = JacksonAutoConfiguration.class)
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
-@ConditionalOnClass({McpServer.class, HttpServletStatelessServerTransport.class})
+@ConditionalOnClass({McpServer.class, HttpServletMcpTransport.class})
 @ConditionalOnProperty(prefix = YudaoMcpServerProperties.PREFIX, name = "enabled", havingValue = "true")
 @EnableConfigurationProperties(YudaoMcpServerProperties.class)
 public class YudaoMcpAutoConfiguration {
@@ -80,24 +78,28 @@ public class YudaoMcpAutoConfiguration {
         return new JacksonMcpJsonMapper(objectMapper);
     }
 
-    @Bean
-    @ConditionalOnMissingBean(HttpServletStatelessServerTransport.class)
-    public HttpServletStatelessServerTransport mcpStatelessServerTransport(
-            McpJsonMapper jsonMapper, YudaoMcpServerProperties properties,
-            McpTransportContextExtractor<HttpServletRequest> contextExtractor,
-            ServerTransportSecurityValidator securityValidator) {
-        return HttpServletStatelessServerTransport.builder()
+    @Bean(destroyMethod = "closeGracefully")
+    @ConditionalOnMissingBean(HttpServletMcpTransport.class)
+    public HttpServletMcpTransport mcpServerTransport(McpServer server,
+                                                      McpJsonMapper jsonMapper,
+                                                      YudaoMcpServerProperties properties,
+                                                      McpTransportContextExtractor<HttpServletRequest> contextExtractor,
+                                                      ServerHttpHeaderValidator httpHeaderValidator) {
+        return HttpServletMcpTransport.builder(server)
                 .jsonMapper(jsonMapper)
-                .messageEndpoint(properties.getEndpoint())
+                .endpoint(properties.getEndpoint())
                 .contextExtractor(contextExtractor)
-                .securityValidator(securityValidator)
+                .maxRequestSize(Math.toIntExact(properties.getMaxRequestSize().toBytes()))
+                .httpHeaderValidator(httpHeaderValidator)
                 .build();
     }
 
     @Bean
-    @ConditionalOnMissingBean(ServerTransportSecurityValidator.class)
-    public ServerTransportSecurityValidator mcpServerTransportSecurityValidator(
-            YudaoMcpServerProperties properties) {
+    @ConditionalOnMissingBean(ServerHttpHeaderValidator.class)
+    public ServerHttpHeaderValidator mcpServerHttpHeaderValidator(YudaoMcpServerProperties properties) {
+        // DefaultServerTransportSecurityValidator 同时实现新旧两个接口，
+        // 直接把它作为 ServerHttpHeaderValidator 返回，不走已废弃的 toHttpHeaderValidator 桥接，
+        // Origin / Host 校验逻辑与原来一致。
         return DefaultServerTransportSecurityValidator.builder()
                 .allowedOrigins(properties.getAllowedOrigins())
                 .allowedHosts(properties.getAllowedHosts())
@@ -118,8 +120,7 @@ public class YudaoMcpAutoConfiguration {
                                                       TokenAuthenticationFilter tokenAuthenticationFilter,
                                                       McpStrictAccessTokenFilter strictAccessTokenFilter,
                                                       McpScopeAuthorizationFilter scopeAuthorizationFilter,
-                                                      McpTenantContextFilter tenantContextFilter,
-                                                      ObjectProvider<AcfMcpToolsListFilter> toolsListFilter)
+                                                      McpTenantContextFilter tenantContextFilter)
             throws Exception {
         // 过滤器顺序：认证 -> scope 判定 -> 租户上下文收口，避免为无权限请求绑定租户上下文
         http.securityMatcher(properties.getEndpoint())
@@ -134,10 +135,6 @@ public class YudaoMcpAutoConfiguration {
                 .addFilterAfter(strictAccessTokenFilter, TokenAuthenticationFilter.class)
                 .addFilterAfter(scopeAuthorizationFilter, McpStrictAccessTokenFilter.class)
                 .addFilterAfter(tenantContextFilter, McpScopeAuthorizationFilter.class);
-        AcfMcpToolsListFilter acfToolsListFilter = toolsListFilter.getIfAvailable();
-        if (acfToolsListFilter != null) {
-            http.addFilterAfter(acfToolsListFilter, AuthorizationFilter.class);
-        }
         return http.build();
     }
 
@@ -230,9 +227,9 @@ public class YudaoMcpAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean(name = MCP_SERVLET_NAME)
-    public ServletRegistrationBean<HttpServletStatelessServerTransport> mcpServletRegistration(
-            HttpServletStatelessServerTransport transport, YudaoMcpServerProperties properties) {
-        ServletRegistrationBean<HttpServletStatelessServerTransport> registration =
+    public ServletRegistrationBean<HttpServletMcpTransport> mcpServletRegistration(
+            HttpServletMcpTransport transport, YudaoMcpServerProperties properties) {
+        ServletRegistrationBean<HttpServletMcpTransport> registration =
                 new ServletRegistrationBean<>(transport, properties.getEndpoint());
         registration.setName(MCP_SERVLET_NAME);
         registration.setLoadOnStartup(1);
@@ -240,33 +237,28 @@ public class YudaoMcpAutoConfiguration {
         return registration;
     }
 
-    @Bean(destroyMethod = "close")
-    @ConditionalOnMissingBean(McpStatelessSyncServer.class)
-    public McpStatelessSyncServer mcpStatelessSyncServer(HttpServletStatelessServerTransport transport,
-                                                         McpJsonMapper jsonMapper,
-                                                         YudaoMcpServerProperties properties,
-                                                         ObjectProvider<McpToolSpecificationProvider> toolProviders) {
-        McpSchema.ServerCapabilities capabilities = McpSchema.ServerCapabilities.builder()
-                .tools(false)
-                .resources(false, false)
-                .build();
-        return McpServer.sync(transport)
-                .jsonMapper(jsonMapper)
-                .serverInfo(properties.getName(), properties.getVersion())
+    @Bean(destroyMethod = "closeGracefully")
+    @ConditionalOnMissingBean(McpServer.class)
+    public McpServer mcpServer(McpJsonMapper jsonMapper,
+                                YudaoMcpServerProperties properties,
+                                ObjectProvider<McpSyncToolRepository> toolRepositories) {
+        // Modern server 没有 capabilities() / requestTimeout()：capabilities 由注册的 feature
+        // 自行贡献（ToolsFeature 贡献 tools）；requestTimeout 在 2.2.0 modern Builder 里没有
+        // 等价项，YudaoMcpServerProperties.requestTimeout 目前不再生效（字段已标注废弃）。
+        // Resources / Prompts 不注册 feature，server/discover 不宣告，对应方法返回 METHOD_NOT_FOUND。
+        // ToolsFeature 始终注册：无仓库时用空仓库，tools/list 返回 200 空列表、tools/call
+        // 答 Unknown tool，与原来注册空工具列表的语义一致；多个仓库时合成一个。
+        McpServer.Builder builder = McpServer.builder()
+                .serverInfo(Implementation.builder(properties.getName(), properties.getVersion()).build())
                 .instructions(properties.getInstructions())
-                .requestTimeout(properties.getRequestTimeout())
-                .capabilities(capabilities)
-                .tools(createToolSpecifications(toolProviders))
-                .resources(List.of())
-                .resourceTemplates(List.of())
-                .build();
-    }
-
-    private List<McpStatelessServerFeatures.SyncToolSpecification> createToolSpecifications(
-            ObjectProvider<McpToolSpecificationProvider> toolProviders) {
-        return toolProviders.orderedStream()
-                .flatMap(provider -> provider.createToolSpecifications().stream())
-                .toList();
+                .jsonMapper(jsonMapper);
+        List<McpSyncToolRepository> repositories = toolRepositories.orderedStream().toList();
+        McpSyncToolRepository toolRepository = repositories.isEmpty()
+                ? new CompositeMcpSyncToolRepository(List.of())
+                : new CompositeMcpSyncToolRepository(repositories);
+        builder.feature(ToolsFeature.ofSync(toolRepository, jsonMapper,
+                McpJsonDefaults.getSchemaValidator(), 0L, CacheScope.PRIVATE));
+        return builder.build();
     }
 
     private static <T extends jakarta.servlet.Filter> FilterRegistrationBean<T> disableServletFilterRegistration(

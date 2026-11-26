@@ -99,6 +99,11 @@ public class YudaoMcpServerProperties {
 
     private String instructions;
 
+    /**
+     * 已废弃：2.2.0 modern Builder 没有 requestTimeout 的等价项，配了也不生效。
+     * 工具调用目前无超时上限，挂起调用会一直占容器线程；如需超时控制要另找机制。
+     */
+    @Deprecated
     private Duration requestTimeout = Duration.ofSeconds(30);
 
     /**
@@ -106,14 +111,10 @@ public class YudaoMcpServerProperties {
      */
     private DataSize maxRequestSize = DataSize.ofMegabytes(1);
 
-    @AssertTrue(message = "request-timeout must be greater than zero")
-    public boolean isRequestTimeoutValid() {
-        return requestTimeout != null && !requestTimeout.isZero() && !requestTimeout.isNegative();
-    }
-
-    @AssertTrue(message = "max-request-size must be greater than zero")
+    @AssertTrue(message = "max-request-size must be greater than zero and fit in an int")
     public boolean isMaxRequestSizeValid() {
-        return maxRequestSize != null && maxRequestSize.toBytes() > 0;
+        return maxRequestSize != null && maxRequestSize.toBytes() > 0
+                && maxRequestSize.toBytes() <= Integer.MAX_VALUE;
     }
 
     @AssertTrue(message = "endpoint must be a fixed path starting with '/' and must not be root")
