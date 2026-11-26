@@ -90,6 +90,24 @@ public class McpOAuthProperties {
     private Cimd cimd = new Cimd();
 
     /**
+     * 限流配置：CIMD 拉取（按目标 host + 全局 + 并发）与授权 / token 端点（按调用方 IP）。
+     */
+    @Valid
+    @NotNull
+    private RateLimit rateLimit = new RateLimit();
+
+    /**
+     * 取 rateLimit 配置段：编程式构造未设 rateLimit 时返回默认值，不 NPE。
+     * 绑定层有 @NotNull + 字段默认值保证，正常启动走不到 null 分支。
+     */
+    public static RateLimit rateLimitOrDefault(McpOAuthProperties properties) {
+        if (properties == null || properties.getRateLimit() == null) {
+            return new RateLimit();
+        }
+        return properties.getRateLimit();
+    }
+
+    /**
      * 取 cimd 配置段：编程式构造未设 cimd 时返回默认值，不 NPE。
      * 绑定层有 @NotNull + 字段默认值保证，正常启动走不到 null 分支。
      */
@@ -156,6 +174,61 @@ public class McpOAuthProperties {
         public boolean isCacheDefaultTtlPositive() {
             return cacheDefaultTtl != null && !cacheDefaultTtl.isNegative() && !cacheDefaultTtl.isZero();
         }
+
+    }
+
+    /**
+     * 限流配置段，前缀 yudao.mcp.oauth.rate-limit。
+     *
+     * <p>阈值口径（均为 60 秒滑动窗口）：
+     * <ul>
+     *     <li>CIMD 拉取只在缓存未命中时发生（默认缓存 1 小时），正常客户端一个 host 每分钟
+     *     远到不了 60 次；60 次 / host 既能挡住单个恶意 host 反复拉取拖垮拉取线程，
+     *     又不会误杀正常客户端。</li>
+     *     <li>全局 600 次 / 分钟是防拖垮的安全阀，不是针对某个客户端的配额。</li>
+     *     <li>并发 20 是拉取线程占用上限（单次拉取超时 3 秒），不是吞吐目标。</li>
+     *     <li>授权同意是人点一次的操作，60 次 / 分钟 / IP 足够覆盖重试与多人共用出口 IP；
+     *     token 兑换每次登录 / 刷新才调一次，60 次 / 分钟 / IP 同理，且授权码本身
+     *     高熵、一次失效，60 次试错空间形不成有效爆破。</li>
+     * </ul>
+     */
+    @Data
+    public static class RateLimit {
+
+        /**
+         * 是否开启限流。关闭后所有限流检查直接放行（仅供排障临时用，生产保持 true）。
+         */
+        private boolean enabled = true;
+
+        /**
+         * 单个目标 host 每分钟最多 CIMD 拉取次数。
+         */
+        @Min(1)
+        private int cimdPerHostPerMinute = 60;
+
+        /**
+         * 全部 host 每分钟合计最多 CIMD 拉取次数。
+         */
+        @Min(1)
+        private int cimdGlobalPerMinute = 600;
+
+        /**
+         * CIMD 拉取最大并发数，超限的拉取直接拒绝、不排队。
+         */
+        @Min(1)
+        private int cimdMaxConcurrentFetches = 20;
+
+        /**
+         * 单个调用方 IP 每分钟最多授权同意（POST /mcp/oauth2/authorize）次数。
+         */
+        @Min(1)
+        private int authorizePerIpPerMinute = 60;
+
+        /**
+         * 单个调用方 IP 每分钟最多 token 兑换（POST /mcp/oauth2/token）次数。
+         */
+        @Min(1)
+        private int tokenPerIpPerMinute = 60;
 
     }
 

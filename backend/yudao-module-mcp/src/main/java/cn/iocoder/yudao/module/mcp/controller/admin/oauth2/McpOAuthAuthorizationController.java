@@ -1,7 +1,10 @@
 package cn.iocoder.yudao.module.mcp.controller.admin.oauth2;
 
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
+import cn.iocoder.yudao.framework.common.util.servlet.ServletUtils;
 import cn.iocoder.yudao.module.mcp.framework.oauth2.config.McpOAuthProperties;
+import cn.iocoder.yudao.module.mcp.framework.oauth2.core.McpOAuthException;
+import cn.iocoder.yudao.module.mcp.framework.oauth2.core.McpOAuthRateLimiter;
 import cn.iocoder.yudao.module.mcp.framework.oauth2.core.McpOAuthResourceUriResolver;
 import cn.iocoder.yudao.module.mcp.service.oauth2.McpOAuthAuthorizationService;
 import cn.iocoder.yudao.module.system.controller.admin.oauth2.vo.open.OAuth2OpenAuthorizeInfoRespVO;
@@ -11,6 +14,7 @@ import io.swagger.v3.oas.annotations.Parameters;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -31,12 +35,15 @@ import static cn.iocoder.yudao.framework.common.pojo.CommonResult.success;
 @RequestMapping("/mcp/oauth2")
 @ConditionalOnProperty(prefix = McpOAuthProperties.PREFIX, name = "enabled", havingValue = "true", matchIfMissing = true)
 @Validated
+@Slf4j
 public class McpOAuthAuthorizationController {
 
     @Resource
     private McpOAuthAuthorizationService authorizationService;
     @Resource
     private McpOAuthResourceUriResolver resourceUriResolver;
+    @Resource
+    private McpOAuthRateLimiter rateLimiter;
 
     @GetMapping("/authorize")
     @Operation(summary = "获得 MCP OAuth 授权信息")
@@ -68,9 +75,27 @@ public class McpOAuthAuthorizationController {
                                               @RequestParam(value = "code_challenge") String codeChallenge,
                                               @RequestParam(value = "code_challenge_method") String codeChallengeMethod,
                                               @RequestParam(value = "resource") String resource) {
+        checkRateLimit(request);
         return success(authorizationService.approveOrDeny(responseType, clientId, scope, redirectUri,
                 autoApprove, state, codeChallenge, codeChallengeMethod, resource,
                 resourceUriResolver.resolve(request)));
+    }
+
+    /**
+     * 授权同意限流：按调用方 IP 计，超限抛 OAuth {@code invalid_client}（400），
+     * 不产生 500；只记 IP 与结果，不记 client_id / code 等请求参数。
+     * rateLimiter 由 Spring 注入；手工 new 出来的 Controller（测试）没有它时不限流，
+     * 生产走 Spring 容器，一定有 Bean（与本控制器用同一个 enabled 开关）。
+     */
+    private void checkRateLimit(HttpServletRequest request) {
+        if (rateLimiter == null || !rateLimiter.isEnabled()) {
+            return;
+        }
+        String clientIp = ServletUtils.getClientIP(request);
+        if (!rateLimiter.tryAcquireAuthorize(clientIp)) {
+            log.warn("[authorize][ip({})] MCP OAuth authorize rate limited", clientIp);
+            throw McpOAuthException.invalidClient("too many requests, please retry later");
+        }
     }
 
 }

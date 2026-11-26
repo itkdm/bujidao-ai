@@ -20,8 +20,10 @@ import cn.iocoder.yudao.module.system.service.oauth2.OAuth2ClientService;
 import cn.iocoder.yudao.module.system.service.oauth2.OAuth2CodeService;
 import cn.iocoder.yudao.module.system.service.oauth2.OAuth2TokenService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.net.URI;
 import java.util.Collection;
 
 /**
@@ -31,6 +33,7 @@ import java.util.Collection;
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class McpOAuthTokenExchangeService {
 
     private final OAuth2ClientService oauth2ClientService;
@@ -70,6 +73,10 @@ public class McpOAuthTokenExchangeService {
                                 client, codeDO.getScopes())
                         : oauth2TokenService.createAccessToken(codeDO.getUserId(), codeDO.getUserType(),
                                 codeDO.getClientId(), codeDO.getScopes()));
+        // 审计：CIMD 兑换成功只记 client_id 的 host，不记 token / code 等敏感值。
+        if (clientResolver.isCimdClientId(clientId)) {
+            log.info("[exchange][host({})] CIMD client token exchange succeeded", hostOf(clientId));
+        }
         return OAuth2OpenConvert.INSTANCE.convert(accessToken);
     }
 
@@ -86,6 +93,10 @@ public class McpOAuthTokenExchangeService {
                 () -> clientResolver.isCimdClientId(clientId)
                         ? oauth2TokenService.refreshAccessToken(refreshToken, client)
                         : oauth2TokenService.refreshAccessToken(refreshToken, clientId));
+        // 审计：CIMD 刷新成功只记 client_id 的 host，不记 token 等敏感值。
+        if (clientResolver.isCimdClientId(clientId)) {
+            log.info("[exchange][host({})] CIMD client token refresh succeeded", hostOf(clientId));
+        }
         return OAuth2OpenConvert.INSTANCE.convert(accessToken);
     }
 
@@ -152,6 +163,16 @@ public class McpOAuthTokenExchangeService {
     private static boolean isPublicClient(OAuth2ClientDO client) {
         return StrUtil.equals(getAdditionalString(client, "token_endpoint_auth_method", "tokenEndpointAuthMethod"), "none")
                 || getAdditionalBoolean(client, "public_client", "publicClient");
+    }
+
+    /** 只取 host 记日志，不记完整 client_id（可能含 query 等识别信息）。 */
+    private static String hostOf(String clientId) {
+        try {
+            URI uri = URI.create(clientId);
+            return uri.getHost() == null ? "unknown" : uri.getHost();
+        } catch (RuntimeException exception) {
+            return "unknown";
+        }
     }
 
     private static boolean getAdditionalBoolean(OAuth2ClientDO client, String snakeKey, String camelKey) {

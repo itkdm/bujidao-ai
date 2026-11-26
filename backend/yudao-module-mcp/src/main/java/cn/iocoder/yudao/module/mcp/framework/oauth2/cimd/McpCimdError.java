@@ -19,6 +19,8 @@ public enum McpCimdError {
     FETCH_FAILED,
     /** 拉取超时。 */
     FETCH_TIMEOUT,
+    /** 拉取被限流：单 host / 全局速率或并发上限触发，调用方按 invalid_client 返回。 */
+    RATE_LIMITED,
     /** HTTP 状态码不是 200。 */
     INVALID_STATUS,
     /** Content-Type 不是 application/json。 */

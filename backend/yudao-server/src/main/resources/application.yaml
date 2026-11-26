@@ -329,6 +329,13 @@ yudao:
     #     # allow-private-addresses 保持 false：改成 true 会同时放行 http scheme 的
     #     # client_id 与内网 / 回环地址，只允许本地开发 / 测试临时开启，生产禁止改 true。
     #     allow-private-addresses: false
+    #   rate-limit: # 限流配置（默认开启；阈值按 60 秒滑动窗口计；进程内计数，多实例下各自限流、非全局）
+    #     enabled: true # 关闭后所有限流检查直接放行，仅供排障临时用，生产保持 true
+    #     cimd-per-host-per-minute: 60 # 单个目标 host 每分钟最多 CIMD 拉取次数
+    #     cimd-global-per-minute: 600 # 全部 host 每分钟合计最多 CIMD 拉取次数
+    #     cimd-max-concurrent-fetches: 20 # CIMD 拉取最大并发数，超限直接拒绝、不排队
+    #     authorize-per-ip-per-minute: 60 # 单个调用方 IP 每分钟最多授权同意次数
+    #     token-per-ip-per-minute: 60 # 单个调用方 IP 每分钟最多 token 兑换次数
   xss:
     enable: false
     exclude-urls: # 如下两个 url，仅仅是为了演示，去掉配置也没关系
