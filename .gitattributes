@@ -1,0 +1,2 @@
+# Keep Velocity codegen templates on LF across all OSes so multi-line codegen assertions stay consistent on Windows.
+*.vm text eol=lf
