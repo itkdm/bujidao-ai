@@ -65,7 +65,7 @@
 - `yudao-spring-boot-starter-acf`：ACF 核心，包含 `@AgentCapability`、能力注册、能力执行、权限契约、协议 schema、幂等与确认控制抽象。
 - `yudao-spring-boot-starter-mcp`：通用 MCP Server starter，提供 MCP endpoint、安全过滤、协议适配、可插拔 Tool Provider，并内置可选 ACF Tool Provider。
 - `yudao-module-acf`：ACF 官方生产适配模块，提供能力目录、调用日志、确认 challenge 持久化和最小后台 API。
-- `yudao-module-mcp`：MCP 应用层 OAuth 适配模块，复用上游 `system_oauth2_client`、授权码、access token、refresh token、用户、租户和权限基础设施，补充 MCP OAuth / DCR / PKCE / resource 校验。
+- `yudao-module-mcp`：MCP 应用层 OAuth 适配模块，复用上游 `system_oauth2_client`、授权码、access token、refresh token、用户、租户和权限基础设施，补充 MCP OAuth / CIMD / PKCE / resource 校验。
 
 ### 后端按需
 
@@ -118,7 +118,23 @@
 
 SQL 菜单插入不使用固定 ID，会根据 `/acf` 和权限标识动态查找或创建菜单。
 
-正式 MCP OAuth 默认使用 Dynamic Client Registration。接入时不需要预置固定 OAuth client；Agent 客户端会按协议动态写入上游已有 `system_oauth2_client` 表。
+正式 MCP OAuth 默认使用 CIMD（Client ID Metadata Document）。接入时不需要预置固定 OAuth client，也不向服务端注册客户端；Agent 客户端以 client_id URL 发布一份元数据文档，服务端拉取并校验后合成临时客户端（不写入上游已有 `system_oauth2_client` 表）。
+
+最小元数据文档示例（由客户端托管在 client_id URL 上，须为 HTTPS；文档内 `client_id` 必须与托管 URL 逐字节一致）：
+
+```json
+{
+  "client_id": "https://client.example.com/mcp-client",
+  "client_name": "Example MCP Client",
+  "redirect_uris": ["https://client.example.com/callback"],
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
+  "scope": "mcp:access",
+  "token_endpoint_auth_method": "none"
+}
+```
+
+其中 `client_id`、`client_name`、`redirect_uris` 必填；`grant_types` 须包含 `authorization_code`（可再加 `refresh_token`）；`token_endpoint_auth_method` 只支持 `none`；`scope` 不填时默认 `mcp:access`。`redirect_uris` 须为 HTTPS（http 仅放行 localhost / 127.0.0.1 回调），自定义 URI scheme 的回调不放行。
 
 ## Maven 接入步骤
 
@@ -174,7 +190,6 @@ yudao:
       instructions: ${YOUR_MCP_SERVER_INSTRUCTIONS}
       required-scopes:
         - mcp:access
-      dynamic-client-registration-enabled: true
       # 生产部署必须按实际域名配置，默认只允许 localhost / 127.0.0.1
       allowed-origins:
         - https://${YOUR_ADMIN_DOMAIN}
@@ -192,17 +207,12 @@ yudao:
       authorization-endpoint: https://${YOUR_ADMIN_DOMAIN}/mcp/sso
       token-endpoint: https://${YOUR_API_DOMAIN}/admin-api/mcp/oauth2/token
       revocation-endpoint: https://${YOUR_API_DOMAIN}/admin-api/mcp/oauth2/revoke
-      registration-endpoint: https://${YOUR_API_DOMAIN}/admin-api/mcp/oauth2/register
     acf:
       enabled: true
     oauth:
       enabled: true
-      dynamic-client-registration-enabled: true
       default-scopes:
         - mcp:access
-      allow-private-use-uri-scheme-redirects: true
-      # 如果企业只允许 HTTPS 回调，在这里收紧或补充允许前缀
-      allowed-redirect-uri-prefixes: []
       access-token-validity-seconds: 1800
       refresh-token-validity-seconds: 2592000
 ```
@@ -217,8 +227,8 @@ yudao:
 
 - `allowed-hosts`
 - `allowed-origins`
-- `allowed-redirect-uri-prefixes`
-- 是否允许 private-use URI scheme
+- `cimd.allow-private-addresses`（仅本地开发 / 测试临时开启，生产保持 false）
+- redirect URI 的 https 要求（CIMD 客户端不放行自定义 scheme；http 仅放行 localhost / 127.0.0.1 回调）
 
 ## OAuth 复用边界
 
@@ -233,12 +243,11 @@ MCP OAuth 正式方案复用上游系统能力：
 
 新增的 `yudao-module-mcp` 是适配层：
 
-- 提供 `/mcp/oauth2/register`
 - 提供 `/mcp/oauth2/authorize`
 - 提供 `/mcp/oauth2/token`
 - 提供 `/mcp/oauth2/revoke`
 - 保存 MCP 授权请求和授权码扩展信息到 Redis
-- 对 DCR、PKCE、resource indicator、redirect URI 策略做 MCP 需要的校验
+- 对 CIMD、PKCE、resource indicator、redirect URI 策略做 MCP 需要的校验
 
 除非目标项目上游版本缺少必要 OAuth API，否则不要修改 `yudao-module-system`。如果确实缺少 API，先判断是升级上游、复制最小缺失 API，还是做适配接口，不要直接重构系统 OAuth 模块。
 
@@ -335,7 +344,7 @@ mvn package -DskipTests -pl yudao-server -am
 用 Codex、WorkBuddy 或其他 Remote MCP 客户端配置：
 
 - MCP URL：`https://${YOUR_API_DOMAIN}/mcp`
-- 认证方式：OAuth / Dynamic Client Registration
+- 认证方式：OAuth / CIMD（client_id URL + 元数据文档）
 - 不手动填写固定 token 作为生产方案
 
 测试：
@@ -358,12 +367,11 @@ mvn package -DskipTests -pl yudao-server -am
 2. 管理前端地址：`https://${YOUR_ADMIN_DOMAIN}`
 3. OAuth 授权页地址：`https://${YOUR_ADMIN_DOMAIN}/mcp/sso`
 4. token endpoint：`https://${YOUR_API_DOMAIN}/admin-api/mcp/oauth2/token`
-5. DCR endpoint：`https://${YOUR_API_DOMAIN}/admin-api/mcp/oauth2/register`
-6. HTTPS 证书和反向代理头是否正确。
-7. `allowed-hosts`、`allowed-origins`、redirect URI 策略是否按生产域名收紧。
-8. access token 和 refresh token 生命周期是否符合企业安全要求。
-9. 用户角色是否已经分配 ACF 管理权限和业务工具权限。
-10. 是否需要审计日志保留周期、日志脱敏或导出策略。
+5. HTTPS 证书和反向代理头是否正确。
+6. `allowed-hosts`、`allowed-origins`、redirect URI 策略是否按生产域名收紧。
+7. access token 和 refresh token 生命周期是否符合企业安全要求。
+8. 用户角色是否已经分配 ACF 管理权限和业务工具权限。
+9. 是否需要审计日志保留周期、日志脱敏或导出策略。
 
 ## 如果目标项目不是完全匹配
 

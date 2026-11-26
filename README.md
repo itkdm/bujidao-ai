@@ -32,7 +32,7 @@
 | **权限控制**       | 根据当前登录用户原有业务权限决定 Agent 能看到、能调用哪些能力                                      |
 | **执行治理**       | 提供权限校验、幂等控制、调用审计、Confirmation Challenge 等机制                             |
 | **Remote MCP** | 将受治理的业务能力通过 MCP 暴露给 Codex、WorkBuddy 等 AI 客户端                            |
-| **OAuth 接入**   | 支持 Authorization Code + PKCE、Dynamic Client Registration 等 MCP OAuth 流程 |
+| **OAuth 接入**   | 支持 Authorization Code + PKCE、CIMD（Client ID Metadata Document）等 MCP OAuth 流程 |
 | **真实业务示例**     | 已提供商品、库存、客户、供应商、销售订单、采购订单等 ERP Capability 示例                            |
 
 一句话理解整个项目：
@@ -48,7 +48,7 @@
         ↓
  Remote MCP Server
         ↓
- OAuth / PKCE / DCR
+ OAuth / PKCE / CIMD
         ↓
 AI Agent / MCP Client
 ```
@@ -190,13 +190,13 @@ Remote MCP 正式接入复用 ruoyi-vue-pro 已有的：
 
 * Authorization Code；
 * PKCE；
-* Dynamic Client Registration；
+* CIMD（Client ID Metadata Document）；
 * Resource Indicator；
 * Redirect URI 校验；
 * MCP OAuth Metadata；
 * Token / Revoke 等相关 Endpoint。
 
-默认通过 Dynamic Client Registration 让兼容的 MCP Client 动态注册 Public Client，不要求开源项目预置固定的 `client_id`。
+默认使用 CIMD：兼容的 MCP Client 以 client_id URL 发布 Client ID Metadata Document，服务端拉取并校验后合成临时客户端，不要求预置固定的 `client_id`，也不写入 `system_oauth2_client` 表。
 
 ---
 
@@ -288,7 +288,7 @@ Capability 调用会产生调用日志，用于记录执行结果并支持后续
 │        resources/*     OAuth Metadata        │
 └─────────────────────┬────────────────────────┘
                       │
-              OAuth / PKCE / DCR
+              OAuth / PKCE / CIMD
                       │
                       ▼
 ┌──────────────────────────────────────────────┐
@@ -614,7 +614,7 @@ yudao-module-*
 | Confirmation Challenge      | 已实现 |
 | Remote MCP Server           | 已实现 |
 | MCP OAuth / PKCE            | 已实现 |
-| Dynamic Client Registration | 已实现 |
+| CIMD（Client ID Metadata Document） | 已实现 |
 | ACF 管理后台                    | 已实现 |
 | ERP Capability 示例           | 已实现 |
 
@@ -660,8 +660,7 @@ Remote MCP 涉及真实企业业务能力，部署到生产环境前请重点确
 * MCP Endpoint；
 * OAuth Issuer；
 * Authorization Endpoint；
-* Token Endpoint；
-* Registration Endpoint。
+* Token Endpoint。
 
 ### Hosts 与 Origins
 
@@ -670,7 +669,6 @@ Remote MCP 涉及真实企业业务能力，部署到生产环境前请重点确
 ```text
 allowed-hosts
 allowed-origins
-allowed-redirect-uri-prefixes
 ```
 
 不要直接沿用开发环境的宽松配置。
@@ -687,15 +685,15 @@ allowed-redirect-uri-prefixes
 
 作为生产方案。
 
-### Dynamic Client Registration
+### CIMD（Client ID Metadata Document）
 
-DCR 会复用并写入 ruoyi-vue-pro 已有的：
+CIMD 客户端以 client_id URL 发布元数据文档，不预注册、不写入 ruoyi-vue-pro 已有的：
 
 ```text
 system_oauth2_client
 ```
 
-生产环境应根据企业安全要求限制 Redirect URI 与客户端来源。
+服务端拉取文档并校验（client_id 与托管 URL 一致、redirect URI 为 HTTPS、grant 仅支持 authorization_code / refresh_token、认证方式仅支持 none）后合成临时客户端。生产环境应根据企业安全要求限制 Redirect URI 与客户端来源。
 
 ### 权限
 

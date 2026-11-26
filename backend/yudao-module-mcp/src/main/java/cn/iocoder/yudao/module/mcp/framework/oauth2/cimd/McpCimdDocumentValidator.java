@@ -237,8 +237,7 @@ public class McpCimdDocumentValidator {
      * 校验一条 redirect_uri：必须是绝对 URI、无 fragment、无 userinfo；https 要求有 host；
      * http 只放行 loopback host；其他 scheme（自定义 / 私有 scheme）一律拒绝。
      *
-     * <p>注意：本块对 CIMD 客户端的 redirect_uri 不放行自定义 scheme，即使
-     * McpOAuthProperties.allowPrivateUseUriSchemeRedirects=true（CIMD 路径的
+     * <p>注意：本块对 CIMD 客户端的 redirect_uri 不放行自定义 scheme（CIMD 路径的
      * 客户端身份未经预注册，收紧处理）。
      */
     public static void validateRedirectUri(String redirectUri, Collection<String> localRedirectHosts)
