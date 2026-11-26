@@ -3,6 +3,9 @@ package cn.iocoder.yudao.module.mcp.service.oauth2;
 import cn.iocoder.yudao.framework.common.exception.ServiceException;
 import cn.iocoder.yudao.module.mcp.dal.redis.oauth2.McpOAuthAuthorizationCodeExtraRedisDAO;
 import cn.iocoder.yudao.module.mcp.dal.redis.oauth2.McpOAuthAuthorizationRequestRedisDAO;
+import cn.iocoder.yudao.module.mcp.framework.oauth2.cimd.McpCimdClientService;
+import cn.iocoder.yudao.module.mcp.framework.oauth2.cimd.McpCimdMetadata;
+import cn.iocoder.yudao.module.mcp.framework.oauth2.config.McpOAuthProperties;
 import cn.iocoder.yudao.module.mcp.framework.oauth2.core.McpOAuthException;
 import cn.iocoder.yudao.module.system.controller.admin.oauth2.vo.open.OAuth2OpenAuthorizeInfoRespVO;
 import cn.iocoder.yudao.module.system.dal.dataobject.oauth2.OAuth2ApproveDO;
@@ -16,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -126,6 +130,125 @@ class McpOAuthAuthorizationServiceTest {
         assertThat(redirect).startsWith(REDIRECT_URI).contains("code=code-123").contains("state=state-1");
         verify(codeExtraRedisDAO).set(any());
         verify(oauth2ApproveService, never()).checkForPreApproval(any(), any(), anyString(), anyCollection());
+    }
+
+    @Test
+    void shouldApproveCimdClientWithRealResolver() throws Exception {
+        // 集成用例：真实 Resolver（只 mock 底下的 McpCimdClientService，不 mock Resolver 本身），
+        // 跑通授权发码，覆盖元数据 → 合成客户端的字段映射链
+        McpCimdClientService cimdClientService = org.mockito.Mockito.mock(McpCimdClientService.class);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<McpCimdClientService> provider = org.mockito.Mockito.mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(cimdClientService);
+        when(cimdClientService.resolve(CLIENT_ID_URL, REDIRECT_URI)).thenReturn(new McpCimdMetadata(
+                CLIENT_ID_URL, "Test App", List.of(REDIRECT_URI),
+                List.of("authorization_code", "refresh_token"), List.of("code"),
+                "none", null, null, "https://client.example.com",
+                "https://client.example.com/logo.png", "mcp:access", "web"));
+        McpOAuthClientResolver realResolver =
+                new McpOAuthClientResolver(oauth2ClientService, provider, new McpOAuthProperties());
+        McpOAuthAuthorizationService realService = new McpOAuthAuthorizationService(oauth2ClientService,
+                oauth2ApproveService, oauth2CodeService, codeExtraRedisDAO, authorizationRequestRedisDAO,
+                realResolver);
+        when(oauth2ApproveService.updateAfterApproval(isNull(), eq(2), eq(CLIENT_ID_URL), any()))
+                .thenReturn(true);
+        when(authorizationRequestRedisDAO.markUsed(anyString())).thenReturn(true);
+        when(oauth2CodeService.createAuthorizationCode(isNull(), eq(2), eq(CLIENT_ID_URL),
+                eq(List.of("mcp:access")), eq(REDIRECT_URI), eq("state-1")))
+                .thenReturn(new OAuth2CodeDO().setCode("code-123").setUserId(null).setUserType(2)
+                        .setClientId(CLIENT_ID_URL).setRedirectUri(REDIRECT_URI)
+                        .setExpiresTime(LocalDateTime.now().plusSeconds(300)));
+
+        String redirect = realService.approveOrDeny("code", CLIENT_ID_URL, "{\"mcp:access\":true}",
+                REDIRECT_URI, false, "state-1", s256Challenge(CODE_VERIFIER), "S256", RESOURCE, RESOURCE);
+
+        assertThat(redirect).startsWith(REDIRECT_URI).contains("code=code-123").contains("state=state-1");
+        verify(cimdClientService).resolve(CLIENT_ID_URL, REDIRECT_URI);
+    }
+
+    @Test
+    void shouldRejectCimdClientWithoutAuthorizationCodeGrant() {
+        OAuth2ClientDO client = cimdClient().setAuthorizedGrantTypes(List.of("refresh_token"));
+        when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
+        when(clientResolver.resolve(CLIENT_ID_URL, REDIRECT_URI)).thenReturn(client);
+
+        assertThatThrownBy(() -> service.approveOrDeny("code", CLIENT_ID_URL, "{\"mcp:access\":true}",
+                REDIRECT_URI, false, "state-1", s256Challenge(CODE_VERIFIER), "S256", RESOURCE, RESOURCE))
+                .isInstanceOf(ServiceException.class)
+                .extracting(exception -> ((ServiceException) exception).getCode())
+                .isEqualTo(1_002_020_003);
+        verify(oauth2CodeService, never()).createAuthorizationCode(any(), any(), anyString(),
+                any(), anyString(), anyString());
+    }
+
+    @Test
+    void shouldFailWithBadRequestWhenPkceFailsForCimdClient() {
+        when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
+        when(clientResolver.resolve(CLIENT_ID_URL, REDIRECT_URI)).thenReturn(cimdClient());
+
+        assertThatThrownBy(() -> service.approveOrDeny("code", CLIENT_ID_URL, "{\"mcp:access\":true}",
+                REDIRECT_URI, false, "state-1", null, "S256", RESOURCE, RESOURCE))
+                .isInstanceOf(ServiceException.class)
+                .hasMessageContaining("invalid_request")
+                .extracting(exception -> ((ServiceException) exception).getCode())
+                .isEqualTo(400);
+        verify(oauth2CodeService, never()).createAuthorizationCode(any(), any(), anyString(),
+                any(), anyString(), anyString());
+    }
+
+    @Test
+    void shouldFailWithBadRequestWhenPkceFailsForDbClient() {
+        OAuth2ClientDO dbClient = cimdClient().setClientId("mcp-dcr-abc");
+        when(clientResolver.isCimdClientId("mcp-dcr-abc")).thenReturn(false);
+        when(oauth2ClientService.validOAuthClientFromCache(eq("mcp-dcr-abc"), isNull(),
+                eq("authorization_code"), any(), isNull())).thenReturn(dbClient);
+
+        assertThatThrownBy(() -> service.approveOrDeny("code", "mcp-dcr-abc", "{\"mcp:access\":true}",
+                REDIRECT_URI, false, "state-1", null, "S256", RESOURCE, RESOURCE))
+                .isInstanceOf(ServiceException.class)
+                .hasMessageContaining("invalid_request")
+                .extracting(exception -> ((ServiceException) exception).getCode())
+                .isEqualTo(400);
+        verify(oauth2CodeService, never()).createAuthorizationCode(any(), any(), anyString(),
+                any(), anyString(), anyString());
+    }
+
+    @Test
+    void shouldFailWithBadRequestWhenResourceMismatchesForCimdClient() {
+        when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
+        when(clientResolver.resolve(CLIENT_ID_URL, REDIRECT_URI)).thenReturn(cimdClient());
+
+        assertThatThrownBy(() -> service.approveOrDeny("code", CLIENT_ID_URL, "{\"mcp:access\":true}",
+                REDIRECT_URI, false, "state-1", s256Challenge(CODE_VERIFIER), "S256",
+                "https://other.example.com/mcp", RESOURCE))
+                .isInstanceOf(ServiceException.class)
+                .hasMessageContaining("resource")
+                .extracting(exception -> ((ServiceException) exception).getCode())
+                .isEqualTo(400);
+        verify(oauth2CodeService, never()).createAuthorizationCode(any(), any(), anyString(),
+                any(), anyString(), anyString());
+    }
+
+    @Test
+    void shouldApproveDbClientUnchanged() {
+        OAuth2ClientDO dbClient = cimdClient().setClientId("mcp-dcr-abc");
+        when(clientResolver.isCimdClientId("mcp-dcr-abc")).thenReturn(false);
+        when(oauth2ClientService.validOAuthClientFromCache(eq("mcp-dcr-abc"), isNull(),
+                eq("authorization_code"), any(), isNull())).thenReturn(dbClient);
+        when(oauth2ApproveService.updateAfterApproval(isNull(), eq(2), eq("mcp-dcr-abc"), any()))
+                .thenReturn(true);
+        when(authorizationRequestRedisDAO.markUsed(anyString())).thenReturn(true);
+        when(oauth2CodeService.createAuthorizationCode(isNull(), eq(2), eq("mcp-dcr-abc"),
+                eq(List.of("mcp:access")), eq(REDIRECT_URI), eq("state-1")))
+                .thenReturn(new OAuth2CodeDO().setCode("code-123").setUserId(null).setUserType(2)
+                        .setClientId("mcp-dcr-abc").setRedirectUri(REDIRECT_URI)
+                        .setExpiresTime(LocalDateTime.now().plusSeconds(300)));
+
+        String redirect = service.approveOrDeny("code", "mcp-dcr-abc", "{\"mcp:access\":true}",
+                REDIRECT_URI, false, "state-1", s256Challenge(CODE_VERIFIER), "S256", RESOURCE, RESOURCE);
+
+        assertThat(redirect).startsWith(REDIRECT_URI).contains("code=code-123");
+        verify(clientResolver, never()).resolve(anyString(), any());
     }
 
     @Test

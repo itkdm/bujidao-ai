@@ -15,7 +15,6 @@ import cn.iocoder.yudao.module.system.dal.dataobject.oauth2.OAuth2ClientDO;
 import cn.iocoder.yudao.module.system.dal.dataobject.oauth2.OAuth2CodeDO;
 import cn.iocoder.yudao.module.system.dal.dataobject.oauth2.OAuth2RefreshTokenDO;
 import cn.iocoder.yudao.module.system.dal.mysql.oauth2.OAuth2RefreshTokenMapper;
-import cn.iocoder.yudao.module.system.enums.ErrorCodeConstants;
 import cn.iocoder.yudao.module.system.enums.oauth2.OAuth2GrantTypeEnum;
 import cn.iocoder.yudao.module.system.service.oauth2.OAuth2ClientService;
 import cn.iocoder.yudao.module.system.service.oauth2.OAuth2CodeService;
@@ -24,8 +23,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.Collection;
-
-import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 
 /**
  * MCP OAuth token endpoint Service。
@@ -108,10 +105,14 @@ public class McpOAuthTokenExchangeService {
         return client;
     }
 
-    /** CIMD 客户端的 grant 本地校验，与上游 valid* 的 grant 校验用同一错误码。 */
+    /** CIMD 客户端的 grant 本地校验。注意与上游 valid* 不同：上游抛 ServiceException
+     * （1_002_020_003），token 控制器只 catch McpOAuthException，那样会走到
+     * GlobalExceptionHandler 变成 CommonResult(1_002_020_003) + HTTP 200；这里改抛
+     * OAuth {@code invalid_grant}，让控制器返回标准 OAuth JSON 错误。DB 分支仍走上游
+     * valid*，行为不变（本次不修）。 */
     private static void validateCimdGrant(OAuth2ClientDO client, String grantType) {
         if (StrUtil.isNotBlank(grantType) && !client.getAuthorizedGrantTypes().contains(grantType)) {
-            throw exception(ErrorCodeConstants.OAUTH2_CLIENT_AUTHORIZED_GRANT_TYPE_NOT_EXISTS);
+            throw McpOAuthException.invalidGrant("grant_type is not supported by this client");
         }
     }
 

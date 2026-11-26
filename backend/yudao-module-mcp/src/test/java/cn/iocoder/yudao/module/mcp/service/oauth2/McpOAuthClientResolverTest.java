@@ -73,7 +73,7 @@ class McpOAuthClientResolverTest {
     @Test
     void shouldSynthesizeClientFromMetadataWithRedirectUri() throws Exception {
         givenCimdServiceAvailable();
-        when(cimdClientService.resolve(CLIENT_ID_URL, REDIRECT_URI)).thenReturn(metadata());
+        when(cimdClientService.resolve(CLIENT_ID_URL, REDIRECT_URI)).thenReturn(metadataWithAllowedScope());
 
         OAuth2ClientDO client = resolver.resolve(CLIENT_ID_URL, REDIRECT_URI);
 
@@ -85,7 +85,7 @@ class McpOAuthClientResolverTest {
     @Test
     void shouldSynthesizeClientFromMetadataWithoutRedirectUri() throws Exception {
         givenCimdServiceAvailable();
-        when(cimdClientService.resolveMetadata(CLIENT_ID_URL)).thenReturn(metadata());
+        when(cimdClientService.resolveMetadata(CLIENT_ID_URL)).thenReturn(metadataWithAllowedScope());
 
         OAuth2ClientDO client = resolver.resolve(CLIENT_ID_URL, null);
 
@@ -110,6 +110,39 @@ class McpOAuthClientResolverTest {
         assertThat(client.getScopes()).containsExactly("mcp:access");
         assertThat(client.getAuthorizedGrantTypes()).containsExactly("authorization_code");
         assertThat(client.getAdditionalInformation()).contains("\"token_endpoint_auth_method\":\"none\"");
+    }
+
+    @Test
+    void shouldDefaultEmptyGrantTypesToAuthorizationCodeOnly() throws Exception {
+        givenCimdServiceAvailable();
+        McpCimdMetadata metadata = new McpCimdMetadata(CLIENT_ID_URL, "Minimal App",
+                List.of(REDIRECT_URI), List.of(), List.of("code"),
+                "none", null, null, null, null, null, "web");
+        when(cimdClientService.resolveMetadata(CLIENT_ID_URL)).thenReturn(metadata);
+
+        OAuth2ClientDO client = resolver.resolve(CLIENT_ID_URL, null);
+
+        // 防御性兜底只补 authorization_code，不悄悄加 refresh_token
+        assertThat(client.getAuthorizedGrantTypes()).containsExactly("authorization_code");
+    }
+
+    @Test
+    void shouldRejectScopeOutsideDefaultScopes() throws Exception {
+        givenCimdServiceAvailable();
+        when(cimdClientService.resolveMetadata(CLIENT_ID_URL)).thenReturn(metadata());
+
+        assertThatThrownBy(() -> resolver.resolve(CLIENT_ID_URL, null))
+                .isInstanceOf(McpOAuthException.class)
+                .extracting("status", "error")
+                .containsExactly(HttpStatus.BAD_REQUEST, "invalid_scope");
+    }
+
+    @Test
+    void shouldAllowHttpClientIdWhenAllowPrivateAddresses() {
+        properties.getCimd().setAllowPrivateAddresses(true);
+
+        assertThat(resolver.isCimdClientId("http://127.0.0.1:8080/app")).isTrue();
+        assertThat(resolver.isCimdClientId("https://client.example.com/app")).isTrue();
     }
 
     @Test
@@ -169,7 +202,7 @@ class McpOAuthClientResolverTest {
         assertThat(client.getLogo()).isEqualTo("https://client.example.com/logo.png");
         assertThat(client.getRedirectUris()).containsExactly(REDIRECT_URI);
         assertThat(client.getAuthorizedGrantTypes()).containsExactly("authorization_code", "refresh_token");
-        assertThat(client.getScopes()).containsExactly("mcp:access", "mcp:other");
+        assertThat(client.getScopes()).containsExactly("mcp:access");
         assertThat(client.getStatus()).isEqualTo(0);
         assertThat(client.getAccessTokenValiditySeconds())
                 .isEqualTo(properties.getAccessTokenValiditySeconds());
@@ -189,6 +222,13 @@ class McpOAuthClientResolverTest {
                 List.of(REDIRECT_URI), List.of("authorization_code", "refresh_token"), List.of("code"),
                 "none", null, null, "https://client.example.com",
                 "https://client.example.com/logo.png", "mcp:access mcp:other", "web");
+    }
+
+    private static McpCimdMetadata metadataWithAllowedScope() {
+        return new McpCimdMetadata(CLIENT_ID_URL, "Test App",
+                List.of(REDIRECT_URI), List.of("authorization_code", "refresh_token"), List.of("code"),
+                "none", null, null, "https://client.example.com",
+                "https://client.example.com/logo.png", "mcp:access", "web");
     }
 
 }

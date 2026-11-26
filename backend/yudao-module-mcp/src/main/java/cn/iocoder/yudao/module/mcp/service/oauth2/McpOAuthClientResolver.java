@@ -28,7 +28,9 @@ import java.util.Map;
  *
  * <ul>
  *     <li>非 URL 形态（DCR 注册的 {@code mcp-dcr-...} 之类不透明 id）：走现有上游路径
- *     {@link OAuth2ClientService#getOAuth2ClientFromCache(String)}，查不到返回 null，行为与原来一致。</li>
+ *     {@link OAuth2ClientService#getOAuth2ClientFromCache(String)}，查不到返回 null，行为与原来一致。
+ *     该分支仅作兼容：它不对客户端做 status / secret / grant 校验，调用方必须先按形态分流，
+ *     DB 形态仍走上游 {@code validOAuthClientFromCache} 校验，不要把这里返回的客户端当作已校验。</li>
  *     <li>URL 形态（https、有非根 path 的绝对 URL，形状由
  *     {@link McpCimdDocumentValidator#validateClientIdUrl(String, boolean)} 判定）：调
  *     {@link McpCimdClientService} 拉取并校验 CIMD 文档，合成一个临时的 {@link OAuth2ClientDO}，
@@ -81,7 +83,8 @@ public class McpOAuthClientResolver {
      * @param redirectUri 授权场景传本次请求的 redirect_uri（做精确成员校验）；
      *                    token 刷新 / 吊销等不带 redirect_uri 的场景传 null（只拉取并校验文档）
      * @return 可用的客户端；非 URL 形态且 DB 查不到时返回 null；URL 形态失败时抛异常，永不返回 null
-     * @throws McpOAuthException URL 形态且 CIMD 拉取 / 校验失败时抛 invalid_client
+     * @throws McpOAuthException URL 形态且 CIMD 拉取 / 校验失败时抛 invalid_client；
+     *                           CIMD 文档 scope 超出默认 scope 时抛 invalid_scope
      */
     public OAuth2ClientDO resolve(String clientId, String redirectUri) {
         if (!isCimdClientId(clientId)) {
@@ -120,13 +123,14 @@ public class McpOAuthClientResolver {
      * 有效期取 {@link McpOAuthProperties} 的两个配置值。
      *
      * <p>注意：文档缺省 grant_types 时校验器补的是 {@code [authorization_code]}（Block A 行为），
-     * 这里沿用文档值、只在列表为空时才补 {@code [authorization_code, refresh_token]}；
-     * 如需缺省即含 refresh_token，应改校验器的缺省值，而不是在这里悄悄放宽显式声明。
+     * 这里沿用文档值、只在列表为空时才补 {@code [authorization_code]}；缺省即含 refresh_token
+     * 是不允许的——如需放宽，应改校验器的缺省值，而不是在这里悄悄加 refresh 权限。
+     * （显式空列表在校验器里直接判 INVALID_DOCUMENT，该分支生产不可达，仅作防御性兜底。）
      */
     private OAuth2ClientDO toClient(McpCimdMetadata metadata) {
         List<String> grantTypes = metadata.grantTypes();
         if (grantTypes == null || grantTypes.isEmpty()) {
-            grantTypes = List.of("authorization_code", "refresh_token");
+            grantTypes = List.of("authorization_code");
         }
         List<String> scopes = parseScopes(metadata.scope());
         Map<String, Object> additionalInformation = new LinkedHashMap<>();
@@ -158,6 +162,12 @@ public class McpOAuthClientResolver {
                 .setRefreshTokenValiditySeconds(properties.getRefreshTokenValiditySeconds());
     }
 
+    /**
+     * 解析文档 scope：无 scope 时取 {@code defaultScopes}；有 scope 时必须是
+     * {@code defaultScopes} 的子集，超限抛 {@code invalid_scope}（与 DCR 的
+     * {@code normalizeScopes} 行为一致：静默丢弃超限 scope 会让客户端以为自己拿到了
+     * 没拿到的权限，所以直接拒绝）。
+     */
     private List<String> parseScopes(String scope) {
         if (StrUtil.isBlank(scope)) {
             return properties.getDefaultScopes();
@@ -167,7 +177,13 @@ public class McpOAuthClientResolver {
                 .map(StrUtil::trim)
                 .distinct()
                 .toList();
-        return scopes.isEmpty() ? properties.getDefaultScopes() : scopes;
+        if (scopes.isEmpty()) {
+            return properties.getDefaultScopes();
+        }
+        if (!properties.getDefaultScopes().containsAll(scopes)) {
+            throw McpOAuthException.invalidScope("requested scope is not allowed");
+        }
+        return scopes;
     }
 
     /** 只取 host 记日志，不记完整 client_id（可能含 query 等识别信息）。 */

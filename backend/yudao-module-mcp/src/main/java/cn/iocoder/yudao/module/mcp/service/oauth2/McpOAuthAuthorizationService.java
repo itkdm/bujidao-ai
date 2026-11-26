@@ -4,6 +4,7 @@ import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.ObjectUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.iocoder.yudao.framework.common.enums.UserTypeEnum;
+import cn.iocoder.yudao.framework.common.exception.ServiceException;
 import cn.iocoder.yudao.framework.common.exception.enums.GlobalErrorCodeConstants;
 import cn.iocoder.yudao.framework.common.util.json.JsonUtils;
 import cn.iocoder.yudao.framework.security.core.util.SecurityFrameworkUtils;
@@ -59,6 +60,14 @@ public class McpOAuthAuthorizationService {
     private final McpOAuthClientResolver clientResolver;
 
     public OAuth2OpenAuthorizeInfoRespVO getAuthorizeInfo(String clientId) {
+        try {
+            return getAuthorizeInfoInternal(clientId);
+        } catch (McpOAuthException exception) {
+            throw toBadRequest(exception);
+        }
+    }
+
+    private OAuth2OpenAuthorizeInfoRespVO getAuthorizeInfoInternal(String clientId) {
         OAuth2ClientDO client = clientResolver.isCimdClientId(clientId)
                 ? resolveCimdClient(clientId, null)
                 : oauth2ClientService.validOAuthClientFromCache(clientId);
@@ -68,6 +77,17 @@ public class McpOAuthAuthorizationService {
     }
 
     public String approveOrDeny(String responseType, String clientId, String scope, String redirectUri,
+                                Boolean autoApprove, String state, String codeChallenge,
+                                String codeChallengeMethod, String resource, String expectedResource) {
+        try {
+            return approveOrDenyInternal(responseType, clientId, scope, redirectUri, autoApprove, state,
+                    codeChallenge, codeChallengeMethod, resource, expectedResource);
+        } catch (McpOAuthException exception) {
+            throw toBadRequest(exception);
+        }
+    }
+
+    private String approveOrDenyInternal(String responseType, String clientId, String scope, String redirectUri,
                                 Boolean autoApprove, String state, String codeChallenge,
                                 String codeChallengeMethod, String resource, String expectedResource) {
         @SuppressWarnings("unchecked")
@@ -173,6 +193,19 @@ public class McpOAuthAuthorizationService {
     }
 
     /**
+     * 把 McpOAuthException 统一转成授权端点现有的 ServiceException 形态
+     * （BAD_REQUEST + {@code <oauth_error>: <description>}），避免未经
+     * GlobalExceptionHandler 处理的 McpOAuthException 在授权接口上变成 500。
+     * 覆盖整个方法体：resolveCimdClient 之外的 McpOAuthException 来源（如
+     * validatePkceAndResource 里 McpOAuthPkceVerifier 抛的 invalid_request）也在此转换。
+     * token 端点由控制器直接接 McpOAuthException，不走这里。
+     */
+    private static ServiceException toBadRequest(McpOAuthException exception) {
+        return exception0(GlobalErrorCodeConstants.BAD_REQUEST.getCode(),
+                exception.getError() + ": " + exception.getDescription());
+    }
+
+    /**
      * 解析 CIMD 客户端，并把 Resolver 的 {@link McpOAuthException#invalidClient(String)}
      * 转成授权端点现有的 ServiceException 形态（BAD_REQUEST + {@code invalid_client:} 前缀），
      * 避免未经 GlobalExceptionHandler 处理的 McpOAuthException 在授权接口上变成 500。
@@ -182,8 +215,7 @@ public class McpOAuthAuthorizationService {
         try {
             return clientResolver.resolve(clientId, redirectUri);
         } catch (McpOAuthException exception) {
-            throw exception0(GlobalErrorCodeConstants.BAD_REQUEST.getCode(),
-                    "invalid_client: " + exception.getDescription());
+            throw toBadRequest(exception);
         }
     }
 

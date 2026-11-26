@@ -201,9 +201,35 @@ class McpCimdDocumentValidatorTest {
     }
 
     @Test
-    void shouldRejectPrivateKeyJwtWithoutJwks() {
+    void shouldRejectPrivateKeyJwt() {
+        // private_key_jwt 现阶段不支持：即使带了 jwks 也拒绝，待后续实现
+        // client_assertion 验签后再放开（见 McpCimdDocumentValidator）
+        Map<String, Object> withJwksUri = validDocument();
+        withJwksUri.put("token_endpoint_auth_method", "private_key_jwt");
+        withJwksUri.put("jwks_uri", "https://93.184.216.34/jwks.json");
+        assertThatThrownBy(() -> McpCimdDocumentValidator.validateDocument(
+                "https://client.example.com/metadata", withJwksUri, LOCAL_HOSTS))
+                .isInstanceOf(McpCimdException.class)
+                .extracting(exception -> ((McpCimdException) exception).getError())
+                .isEqualTo(McpCimdError.INVALID_DOCUMENT);
+
+        Map<String, Object> withJwks = validDocument();
+        withJwks.put("token_endpoint_auth_method", "private_key_jwt");
+        withJwks.put("jwks", Map.of("keys", List.of()));
+        assertThatThrownBy(() -> McpCimdDocumentValidator.validateDocument(
+                "https://client.example.com/metadata", withJwks, LOCAL_HOSTS))
+                .isInstanceOf(McpCimdException.class)
+                .extracting(exception -> ((McpCimdException) exception).getError())
+                .isEqualTo(McpCimdError.INVALID_DOCUMENT);
+    }
+
+    @Test
+    void shouldRejectPrivateKeyJwtWithJwksUri() {
         Map<String, Object> document = validDocument();
         document.put("token_endpoint_auth_method", "private_key_jwt");
+        // jwks_uri host 要做 DNS 解析判：用公开字面 IP，避免测试依赖外部 DNS
+        //（93.184.216.34 是 example.com 的公开 IP）
+        document.put("jwks_uri", "https://93.184.216.34/jwks.json");
 
         assertThatThrownBy(() -> McpCimdDocumentValidator.validateDocument(
                 "https://client.example.com/metadata", document, LOCAL_HOSTS))
@@ -213,24 +239,8 @@ class McpCimdDocumentValidatorTest {
     }
 
     @Test
-    void shouldAcceptPrivateKeyJwtWithJwksUri() throws McpCimdException {
-        Map<String, Object> document = validDocument();
-        document.put("token_endpoint_auth_method", "private_key_jwt");
-        // jwks_uri host 要做 DNS 解析判：用公开字面 IP，避免测试依赖外部 DNS
-        //（93.184.216.34 是 example.com 的公开 IP）
-        document.put("jwks_uri", "https://93.184.216.34/jwks.json");
-
-        McpCimdMetadata metadata = McpCimdDocumentValidator.validateDocument(
-                "https://client.example.com/metadata", document, LOCAL_HOSTS);
-
-        assertThat(metadata.tokenEndpointAuthMethod()).isEqualTo("private_key_jwt");
-        assertThat(metadata.jwksUri()).isEqualTo("https://93.184.216.34/jwks.json");
-    }
-
-    @Test
     void shouldRejectHttpJwksUri() {
         Map<String, Object> document = validDocument();
-        document.put("token_endpoint_auth_method", "private_key_jwt");
         document.put("jwks_uri", "http://93.184.216.34/jwks.json");
 
         assertThatThrownBy(() -> McpCimdDocumentValidator.validateDocument(
@@ -251,7 +261,6 @@ class McpCimdDocumentValidatorTest {
                 "https://localhost/jwks.json",
                 "https://[::ffff:10.0.0.1]/jwks.json")) {
             Map<String, Object> document = validDocument();
-            document.put("token_endpoint_auth_method", "private_key_jwt");
             document.put("jwks_uri", jwksUri);
 
             assertThatThrownBy(() -> McpCimdDocumentValidator.validateDocument(
@@ -269,7 +278,6 @@ class McpCimdDocumentValidatorTest {
                 "https://93.184.216.34/jwks.json#section",
                 "https://user@93.184.216.34/jwks.json")) {
             Map<String, Object> document = validDocument();
-            document.put("token_endpoint_auth_method", "private_key_jwt");
             document.put("jwks_uri", jwksUri);
 
             assertThatThrownBy(() -> McpCimdDocumentValidator.validateDocument(
@@ -282,15 +290,16 @@ class McpCimdDocumentValidatorTest {
     }
 
     @Test
-    void shouldAcceptPrivateKeyJwtWithJwksObject() throws McpCimdException {
+    void shouldRejectPrivateKeyJwtWithJwksObject() {
         Map<String, Object> document = validDocument();
         document.put("token_endpoint_auth_method", "private_key_jwt");
         document.put("jwks", Map.of("keys", List.of()));
 
-        McpCimdMetadata metadata = McpCimdDocumentValidator.validateDocument(
-                "https://client.example.com/metadata", document, LOCAL_HOSTS);
-
-        assertThat(metadata.jwks()).contains("keys");
+        assertThatThrownBy(() -> McpCimdDocumentValidator.validateDocument(
+                "https://client.example.com/metadata", document, LOCAL_HOSTS))
+                .isInstanceOf(McpCimdException.class)
+                .extracting(exception -> ((McpCimdException) exception).getError())
+                .isEqualTo(McpCimdError.INVALID_DOCUMENT);
     }
 
     @Test

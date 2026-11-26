@@ -23,7 +23,6 @@ public class McpCimdDocumentValidator {
 
     private static final Set<String> ALLOWED_GRANT_TYPES = Set.of("authorization_code", "refresh_token");
     private static final String AUTH_METHOD_NONE = "none";
-    private static final String AUTH_METHOD_PRIVATE_KEY_JWT = "private_key_jwt";
 
     /** 仅用于把文档里的 jwks 对象序列化回原始 JSON 文本，不做任何业务解析。 */
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
@@ -118,10 +117,14 @@ public class McpCimdDocumentValidator {
         String tokenEndpointAuthMethod = optionalString(document, "token_endpoint_auth_method");
         if (tokenEndpointAuthMethod == null) {
             tokenEndpointAuthMethod = AUTH_METHOD_NONE;
-        } else if (!AUTH_METHOD_NONE.equals(tokenEndpointAuthMethod)
-                && !AUTH_METHOD_PRIVATE_KEY_JWT.equals(tokenEndpointAuthMethod)) {
-            // shared-secret 类方法（client_secret_basic / client_secret_post / client_secret_jwt 等）
-            // 要求服务端保管客户端密钥，与 CIMD“客户端自带身份、无预注册密钥”的模型冲突，一律拒绝。
+        } else if (!AUTH_METHOD_NONE.equals(tokenEndpointAuthMethod)) {
+            // 只支持 none，与 DCR“只支持 none”一致。shared-secret 类方法
+            // （client_secret_basic / client_secret_post / client_secret_jwt 等）
+            // 要求服务端保管客户端密钥，与 CIMD“客户端自带身份、无预注册密钥”的模型冲突，一律拒绝；
+            // private_key_jwt（MCP 规范的可选能力）现阶段也不支持：Resolver 会把
+            // token_endpoint_auth_method 硬编码为 none、丢弃 jwks，token 端点永不验
+            // client_assertion，接受它等于静默降级。待后续实现 client_assertion
+            // 验签（jwks_uri / jwks 拉取与校验）后再放开。
             throw new McpCimdException(McpCimdError.INVALID_DOCUMENT,
                     "unsupported token_endpoint_auth_method");
         }
@@ -129,11 +132,6 @@ public class McpCimdDocumentValidator {
         String jwksUri = optionalString(document, "jwks_uri");
         Object jwksValue = document.get("jwks");
         String jwks = toJwksJson(jwksValue);
-        if (AUTH_METHOD_PRIVATE_KEY_JWT.equals(tokenEndpointAuthMethod)
-                && (jwksUri == null || jwksUri.isBlank()) && jwks == null) {
-            throw new McpCimdException(McpCimdError.INVALID_DOCUMENT,
-                    "private_key_jwt requires jwks_uri or jwks");
-        }
         if (jwksUri != null) {
             validateJwksUri(jwksUri);
         }
@@ -193,8 +191,9 @@ public class McpCimdDocumentValidator {
      * <p>jwks_uri 只做静态校验、不实际拉取，所以这里只做 host 的地址族判断：
      * 字面 IP 直接判，主机名做 DNS 解析判，与拉取层共用 {@link McpCimdSsrfGuard} 同一份检查。
      * DNS 解析失败时按无效文档拒绝（fail-closed），避免无法确认地址性质的 host 被放行。
-     * 注意：本校验不看 allowPrivateAddresses——jwks_uri 指向内网地址一律拒绝，
-     * 本地开发如需 private_key_jwt 请用内联 jwks 字段。
+     * 注意：本校验不看 allowPrivateAddresses——jwks_uri 指向内网地址一律拒绝。
+     * （jwks 字段现阶段只做形状校验、不用于验签：private_key_jwt 已被上层直接拒绝，
+     * 见 {@link #validateDocument}。）
      */
     private static void validateJwksUri(String jwksUri) throws McpCimdException {
         URI uri;

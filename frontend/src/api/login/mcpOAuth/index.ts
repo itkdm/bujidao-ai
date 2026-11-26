@@ -14,7 +14,7 @@ export interface McpOAuthAuthorizeInfo {
 }
 
 export const getAuthorize = (clientId: string) => {
-  return request.get<McpOAuthAuthorizeInfo>({ url: '/mcp/oauth2/authorize?clientId=' + clientId })
+  return request.get<McpOAuthAuthorizeInfo>({ url: '/mcp/oauth2/authorize?clientId=' + encodeURIComponent(clientId) })
 }
 
 export const authorize = (

@@ -24,9 +24,9 @@ public record McpCimdMetadata(
         List<String> grantTypes,
         /** 允许的响应类型，缺省 [code]。 */
         List<String> responseTypes,
-        /** token 端点认证方式，只允许 none 或 private_key_jwt，缺省 none。 */
+        /** token 端点认证方式，只允许 none，缺省 none。private_key_jwt 待后续实现验签后再放开。 */
         String tokenEndpointAuthMethod,
-        /** JWKS 地址，private_key_jwt 时与 jwks 二选一必填。 */
+        /** JWKS 地址（现阶段只做形状校验、不用于验签）。 */
         String jwksUri,
         /** JWKS 原始 JSON，可选。 */
         String jwks,

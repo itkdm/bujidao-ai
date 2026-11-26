@@ -1,6 +1,5 @@
 package cn.iocoder.yudao.module.mcp.service.oauth2;
 
-import cn.iocoder.yudao.framework.common.exception.ServiceException;
 import cn.iocoder.yudao.module.mcp.dal.redis.oauth2.McpOAuthAuthorizationCodeExtraDO;
 import cn.iocoder.yudao.module.mcp.dal.redis.oauth2.McpOAuthAuthorizationCodeExtraRedisDAO;
 import cn.iocoder.yudao.module.mcp.framework.oauth2.core.McpOAuthException;
@@ -137,10 +136,98 @@ class McpOAuthTokenExchangeServiceTest {
         when(clientResolver.resolve(CLIENT_ID_URL, null)).thenReturn(client);
 
         assertThatThrownBy(() -> service.refreshAccessToken(CLIENT_ID_URL, "refresh-token-1"))
-                .isInstanceOf(ServiceException.class)
-                .extracting(exception -> ((ServiceException) exception).getCode())
-                .isEqualTo(1_002_020_003);
+                .isInstanceOf(McpOAuthException.class)
+                .extracting("status", "error")
+                .containsExactly(HttpStatus.BAD_REQUEST, "invalid_grant");
         verify(oauth2RefreshTokenMapper, never()).selectByRefreshToken(anyString());
+    }
+
+    @Test
+    void shouldRejectExchangeWhenGrantTypeNotAllowedForCimdClient() {
+        OAuth2ClientDO client = cimdClient().setAuthorizedGrantTypes(List.of("refresh_token"));
+        when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
+        when(clientResolver.resolve(CLIENT_ID_URL, null)).thenReturn(client);
+
+        assertThatThrownBy(() -> service.exchangeAuthorizationCode(
+                CLIENT_ID_URL, "code-123", REDIRECT_URI, CODE_VERIFIER, RESOURCE, RESOURCE))
+                .isInstanceOf(McpOAuthException.class)
+                .extracting("status", "error")
+                .containsExactly(HttpStatus.BAD_REQUEST, "invalid_grant");
+        verify(oauth2CodeService, never()).consumeAuthorizationCode(anyString());
+    }
+
+    @Test
+    void shouldRejectExchangeWhenRedirectUriNotRegisteredForCimdClient() {
+        when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
+        when(clientResolver.resolve(CLIENT_ID_URL, null)).thenReturn(cimdClient());
+
+        assertThatThrownBy(() -> service.exchangeAuthorizationCode(
+                CLIENT_ID_URL, "code-123", "https://client.example.com/other",
+                CODE_VERIFIER, RESOURCE, RESOURCE))
+                .isInstanceOf(McpOAuthException.class)
+                .extracting("status", "error")
+                .containsExactly(HttpStatus.BAD_REQUEST, "invalid_grant");
+        verify(oauth2CodeService, never()).consumeAuthorizationCode(anyString());
+    }
+
+    @Test
+    void shouldRejectExchangeWhenPkceFailsForCimdClient() {
+        when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
+        when(clientResolver.resolve(CLIENT_ID_URL, null)).thenReturn(cimdClient());
+        when(codeExtraRedisDAO.get("code-123")).thenReturn(codeExtra());
+        when(oauth2CodeService.consumeAuthorizationCode("code-123")).thenReturn(codeDO());
+
+        assertThatThrownBy(() -> service.exchangeAuthorizationCode(
+                CLIENT_ID_URL, "code-123", REDIRECT_URI, "wrong-verifier", RESOURCE, RESOURCE))
+                .isInstanceOf(McpOAuthException.class)
+                .extracting("status", "error")
+                .containsExactly(HttpStatus.BAD_REQUEST, "invalid_grant");
+    }
+
+    @Test
+    void shouldRejectExchangeWhenResourceMismatchesForCimdClient() {
+        when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
+        when(clientResolver.resolve(CLIENT_ID_URL, null)).thenReturn(cimdClient());
+
+        assertThatThrownBy(() -> service.exchangeAuthorizationCode(
+                CLIENT_ID_URL, "code-123", REDIRECT_URI, CODE_VERIFIER,
+                "https://other.example.com/mcp", RESOURCE))
+                .isInstanceOf(McpOAuthException.class)
+                .extracting("status", "error")
+                .containsExactly(HttpStatus.BAD_REQUEST, "invalid_grant");
+        verify(codeExtraRedisDAO, never()).get(anyString());
+    }
+
+    @Test
+    void shouldRejectExchangeWhenClientIsNotPublicForCimdClient() {
+        OAuth2ClientDO client = cimdClient()
+                .setAdditionalInformation("{\"token_endpoint_auth_method\":\"client_secret_basic\"}");
+        when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
+        when(clientResolver.resolve(CLIENT_ID_URL, null)).thenReturn(client);
+
+        assertThatThrownBy(() -> service.exchangeAuthorizationCode(
+                CLIENT_ID_URL, "code-123", REDIRECT_URI, CODE_VERIFIER, RESOURCE, RESOURCE))
+                .isInstanceOf(McpOAuthException.class)
+                .extracting("status", "error")
+                .containsExactly(HttpStatus.BAD_REQUEST, "invalid_client");
+        verify(oauth2CodeService, never()).consumeAuthorizationCode(anyString());
+    }
+
+    @Test
+    void shouldRefreshAccessTokenForDbClientUnchanged() {
+        when(clientResolver.isCimdClientId("mcp-dcr-abc")).thenReturn(false);
+        when(oauth2ClientService.validOAuthClientFromCache("mcp-dcr-abc", null,
+                "refresh_token", null, null)).thenReturn(dbClient());
+        when(oauth2RefreshTokenMapper.selectByRefreshToken("refresh-token-1"))
+                .thenReturn(new OAuth2RefreshTokenDO().setRefreshToken("refresh-token-1")
+                        .setClientId("mcp-dcr-abc").setTenantId(1L));
+        when(oauth2TokenService.refreshAccessToken("refresh-token-1", "mcp-dcr-abc"))
+                .thenReturn(accessTokenDO());
+
+        OAuth2OpenAccessTokenRespVO respVO = service.refreshAccessToken("mcp-dcr-abc", "refresh-token-1");
+
+        assertThat(respVO.getAccessToken()).isEqualTo("access-token-1");
+        verify(clientResolver, never()).resolve(anyString(), any());
     }
 
     @Test
