@@ -77,8 +77,8 @@
         <bizlog-sdk.version>3.0.6</bizlog-sdk.version>
         <netty.version>4.2.21.Final</netty.version>
         <mqtt.version>1.2.5</mqtt.version>
-        <!-- bujidao-ai 自研：MCP Java SDK 版本，上游未提供，同步时保留 -->
-        <mcp-java-sdk.version>2.0.0</mcp-java-sdk.version>
+        <!-- bujidao-ai 自研：MCP Java SDK 版本，上游未提供，同步时保留；新增 SDK 构件时在此处追加条目 -->
+        <mcp-java-sdk.version>2.0.1</mcp-java-sdk.version>
         <vertx.version>4.5.36</vertx.version>
         <okhttp.version>5.5.1</okhttp.version>
         <okio.version>3.18.1</okio.version>

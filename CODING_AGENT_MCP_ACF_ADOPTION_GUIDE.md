@@ -137,7 +137,7 @@ SQL 菜单插入不使用固定 ID，会根据 `/acf` 和权限标识动态查�
 
 3. `backend/yudao-dependencies/pom.xml`
    - 增加版本属性：
-     - `mcp-java-sdk.version`，当前本项目使用 `2.0.0`。
+     - `mcp-java-sdk.version`，当前本项目使用 `2.0.1`。
    - dependencyManagement 增加：
      - `cn.iocoder.boot:yudao-spring-boot-starter-acf`
      - `cn.iocoder.boot:yudao-spring-boot-starter-mcp`
