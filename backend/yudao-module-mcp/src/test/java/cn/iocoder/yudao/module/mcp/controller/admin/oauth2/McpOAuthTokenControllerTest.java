@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -65,14 +66,17 @@ class McpOAuthTokenControllerTest {
         ResponseEntity<?> first = postToken(request());
         assertThat(first.getStatusCode()).isEqualTo(HttpStatus.OK);
 
-        // 同一 IP 第二次兑换：超限，不进 Service，直接返回标准 OAuth JSON 错误（400），不 500
+        // 同一 IP 第二次兑换：超限，不进 Service，直接返回标准 OAuth JSON 错误
+        // （429 + temporarily_unavailable + Retry-After: 60，与 60 秒限流窗口一致）
         ResponseEntity<?> limited = postToken(request());
-        assertThat(limited.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(limited.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
         assertThat(limited.getBody()).isInstanceOf(Map.class);
         @SuppressWarnings("unchecked")
         Map<String, Object> body = (Map<String, Object>) limited.getBody();
-        assertThat(body.get("error")).isEqualTo("invalid_client");
+        assertThat(body.get("error")).isEqualTo("temporarily_unavailable");
         assertThat(body.get("error_description")).asString().contains("too many requests");
+        assertThat(limited.getHeaders().getFirst(HttpHeaders.RETRY_AFTER)).isEqualTo("60");
+        assertThat(limited.getHeaders().getCacheControl()).isEqualTo("no-store");
         verify(tokenExchangeService, times(1))
                 .refreshAccessToken("mcp-dcr-abc", "refresh-token-1");
     }
@@ -85,7 +89,7 @@ class McpOAuthTokenControllerTest {
 
         // 先把 token 限流打满
         assertThat(postToken(request()).getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(postToken(request()).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(postToken(request()).getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
 
         // 吊销是安全操作，不限流：超限后仍能连续吊销
         for (int i = 0; i < 3; i++) {

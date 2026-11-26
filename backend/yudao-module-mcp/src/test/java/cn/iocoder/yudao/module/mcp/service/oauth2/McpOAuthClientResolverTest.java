@@ -158,19 +158,19 @@ class McpOAuthClientResolverTest {
     }
 
     @Test
-    void shouldThrowInvalidClientWhenCimdFetchIsRateLimited() throws Exception {
+    void shouldThrowRateLimitedWhenCimdFetchIsRateLimited() throws Exception {
         givenCimdServiceAvailable();
         when(cimdClientService.resolveMetadata(CLIENT_ID_URL))
                 .thenThrow(new McpCimdException(McpCimdError.RATE_LIMITED, "CIMD fetch rate limited"));
 
-        // 限流与拉取失败一样转 OAuth invalid_client（400），不产生 500；
-        // 描述里保留 RATE_LIMITED 类别，便于区分限流与其它拉取失败
+        // 本测试只锁定：拉取层限流转 429 + temporarily_unavailable，描述里保留 RATE_LIMITED 类别
         assertThatThrownBy(() -> resolver.resolve(CLIENT_ID_URL, null))
                 .isInstanceOf(McpOAuthException.class)
                 .satisfies(exception -> {
                     McpOAuthException oauthException = (McpOAuthException) exception;
-                    assertThat(oauthException.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
-                    assertThat(oauthException.getError()).isEqualTo("invalid_client");
+                    assertThat(oauthException.getStatus()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+                    assertThat(oauthException.getError()).isEqualTo("temporarily_unavailable");
+                    assertThat(oauthException.getRetryAfterSeconds()).isEqualTo(60L);
                     assertThat(oauthException.getDescription()).contains("RATE_LIMITED");
                 });
     }

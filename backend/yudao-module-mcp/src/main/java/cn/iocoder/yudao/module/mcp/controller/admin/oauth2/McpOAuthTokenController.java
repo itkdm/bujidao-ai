@@ -71,7 +71,7 @@ public class McpOAuthTokenController {
             }
             return noStore(body);
         } catch (McpOAuthException exception) {
-            return McpOAuthErrorResponse.error(exception.getStatus(), exception.getError(), exception.getDescription());
+            return McpOAuthErrorResponse.error(exception);
         }
     }
 
@@ -85,7 +85,7 @@ public class McpOAuthTokenController {
             tokenExchangeService.revokeToken(clientId, token);
             return noStore(Map.of());
         } catch (McpOAuthException exception) {
-            return McpOAuthErrorResponse.error(exception.getStatus(), exception.getError(), exception.getDescription());
+            return McpOAuthErrorResponse.error(exception);
         }
     }
 
@@ -97,8 +97,8 @@ public class McpOAuthTokenController {
     }
 
     /**
-     * token 兑换限流：按调用方 IP 计，超限抛 OAuth {@code invalid_client}（400），
-     * 由本方法的 catch 转成标准 OAuth JSON 错误，不产生 500；只记 IP 与结果，
+     * token 兑换限流：按调用方 IP 计，超限抛 OAuth {@code temporarily_unavailable}（429，
+     * 带 {@code Retry-After: 60}），由本方法的 catch 转成标准 OAuth JSON 错误；只记 IP 与结果，
      * 不记 client_id / code / refresh_token 等请求参数。
      * rateLimiter 由 Spring 注入；手工 new 出来的 Controller（测试）没有它时不限流，
      * 生产走 Spring 容器，一定有 Bean（与本控制器用同一个 enabled 开关）。
@@ -111,7 +111,7 @@ public class McpOAuthTokenController {
         String clientIp = ServletUtils.getClientIP(request);
         if (!rateLimiter.tryAcquireToken(clientIp)) {
             log.warn("[token][ip({})] MCP OAuth token rate limited", clientIp);
-            throw McpOAuthException.invalidClient("too many requests, please retry later");
+            throw McpOAuthException.rateLimited("too many requests, please retry later");
         }
     }
 

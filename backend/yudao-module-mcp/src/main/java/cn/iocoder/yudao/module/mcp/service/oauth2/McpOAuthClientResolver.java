@@ -41,6 +41,9 @@ import java.util.Map;
  * {@link McpOAuthException#invalidClient(String)}（OAuth {@code invalid_client}），
  * 调用方据此区分“客户端不存在”与“CIMD 文档无效”；每次失败记一条 warn 审计日志，
  * 只记 client_id 的 host 与失败类别，不记响应 body、不记完整文档、不记 token / code。
+ * 例外：拉取层限流（{@link McpCimdError#RATE_LIMITED}）抛
+ * {@link McpOAuthException#rateLimited(String)}（429 + {@code temporarily_unavailable}），
+ * 不伪装成 {@code invalid_client}。
  *
  * <p>{@link McpCimdClientService} 是条件 Bean（随 {@code yudao.mcp.oauth.enabled} 开关），
  * 而本解析器的调用方（授权 / token Service）是无条件构造的：为避免 enabled=false 时
@@ -84,6 +87,7 @@ public class McpOAuthClientResolver {
      *                    token 刷新 / 吊销等不带 redirect_uri 的场景传 null（只拉取并校验文档）
      * @return 可用的客户端；非 URL 形态且 DB 查不到时返回 null；URL 形态失败时抛异常，永不返回 null
      * @throws McpOAuthException URL 形态且 CIMD 拉取 / 校验失败时抛 invalid_client；
+     *                           CIMD 拉取限流时抛 rateLimited（429 + temporarily_unavailable）；
      *                           CIMD 文档 scope 超出默认 scope 时抛 invalid_scope
      */
     public OAuth2ClientDO resolve(String clientId, String redirectUri) {
@@ -108,6 +112,10 @@ public class McpOAuthClientResolver {
                     && exception.getError() == McpCimdError.INVALID_REDIRECT_URI ? Boolean.FALSE : null;
             log.warn("[resolve][host({}) error({}) redirectUriMatched({})] CIMD client resolution failed",
                     hostOf(clientId), exception.getError(), redirectUriMatched);
+            if (exception.getError() == McpCimdError.RATE_LIMITED) {
+                throw McpOAuthException.rateLimited(
+                        "client metadata document fetch rate limited (RATE_LIMITED)");
+            }
             throw McpOAuthException.invalidClient(
                     "client metadata document is invalid (" + exception.getError().name() + ")");
         }
