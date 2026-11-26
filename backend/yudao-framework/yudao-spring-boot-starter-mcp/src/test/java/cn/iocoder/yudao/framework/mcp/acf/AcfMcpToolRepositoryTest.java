@@ -105,7 +105,8 @@ class AcfMcpToolRepositoryTest {
 
     @Test
     void shouldReturnNullForUnknownTool() {
-        when(catalog.listDeclared()).thenReturn(List.of(descriptor("demo.echo", false, false)));
+        CapabilityToolDescriptor descriptor = descriptor("demo.echo", false, false);
+        when(catalog.listDeclared()).thenReturn(List.of(descriptor));
 
         assertThat(createRepository().find(requestContext(1L), "demo.unknown")).isNull();
         assertThat(createRepository().find(requestContext(1L), null)).isNull();

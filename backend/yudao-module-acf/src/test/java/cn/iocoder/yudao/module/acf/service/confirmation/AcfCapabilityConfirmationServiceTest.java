@@ -152,7 +152,7 @@ class AcfCapabilityConfirmationServiceTest {
 
         service.decline("challenge-001", context());
 
-        verify(mapper, never()).updateById(any());
+        verify(mapper, never()).updateById(any(AcfConfirmationChallengeDO.class));
     }
 
     @Test
@@ -176,7 +176,7 @@ class AcfCapabilityConfirmationServiceTest {
         service.decline("challenge-001", context());
 
         assertThat(challenge.getStatus()).isEqualTo(AcfConfirmationChallengeStatus.PENDING.name());
-        verify(mapper, never()).updateById(any());
+        verify(mapper, never()).updateById(any(AcfConfirmationChallengeDO.class));
     }
 
     @Test
@@ -188,7 +188,7 @@ class AcfCapabilityConfirmationServiceTest {
         service.decline("challenge-001", context());
 
         assertThat(challenge.getStatus()).isEqualTo(AcfConfirmationChallengeStatus.CONFIRMED.name());
-        verify(mapper, never()).updateById(any());
+        verify(mapper, never()).updateById(any(AcfConfirmationChallengeDO.class));
     }
 
     private static CapabilityDefinition definition() {

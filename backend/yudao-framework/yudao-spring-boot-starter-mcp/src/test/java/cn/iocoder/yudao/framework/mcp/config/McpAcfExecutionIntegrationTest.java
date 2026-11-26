@@ -120,7 +120,7 @@ class McpAcfExecutionIntegrationTest {
                 .roundTimeout(Duration.ofSeconds(10))
                 .build();
 
-        McpSchema.CallToolOutcome first = client.tool("test.mcp.confirm-echo")
+        McpSchema.CallToolOutcome first = client.tool("test.mcp.confirmecho")
                 .arguments(Map.of(McpSchemaAdapter.INPUT_VALUE_PROPERTY, "hello"))
                 .meta(Map.of("bujidao.ai/idempotencyKey", "idem-g-001"))
                 .callOnce();
@@ -131,7 +131,7 @@ class McpAcfExecutionIntegrationTest {
                 .containsOnlyKeys("acf.confirmation");
         assertThat(confirmationService.getCreateCalls()).isEqualTo(1);
 
-        McpSchema.CallToolOutcome retried = client.tool("test.mcp.confirm-echo")
+        McpSchema.CallToolOutcome retried = client.tool("test.mcp.confirmecho")
                 .arguments(Map.of(McpSchemaAdapter.INPUT_VALUE_PROPERTY, "tampered"))
                 .meta(Map.of("bujidao.ai/idempotencyKey", "idem-g-001"))
                 .requestState(required.requestState())
@@ -230,7 +230,7 @@ class McpAcfExecutionIntegrationTest {
 
         private final AtomicInteger invocations = new AtomicInteger();
 
-        @AgentCapability(name = "test.mcp.confirm-echo", title = "MCP ACF 确认回显",
+        @AgentCapability(name = "test.mcp.confirmecho", title = "MCP ACF 确认回显",
                 description = "验证改参数后确认摘要变化导致 token 校验失败",
                 permissions = REQUIRED_PERMISSION, confirmationRequired = true)
         public String echo(String value) {
