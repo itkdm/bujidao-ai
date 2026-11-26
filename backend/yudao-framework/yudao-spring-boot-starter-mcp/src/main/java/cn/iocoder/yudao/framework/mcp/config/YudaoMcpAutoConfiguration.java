@@ -2,6 +2,7 @@ package cn.iocoder.yudao.framework.mcp.config;
 
 import cn.iocoder.yudao.framework.common.enums.WebFilterOrderEnum;
 import cn.iocoder.yudao.framework.mcp.acf.AcfMcpToolRepository;
+import cn.iocoder.yudao.framework.mcp.acf.CompositeMcpSyncToolRepository;
 import cn.iocoder.yudao.framework.mcp.oauth2.McpOAuthMetadataController;
 import cn.iocoder.yudao.framework.mcp.security.McpAuthenticatedTransportContextExtractor;
 import cn.iocoder.yudao.framework.mcp.security.McpAuthenticationEntryPoint;
