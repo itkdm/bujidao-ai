@@ -1,9 +1,9 @@
 package cn.iocoder.yudao.module.mcp.controller.admin.oauth2;
 
+import cn.iocoder.yudao.framework.common.exception.enums.GlobalErrorCodeConstants;
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.util.servlet.ServletUtils;
 import cn.iocoder.yudao.module.mcp.framework.oauth2.config.McpOAuthProperties;
-import cn.iocoder.yudao.module.mcp.framework.oauth2.core.McpOAuthException;
 import cn.iocoder.yudao.module.mcp.framework.oauth2.core.McpOAuthRateLimiter;
 import cn.iocoder.yudao.module.mcp.framework.oauth2.core.McpOAuthResourceUriResolver;
 import cn.iocoder.yudao.module.mcp.service.oauth2.McpOAuthAuthorizationService;
@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.framework.common.pojo.CommonResult.success;
 
 /**
@@ -82,8 +83,11 @@ public class McpOAuthAuthorizationController {
     }
 
     /**
-     * 授权同意限流：按调用方 IP 计，超限抛 OAuth {@code invalid_client}（400），
-     * 不产生 500；只记 IP 与结果，不记 client_id / code 等请求参数。
+     * 授权同意限流：按调用方 IP 计，超限抛 ServiceException(TOO_MANY_REQUESTS, 429)，
+     * 由 GlobalExceptionHandler 的 serviceExceptionHandler 分支转成 CommonResult(429)，
+     * 不落到 500 兜底；只记 IP 与结果，不记 client_id / code 等请求参数。
+     * 注意：本端点返回 CommonResult 约定，不走 OAuth JSON 错误，所以这里不用
+     * McpOAuthException（GlobalExceptionHandler 没有它的分支，会变成 500）。
      * rateLimiter 由 Spring 注入；手工 new 出来的 Controller（测试）没有它时不限流，
      * 生产走 Spring 容器，一定有 Bean（与本控制器用同一个 enabled 开关）。
      */
@@ -94,7 +98,7 @@ public class McpOAuthAuthorizationController {
         String clientIp = ServletUtils.getClientIP(request);
         if (!rateLimiter.tryAcquireAuthorize(clientIp)) {
             log.warn("[authorize][ip({})] MCP OAuth authorize rate limited", clientIp);
-            throw McpOAuthException.invalidClient("too many requests, please retry later");
+            throw exception(GlobalErrorCodeConstants.TOO_MANY_REQUESTS);
         }
     }
 

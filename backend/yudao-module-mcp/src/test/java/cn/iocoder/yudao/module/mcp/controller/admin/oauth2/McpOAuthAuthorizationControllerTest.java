@@ -1,8 +1,9 @@
 package cn.iocoder.yudao.module.mcp.controller.admin.oauth2;
 
+import cn.iocoder.yudao.framework.common.exception.ServiceException;
+import cn.iocoder.yudao.framework.common.exception.enums.GlobalErrorCodeConstants;
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.module.mcp.framework.oauth2.config.McpOAuthProperties;
-import cn.iocoder.yudao.module.mcp.framework.oauth2.core.McpOAuthException;
 import cn.iocoder.yudao.module.mcp.framework.oauth2.core.McpOAuthRateLimiter;
 import cn.iocoder.yudao.module.mcp.framework.oauth2.core.McpOAuthResourceUriResolver;
 import cn.iocoder.yudao.module.mcp.service.oauth2.McpOAuthAuthorizationService;
@@ -11,7 +12,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -59,7 +59,7 @@ class McpOAuthAuthorizationControllerTest {
     }
 
     @Test
-    void shouldThrowInvalidClientWhenAuthorizeRateLimited() {
+    void shouldThrowTooManyRequestsWhenAuthorizeRateLimited() {
         when(resourceUriResolver.resolve(any())).thenReturn(RESOURCE);
         when(authorizationService.approveOrDeny(eq("code"), eq(CLIENT_ID), eq("mcp:access"),
                 eq(REDIRECT_URI), eq(true), eq("state-1"), eq("challenge-1"), eq("S256"),
@@ -68,14 +68,14 @@ class McpOAuthAuthorizationControllerTest {
         CommonResult<String> first = approve(request());
         assertThat(first.getData()).isEqualTo("code-xxx");
 
-        // 同一 IP 第二次授权同意：超限抛 OAuth invalid_client（400），且不调用 Service。
+        // 同一 IP 第二次授权同意：超限抛 ServiceException(TOO_MANY_REQUESTS, 429)，且不调用 Service。
         // 注意：本单测只锁定控制器抛出的异常本身；异常出控制器后由 GlobalExceptionHandler
-        // 接手，而它目前没有 McpOAuthException 分支，会落到兜底返回 CommonResult(500)，
-        // 所以 HTTP 层面的“不 500”需生产侧接住该异常后才能成立，不在本测试覆盖范围。
+        // 的 serviceExceptionHandler 分支接手，转成 CommonResult(429)，不落到 500 兜底。
         assertThatThrownBy(() -> approve(request()))
-                .isInstanceOf(McpOAuthException.class)
-                .extracting("status", "error")
-                .containsExactly(HttpStatus.BAD_REQUEST, "invalid_client");
+                .isInstanceOf(ServiceException.class)
+                .hasMessage(GlobalErrorCodeConstants.TOO_MANY_REQUESTS.getMsg())
+                .extracting(exception -> ((ServiceException) exception).getCode())
+                .isEqualTo(GlobalErrorCodeConstants.TOO_MANY_REQUESTS.getCode());
         verify(authorizationService, times(1)).approveOrDeny(eq("code"), eq(CLIENT_ID),
                 eq("mcp:access"), eq(REDIRECT_URI), eq(true), eq("state-1"), eq("challenge-1"),
                 eq("S256"), eq(RESOURCE), eq(RESOURCE));
