@@ -48,7 +48,7 @@ public class McpOAuthAuthorizationController {
 
     @GetMapping("/authorize")
     @Operation(summary = "获得 MCP OAuth 授权信息")
-    @Parameter(name = "clientId", required = true, description = "客户端编号", example = "mcp-dcr-xxx")
+    @Parameter(name = "clientId", required = true, description = "客户端编号（CIMD 客户端为 client_id URL；历史 mcp-dcr- 编号仍可用）", example = "https://client.example.com/mcp-client")
     public CommonResult<OAuth2OpenAuthorizeInfoRespVO> authorize(@RequestParam("clientId") String clientId) {
         // 有意不限流：仅取授权信息、不发授权码；限流只管发码入口 POST /authorize。
         return success(authorizationService.getAuthorizeInfo(clientId));
@@ -58,7 +58,7 @@ public class McpOAuthAuthorizationController {
     @Operation(summary = "申请 MCP OAuth 授权")
     @Parameters({
             @Parameter(name = "response_type", required = true, description = "响应类型", example = "code"),
-            @Parameter(name = "client_id", required = true, description = "客户端编号", example = "mcp-dcr-xxx"),
+            @Parameter(name = "client_id", required = true, description = "客户端编号（CIMD 客户端为 client_id URL；历史 mcp-dcr- 编号仍可用）", example = "https://client.example.com/mcp-client"),
             @Parameter(name = "scope", description = "授权范围"),
             @Parameter(name = "redirect_uri", required = true, description = "重定向 URI"),
             @Parameter(name = "auto_approve", required = true, description = "用户是否接受", example = "true"),

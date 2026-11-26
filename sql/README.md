@@ -30,7 +30,7 @@
 
 ## MCP OAuth 说明
 
-正式 Remote MCP 认证默认使用 OAuth Dynamic Client Registration。Agent 客户端会按协议动态注册 public client，并写入上游已有的 `system_oauth2_client` 表。
+正式 Remote MCP 认证默认使用 CIMD（Client ID Metadata Document）。Agent 客户端以 client_id URL 发布元数据文档，服务端拉取校验后合成临时客户端，不写入上游已有的 `system_oauth2_client` 表。
 
 因此，本目录不提供固定 `client_id` 的初始化数据。固定客户端只适合企业明确指定 redirect URI、并主动选择预置客户端的场景，不适合作为开源项目的默认增量 SQL。
 

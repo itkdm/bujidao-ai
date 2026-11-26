@@ -43,14 +43,14 @@ public class McpOAuthProperties {
     private List<@NotBlank String> localRedirectHosts = List.of("localhost", "127.0.0.1");
 
     /**
-     * 动态客户端 access token 有效期。
+     * MCP OAuth 客户端 access token 有效期。
      */
     @NotNull
     @Min(60)
     private Integer accessTokenValiditySeconds = 1800;
 
     /**
-     * 动态客户端 refresh token 有效期。
+     * MCP OAuth 客户端 refresh token 有效期。
      */
     @NotNull
     @Min(300)

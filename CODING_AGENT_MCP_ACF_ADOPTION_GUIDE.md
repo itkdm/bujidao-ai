@@ -120,7 +120,7 @@ SQL 菜单插入不使用固定 ID，会根据 `/acf` 和权限标识动态查�
 
 正式 MCP OAuth 默认使用 CIMD（Client ID Metadata Document）。接入时不需要预置固定 OAuth client，也不向服务端注册客户端；Agent 客户端以 client_id URL 发布一份元数据文档，服务端拉取并校验后合成临时客户端（不写入上游已有 `system_oauth2_client` 表）。
 
-最小元数据文档示例（由客户端托管在 client_id URL 上，须为 HTTPS；文档内 `client_id` 必须与托管 URL 逐字节一致）：
+最小元数据文档示例（由客户端托管在 client_id URL 上，须为 HTTPS；`allowPrivateAddresses=true` 时放行 http 的 client_id URL，仅本地开发 / 测试用，生产保持 false；文档内 `client_id` 必须与托管 URL 逐字节一致）：
 
 ```json
 {
@@ -134,7 +134,7 @@ SQL 菜单插入不使用固定 ID，会根据 `/acf` 和权限标识动态查�
 }
 ```
 
-其中 `client_id`、`client_name`、`redirect_uris` 必填；`grant_types` 须包含 `authorization_code`（可再加 `refresh_token`）；`token_endpoint_auth_method` 只支持 `none`；`scope` 不填时默认 `mcp:access`。`redirect_uris` 须为 HTTPS（http 仅放行 localhost / 127.0.0.1 回调），自定义 URI scheme 的回调不放行。
+其中 `client_id`、`client_name`、`redirect_uris` 必填；`grant_types` 须包含 `authorization_code`（可再加 `refresh_token`）；`token_endpoint_auth_method` 只支持 `none`，缺省时也默认为 `none`；`scope` 不填时默认 `mcp:access`。`redirect_uris` 须为 HTTPS（http 仅放行 loopback 回调：localhost、整个 127.0.0.0/8、`::1`，以及 `localRedirectHosts` 配置里显式允许的 host），自定义 URI scheme 的回调不放行。
 
 ## Maven 接入步骤
 
@@ -215,7 +215,25 @@ yudao:
         - mcp:access
       access-token-validity-seconds: 1800
       refresh-token-validity-seconds: 2592000
+      cimd:
+        fetch-timeout: 3s
+        max-document-bytes: 5120
+        cache-max-age: 24h
+        cache-default-ttl: 1h
+        cache-max-entries: 1000
+        # 保持 false：改成 true 会同时放行 http scheme 的 client_id 与内网 / 回环地址，
+        # 只允许本地开发 / 测试临时开启，生产禁止改 true
+        allow-private-addresses: false
+      rate-limit:
+        enabled: true
+        cimd-per-host-per-minute: 60
+        cimd-global-per-minute: 600
+        cimd-max-concurrent-fetches: 20
+        authorize-per-ip-per-minute: 60
+        token-per-ip-per-minute: 60
 ```
+
+限流阈值口径：以上阈值均按 60 秒滑动窗口计，进程内计数，多实例部署下各实例各自限流、非全局共享；超限返回 429（OAuth 错误响应为 `temporarily_unavailable`，带 `Retry-After: 60`）。
 
 还要确认上游已有配置：
 
