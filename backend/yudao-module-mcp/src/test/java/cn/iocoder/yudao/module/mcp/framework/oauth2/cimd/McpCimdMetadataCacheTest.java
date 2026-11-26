@@ -60,16 +60,35 @@ class McpCimdMetadataCacheTest {
 
     @Test
     void shouldCapTtlAtHardMaxAge() throws InterruptedException {
-        // 硬上限 1 秒，响应 max-age=86400 也只能缓存 1 秒
+        // 硬上限 300ms，响应 max-age=86400 也只能缓存 300ms；睡 600ms（2 倍裕量）后应过期
         McpCimdMetadataCache cache = new McpCimdMetadataCache(
-                Duration.ofSeconds(1), Duration.ofHours(1), 1000);
+                Duration.ofMillis(300), Duration.ofHours(1), 1000);
 
         cache.put("https://client.example.com/a", metadata("https://client.example.com/a"), 86400L);
         assertThat(cache.get("https://client.example.com/a")).isNotNull();
 
-        Thread.sleep(1200);
+        Thread.sleep(600);
 
         assertThat(cache.get("https://client.example.com/a")).isNull();
+    }
+
+    @Test
+    void shouldOverwriteSameKeyWithLatestDocument() {
+        McpCimdMetadataCache cache = new McpCimdMetadataCache(
+                Duration.ofHours(24), Duration.ofHours(1), 1000);
+
+        cache.put("https://client.example.com/a", metadata("https://client.example.com/a"), null);
+        assertThat(cache.get("https://client.example.com/a").clientName()).isEqualTo("Test Client");
+
+        // 同 key 再次写入：覆盖为最新文档，条目数不变
+        McpCimdMetadata updated = new McpCimdMetadata("https://client.example.com/a", "Updated Client",
+                List.of("https://client.example.com/callback"),
+                List.of("authorization_code"), List.of("code"), "none",
+                null, null, null, null, null, "web");
+        cache.put("https://client.example.com/a", updated, null);
+
+        assertThat(cache.size()).isEqualTo(1);
+        assertThat(cache.get("https://client.example.com/a").clientName()).isEqualTo("Updated Client");
     }
 
     @Test

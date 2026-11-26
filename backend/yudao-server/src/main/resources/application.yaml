@@ -323,6 +323,18 @@ yudao:
         allow-private-use-uri-scheme-redirects: true # 允许 workbuddy://、vscode:// 等桌面客户端回调
       default-scopes:
         - mcp:access
+    # oauth: # MCP OAuth 适配（McpOAuthProperties，前缀 yudao.mcp.oauth），默认即可用；
+    #   # 注意：不要把 oauth 键写到上面 yudao.mcp.acf.oauth 下，那个前缀没有任何
+    #   # @ConfigurationProperties 绑定，写了也不生效（见 McpOAuthPropertiesBindingTest）。
+    #   cimd: # CIMD（Client ID Metadata Document）拉取、校验与缓存配置
+    #     fetch-timeout: 3s # 拉取文档的连接超时与请求超时，必须大于 0
+    #     max-document-bytes: 5120 # 响应 body 大小上限（字节），超限拒绝
+    #     cache-max-age: 24h # 缓存硬上限：响应 Cache-Control 的 max-age 再大也不超过它
+    #     cache-default-ttl: 1h # 响应无缓存头时的默认缓存 TTL
+    #     cache-max-entries: 1000 # 缓存条目数上限（软上限），超限时新文档不入缓存
+    #     # allow-private-addresses 保持 false：改成 true 会同时放行 http scheme 的
+    #     # client_id 与内网 / 回环地址，只允许本地开发 / 测试临时开启，生产禁止改 true。
+    #     allow-private-addresses: false
   xss:
     enable: false
     exclude-urls: # 如下两个 url，仅仅是为了演示，去掉配置也没关系

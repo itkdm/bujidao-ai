@@ -134,6 +134,9 @@ public class McpCimdDocumentValidator {
             throw new McpCimdException(McpCimdError.INVALID_DOCUMENT,
                     "private_key_jwt requires jwks_uri or jwks");
         }
+        if (jwksUri != null) {
+            validateJwksUri(jwksUri);
+        }
 
         List<String> grantTypes = optionalStringList(document, "grant_types");
         if (grantTypes == null) {
@@ -155,6 +158,18 @@ public class McpCimdDocumentValidator {
         String applicationType = optionalString(document, "application_type");
         if (applicationType == null) {
             applicationType = "web";
+        } else if (!"web".equals(applicationType) && !"native".equals(applicationType)) {
+            throw new McpCimdException(McpCimdError.INVALID_DOCUMENT,
+                    "application_type must be web or native");
+        }
+
+        String clientUri = optionalString(document, "client_uri");
+        if (clientUri != null) {
+            validateHttpsAbsoluteUri(clientUri, "client_uri");
+        }
+        String logoUri = optionalString(document, "logo_uri");
+        if (logoUri != null) {
+            validateHttpsAbsoluteUri(logoUri, "logo_uri");
         }
 
         return new McpCimdMetadata(
@@ -166,16 +181,61 @@ public class McpCimdDocumentValidator {
                 tokenEndpointAuthMethod,
                 jwksUri,
                 jwks,
-                optionalString(document, "client_uri"),
-                optionalString(document, "logo_uri"),
+                clientUri,
+                logoUri,
                 optionalString(document, "scope"),
                 applicationType);
+    }
+
+    /**
+     * 校验 jwks_uri：必须是 https 绝对 URI（与 client_id 同标准），且 host 必须公开。
+     *
+     * <p>jwks_uri 只做静态校验、不实际拉取，所以这里只做 host 的地址族判断：
+     * 字面 IP 直接判，主机名做 DNS 解析判，与拉取层共用 {@link McpCimdSsrfGuard} 同一份检查。
+     * DNS 解析失败时按无效文档拒绝（fail-closed），避免无法确认地址性质的 host 被放行。
+     * 注意：本校验不看 allowPrivateAddresses——jwks_uri 指向内网地址一律拒绝，
+     * 本地开发如需 private_key_jwt 请用内联 jwks 字段。
+     */
+    private static void validateJwksUri(String jwksUri) throws McpCimdException {
+        URI uri;
+        try {
+            uri = URI.create(jwksUri);
+        } catch (IllegalArgumentException exception) {
+            throw new McpCimdException(McpCimdError.INVALID_DOCUMENT, "jwks_uri is not a valid URI", exception);
+        }
+        if (!"https".equalsIgnoreCase(uri.getScheme())) {
+            throw new McpCimdException(McpCimdError.INVALID_DOCUMENT, "jwks_uri scheme must be https");
+        }
+        if (uri.getRawFragment() != null || uri.getRawUserInfo() != null) {
+            throw new McpCimdException(McpCimdError.INVALID_DOCUMENT,
+                    "jwks_uri must not contain a fragment or userinfo");
+        }
+        if (uri.getHost() == null || uri.getHost().isBlank()) {
+            throw new McpCimdException(McpCimdError.INVALID_DOCUMENT, "jwks_uri must have a host");
+        }
+        McpCimdSsrfGuard.checkHostIsPublic(uri.getHost(), McpCimdError.INVALID_DOCUMENT);
+    }
+
+    /** client_uri / logo_uri 如提供，必须是 https 绝对 URI（无 fragment、无 userinfo、有 host）。 */
+    private static void validateHttpsAbsoluteUri(String value, String field) throws McpCimdException {
+        URI uri;
+        try {
+            uri = URI.create(value);
+        } catch (IllegalArgumentException exception) {
+            throw new McpCimdException(McpCimdError.INVALID_DOCUMENT, field + " is not a valid URI", exception);
+        }
+        if (!"https".equalsIgnoreCase(uri.getScheme())
+                || uri.getHost() == null || uri.getHost().isBlank()
+                || uri.getRawFragment() != null || uri.getRawUserInfo() != null) {
+            throw new McpCimdException(McpCimdError.INVALID_DOCUMENT,
+                    field + " must be an https absolute URI");
+        }
     }
 
     // ========== redirect_uri 规则 ==========
 
     /**
-     * 校验一条 redirect_uri：必须是绝对 URI、无 fragment；https 一律放行；
+     * 校验一条 redirect_uri：必须是绝对 URI、无 fragment、无 userinfo；https 要求有 host；
      * http 只放行 loopback host；其他 scheme（自定义 / 私有 scheme）一律拒绝。
      *
      * <p>注意：本块对 CIMD 客户端的 redirect_uri 不放行自定义 scheme，即使
@@ -199,8 +259,15 @@ public class McpCimdDocumentValidator {
         if (uri.getRawFragment() != null) {
             throw new McpCimdException(McpCimdError.INVALID_REDIRECT_URI, "redirect_uri must not contain a fragment");
         }
+        if (uri.getRawUserInfo() != null) {
+            throw new McpCimdException(McpCimdError.INVALID_REDIRECT_URI, "redirect_uri must not contain userinfo");
+        }
         String scheme = uri.getScheme();
         if ("https".equalsIgnoreCase(scheme)) {
+            if (uri.getHost() == null || uri.getHost().isBlank()) {
+                throw new McpCimdException(McpCimdError.INVALID_REDIRECT_URI,
+                        "https redirect_uri must have a host");
+            }
             return;
         }
         if ("http".equalsIgnoreCase(scheme)) {
@@ -214,14 +281,18 @@ public class McpCimdDocumentValidator {
     }
 
     /**
-     * 是否 loopback host：localhost、127.0.0.1、::1，或配置里显式允许的本地 host。
+     * 是否 loopback host：localhost、127.0.0.0/8 整个段、::1，或配置里显式允许的本地 host。
+     * DNS 尾点等价（localhost.、127.0.0.1. 也认）；127 段含整型写法（2130706433、0x7f000001）。
      */
     public static boolean isLoopbackHost(String host, Collection<String> localRedirectHosts) {
         if (host == null) {
             return false;
         }
         String normalized = normalizeHost(host);
-        if ("localhost".equals(normalized) || "127.0.0.1".equals(normalized) || "::1".equals(normalized)) {
+        if ("localhost".equals(normalized) || "::1".equals(normalized)) {
+            return true;
+        }
+        if (McpCimdSsrfGuard.isLoopbackIpv4Literal(normalized)) {
             return true;
         }
         if (localRedirectHosts == null) {
@@ -239,6 +310,10 @@ public class McpCimdDocumentValidator {
         String normalized = host.trim().toLowerCase(Locale.ROOT);
         if (normalized.startsWith("[") && normalized.endsWith("]") && normalized.length() > 2) {
             normalized = normalized.substring(1, normalized.length() - 1);
+        }
+        // DNS 尾点与无尾点等价，去掉再比对
+        if (normalized.endsWith(".") && normalized.length() > 1) {
+            normalized = normalized.substring(0, normalized.length() - 1);
         }
         return normalized;
     }

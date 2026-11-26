@@ -1,5 +1,6 @@
 package cn.iocoder.yudao.module.mcp.controller.admin.oauth2;
 
+import cn.iocoder.yudao.module.mcp.framework.oauth2.cimd.McpCimdClientService;
 import cn.iocoder.yudao.module.mcp.framework.oauth2.config.McpOAuthProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -14,6 +15,8 @@ class McpOAuthControllerConditionTest {
         assertEnabledCondition(McpOAuthAuthorizationController.class);
         assertEnabledCondition(McpOAuthClientRegistrationController.class);
         assertEnabledCondition(McpOAuthTokenController.class);
+        // CIMD 入口 Service 与三个 Controller 用同一个开关管控
+        assertEnabledCondition(McpCimdClientService.class);
     }
 
     private static void assertEnabledCondition(Class<?> controllerClass) {

@@ -216,13 +216,67 @@ class McpCimdDocumentValidatorTest {
     void shouldAcceptPrivateKeyJwtWithJwksUri() throws McpCimdException {
         Map<String, Object> document = validDocument();
         document.put("token_endpoint_auth_method", "private_key_jwt");
-        document.put("jwks_uri", "https://client.example.com/jwks.json");
+        // jwks_uri host 要做 DNS 解析判：用公开字面 IP，避免测试依赖外部 DNS
+        //（93.184.216.34 是 example.com 的公开 IP）
+        document.put("jwks_uri", "https://93.184.216.34/jwks.json");
 
         McpCimdMetadata metadata = McpCimdDocumentValidator.validateDocument(
                 "https://client.example.com/metadata", document, LOCAL_HOSTS);
 
         assertThat(metadata.tokenEndpointAuthMethod()).isEqualTo("private_key_jwt");
-        assertThat(metadata.jwksUri()).isEqualTo("https://client.example.com/jwks.json");
+        assertThat(metadata.jwksUri()).isEqualTo("https://93.184.216.34/jwks.json");
+    }
+
+    @Test
+    void shouldRejectHttpJwksUri() {
+        Map<String, Object> document = validDocument();
+        document.put("token_endpoint_auth_method", "private_key_jwt");
+        document.put("jwks_uri", "http://93.184.216.34/jwks.json");
+
+        assertThatThrownBy(() -> McpCimdDocumentValidator.validateDocument(
+                "https://client.example.com/metadata", document, LOCAL_HOSTS))
+                .isInstanceOf(McpCimdException.class)
+                .extracting(exception -> ((McpCimdException) exception).getError())
+                .isEqualTo(McpCimdError.INVALID_DOCUMENT);
+    }
+
+    @Test
+    void shouldRejectPrivateIpJwksUri() {
+        for (String jwksUri : List.of(
+                "https://10.0.0.1/jwks.json",
+                "https://127.0.0.1/jwks.json",
+                "https://192.168.1.1/jwks.json",
+                "https://localhost/jwks.json",
+                "https://[::ffff:10.0.0.1]/jwks.json")) {
+            Map<String, Object> document = validDocument();
+            document.put("token_endpoint_auth_method", "private_key_jwt");
+            document.put("jwks_uri", jwksUri);
+
+            assertThatThrownBy(() -> McpCimdDocumentValidator.validateDocument(
+                    "https://client.example.com/metadata", document, LOCAL_HOSTS))
+                    .as("jwks_uri " + jwksUri + " should be rejected")
+                    .isInstanceOf(McpCimdException.class)
+                    .extracting(exception -> ((McpCimdException) exception).getError())
+                    .isEqualTo(McpCimdError.INVALID_DOCUMENT);
+        }
+    }
+
+    @Test
+    void shouldRejectJwksUriWithFragmentOrUserinfo() {
+        for (String jwksUri : List.of(
+                "https://93.184.216.34/jwks.json#section",
+                "https://user@93.184.216.34/jwks.json")) {
+            Map<String, Object> document = validDocument();
+            document.put("token_endpoint_auth_method", "private_key_jwt");
+            document.put("jwks_uri", jwksUri);
+
+            assertThatThrownBy(() -> McpCimdDocumentValidator.validateDocument(
+                    "https://client.example.com/metadata", document, LOCAL_HOSTS))
+                    .as("jwks_uri " + jwksUri + " should be rejected")
+                    .isInstanceOf(McpCimdException.class)
+                    .extracting(exception -> ((McpCimdException) exception).getError())
+                    .isEqualTo(McpCimdError.INVALID_DOCUMENT);
+        }
     }
 
     @Test
@@ -284,6 +338,66 @@ class McpCimdDocumentValidatorTest {
                 .isEqualTo(McpCimdError.INVALID_DOCUMENT);
     }
 
+    @Test
+    void shouldAcceptNativeApplicationType() throws McpCimdException {
+        Map<String, Object> document = validDocument();
+        document.put("application_type", "native");
+
+        McpCimdMetadata metadata = McpCimdDocumentValidator.validateDocument(
+                "https://client.example.com/metadata", document, LOCAL_HOSTS);
+
+        assertThat(metadata.applicationType()).isEqualTo("native");
+    }
+
+    @Test
+    void shouldRejectUnknownApplicationType() {
+        for (String type : List.of("service", "webapp", "WEB", "desktop")) {
+            Map<String, Object> document = validDocument();
+            document.put("application_type", type);
+
+            assertThatThrownBy(() -> McpCimdDocumentValidator.validateDocument(
+                    "https://client.example.com/metadata", document, LOCAL_HOSTS))
+                    .as("application_type " + type + " should be rejected")
+                    .isInstanceOf(McpCimdException.class)
+                    .extracting(exception -> ((McpCimdException) exception).getError())
+                    .isEqualTo(McpCimdError.INVALID_DOCUMENT);
+        }
+    }
+
+    @Test
+    void shouldAcceptHttpsClientUriAndLogoUri() throws McpCimdException {
+        Map<String, Object> document = validDocument();
+        document.put("client_uri", "https://client.example.com/");
+        document.put("logo_uri", "https://client.example.com/logo.png");
+
+        McpCimdMetadata metadata = McpCimdDocumentValidator.validateDocument(
+                "https://client.example.com/metadata", document, LOCAL_HOSTS);
+
+        assertThat(metadata.clientUri()).isEqualTo("https://client.example.com/");
+        assertThat(metadata.logoUri()).isEqualTo("https://client.example.com/logo.png");
+    }
+
+    @Test
+    void shouldRejectNonHttpsClientUriAndLogoUri() {
+        for (Map.Entry<String, String> entry : List.of(
+                Map.entry("client_uri", "http://client.example.com/"),
+                Map.entry("client_uri", "/relative"),
+                Map.entry("client_uri", "https://client.example.com/#frag"),
+                Map.entry("client_uri", "https://user@client.example.com/"),
+                Map.entry("logo_uri", "http://client.example.com/logo.png"),
+                Map.entry("logo_uri", "client.example.com/logo.png"))) {
+            Map<String, Object> document = validDocument();
+            document.put(entry.getKey(), entry.getValue());
+
+            assertThatThrownBy(() -> McpCimdDocumentValidator.validateDocument(
+                    "https://client.example.com/metadata", document, LOCAL_HOSTS))
+                    .as(entry.getKey() + " " + entry.getValue() + " should be rejected")
+                    .isInstanceOf(McpCimdException.class)
+                    .extracting(exception -> ((McpCimdException) exception).getError())
+                    .isEqualTo(McpCimdError.INVALID_DOCUMENT);
+        }
+    }
+
     // ========== redirect_uri 规则 ==========
 
     @Test
@@ -296,6 +410,39 @@ class McpCimdDocumentValidatorTest {
         McpCimdDocumentValidator.validateRedirectUri("http://127.0.0.1:8080/callback", LOCAL_HOSTS);
         McpCimdDocumentValidator.validateRedirectUri("http://localhost:8080/callback", LOCAL_HOSTS);
         McpCimdDocumentValidator.validateRedirectUri("http://[::1]:8080/callback", LOCAL_HOSTS);
+    }
+
+    @Test
+    void shouldAcceptHttpRedirectUriForLoopbackRangeAndTrailingDot() throws McpCimdException {
+        // 127.0.0.0/8 整个段都是回环
+        McpCimdDocumentValidator.validateRedirectUri("http://127.0.0.2:8080/callback", LOCAL_HOSTS);
+        McpCimdDocumentValidator.validateRedirectUri("http://127.255.255.255:8080/callback", LOCAL_HOSTS);
+        // DNS 尾点等价
+        McpCimdDocumentValidator.validateRedirectUri("http://localhost.:8080/callback", LOCAL_HOSTS);
+        McpCimdDocumentValidator.validateRedirectUri("http://127.0.0.1.:8080/callback", LOCAL_HOSTS);
+        // 整型写法也认
+        assertThat(McpCimdDocumentValidator.isLoopbackHost("2130706433", LOCAL_HOSTS)).isTrue();
+        assertThat(McpCimdDocumentValidator.isLoopbackHost("0x7f000001", LOCAL_HOSTS)).isTrue();
+        assertThat(McpCimdDocumentValidator.isLoopbackHost("127.0.0.2", LOCAL_HOSTS)).isTrue();
+    }
+
+    @Test
+    void shouldRejectHttpsRedirectUriWithoutHostOrWithUserinfo() {
+        assertThatThrownBy(() -> McpCimdDocumentValidator.validateRedirectUri(
+                "https:///callback", LOCAL_HOSTS))
+                .isInstanceOf(McpCimdException.class)
+                .extracting(exception -> ((McpCimdException) exception).getError())
+                .isEqualTo(McpCimdError.INVALID_REDIRECT_URI);
+        assertThatThrownBy(() -> McpCimdDocumentValidator.validateRedirectUri(
+                "https://user@client.example.com/callback", LOCAL_HOSTS))
+                .isInstanceOf(McpCimdException.class)
+                .extracting(exception -> ((McpCimdException) exception).getError())
+                .isEqualTo(McpCimdError.INVALID_REDIRECT_URI);
+        assertThatThrownBy(() -> McpCimdDocumentValidator.validateRedirectUri(
+                "http://user@127.0.0.1:8080/callback", LOCAL_HOSTS))
+                .isInstanceOf(McpCimdException.class)
+                .extracting(exception -> ((McpCimdException) exception).getError())
+                .isEqualTo(McpCimdError.INVALID_REDIRECT_URI);
     }
 
     @Test

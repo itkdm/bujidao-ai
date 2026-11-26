@@ -8,9 +8,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
-import java.net.InetAddress;
 import java.net.URI;
-import java.net.UnknownHostException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -27,9 +25,9 @@ import java.util.regex.Pattern;
  * <p>安全要点：
  * <ul>
  *   <li>不跟随重定向（NEVER）：重定向目标未经校验，交给后续 Block 的授权端点显式处理，拉取层不自动跟进；</li>
- *   <li>SSRF 防护在发请求前做 DNS 解析层检查：{@link InetAddress#getAllByName(String)} 解析出的
- *       <b>任一</b>地址是回环 / 内网 / 链路本地 / 组播 / 未指定地址即拒绝，不能只看 URL 字符串
- *       （主机名可能解析到 169.254.169.254 这类地址）；</li>
+ *   <li>SSRF 防护在发请求前做 DNS 解析层检查：{@link McpCimdSsrfGuard#checkHostIsPublic(String, McpCimdError)}
+ *       解析出的<b>任一</b>地址非公开即拒绝，不能只看 URL 字符串
+ *       （主机名可能解析到 169.254.169.254 这类地址）；谓词覆盖的地址族清单见该类注释；</li>
  *   <li>body 按流式限长读取，超限即拒，不把无限大的响应先读进内存；</li>
  *   <li>异常信息只写原因类别与状态码，绝不含 body 原文。</li>
  * </ul>
@@ -39,7 +37,8 @@ import java.util.regex.Pattern;
 public class McpCimdFetcher {
 
     private static final String ACCEPT_JSON = "application/json";
-    private static final Pattern MAX_AGE_PATTERN = Pattern.compile("max-age\\s*=\\s*(\\d+)");
+    private static final Pattern MAX_AGE_PATTERN =
+            Pattern.compile("max-age\\s*=\\s*(\\d+)", Pattern.CASE_INSENSITIVE);
 
     private final Duration fetchTimeout;
     private final int maxDocumentBytes;
@@ -48,19 +47,24 @@ public class McpCimdFetcher {
     private final HttpClient httpClient;
 
     public McpCimdFetcher(McpOAuthProperties.Cimd config, ObjectMapper objectMapper) {
-        this(config.getFetchTimeout(), config.getMaxDocumentBytes(), config.isAllowPrivateAddresses(), objectMapper);
+        this(config != null ? config.getFetchTimeout() : null,
+                config != null ? config.getMaxDocumentBytes() : 0,
+                config != null && config.isAllowPrivateAddresses(),
+                objectMapper);
     }
 
     public McpCimdFetcher(Duration fetchTimeout, int maxDocumentBytes, boolean allowPrivateAddresses,
                           ObjectMapper objectMapper) {
-        this.fetchTimeout = fetchTimeout;
-        this.maxDocumentBytes = maxDocumentBytes;
+        // 编程式构造时字段可能为 null / 非法：用默认值兜底，不 NPE（绑定层有 @NotNull / @Min 校验，
+        // 正常启动走不到这里）
+        this.fetchTimeout = fetchTimeout != null ? fetchTimeout : Duration.ofSeconds(3);
+        this.maxDocumentBytes = maxDocumentBytes > 0 ? maxDocumentBytes : 5120;
         this.allowPrivateAddresses = allowPrivateAddresses;
-        this.objectMapper = objectMapper;
+        this.objectMapper = objectMapper != null ? objectMapper : new ObjectMapper();
         this.httpClient = HttpClient.newBuilder()
                 // 不跟随重定向：重定向目标不受校验约束，绝不能自动跟进
                 .followRedirects(HttpClient.Redirect.NEVER)
-                .connectTimeout(fetchTimeout)
+                .connectTimeout(this.fetchTimeout)
                 .build();
     }
 
@@ -74,13 +78,13 @@ public class McpCimdFetcher {
         // 1. 先校验 URL 形状。allowPrivateAddresses=true 时放行 http scheme，
         //    仅供本地开发 / 测试用 HttpServer 模拟，生产必须保持 false（只允许 https）。
         URI uri = McpCimdDocumentValidator.validateClientIdUrl(clientIdUrl, allowPrivateAddresses);
-        // 2. SSRF 防护：DNS 解析层检查，任一解析地址命中私有范围即拒绝。
+        // 2. SSRF 防护：DNS 解析层检查，任一解析地址命中非公开范围即拒绝。
         //    注意：这里故意用 getAllByName 而不是只看 URL 字符串，防止主机名解析到内网地址。
         //    TOCTOU 说明：解析与建连之间 DNS 记录理论上可能变化（DNS rebinding），
-        //    彻底防御需要自定义解析 / 连接层；本块先做到“解析层拦截已知私有地址”，
+        //    彻底防御需要自定义解析 / 连接层；本块先做到“解析层拦截已知非公开地址”，
         //    rebinding 加固留给后续安全加固 Block。
         if (!allowPrivateAddresses) {
-            checkNotPrivateAddress(uri.getHost());
+            McpCimdSsrfGuard.checkHostIsPublic(uri.getHost(), McpCimdError.FETCH_FAILED);
         }
         // 3. 只发 GET，Accept: application/json。
         HttpRequest request = HttpRequest.newBuilder()
@@ -106,9 +110,9 @@ public class McpCimdFetcher {
                         "unexpected HTTP status: " + response.statusCode());
             }
             String contentType = response.headers().firstValue("Content-Type").orElse("");
-            if (!contentType.toLowerCase(Locale.ROOT).contains(ACCEPT_JSON)) {
+            if (!isJsonContentType(contentType)) {
                 throw new McpCimdException(McpCimdError.INVALID_CONTENT_TYPE,
-                        "Content-Type must contain application/json");
+                        "Content-Type must be application/json");
             }
             byte[] bytes = readUpTo(body, maxDocumentBytes);
             Map<String, Object> document;
@@ -116,8 +120,11 @@ public class McpCimdFetcher {
                 document = objectMapper.readValue(bytes, new TypeReference<Map<String, Object>>() {
                 });
             } catch (IOException exception) {
-                // 只写“解析失败”这一类别，不把 body 原文放进异常信息
-                throw new McpCimdException(McpCimdError.INVALID_DOCUMENT, "document is not valid JSON", exception);
+                // 只写“解析失败”这一类别，不把 body 原文放进异常信息；
+                // cause 链里也只挂 Jackson 异常的类型名，不挂原始 cause：
+                // Jackson 的解析错误信息可能回显 body 片段，挂进 cause 会在日志打印堆栈时把攻击者可控文本打出来。
+                throw new McpCimdException(McpCimdError.INVALID_DOCUMENT, "document is not valid JSON",
+                        new IOException(exception.getClass().getSimpleName()));
             }
             if (document == null) {
                 throw new McpCimdException(McpCimdError.INVALID_DOCUMENT, "document is not a JSON object");
@@ -128,28 +135,6 @@ public class McpCimdFetcher {
             throw exception;
         } catch (IOException exception) {
             throw new McpCimdException(McpCimdError.FETCH_FAILED, "failed to read response body", exception);
-        }
-    }
-
-    /**
-     * DNS 解析层 SSRF 检查：任一解析地址是回环 / 内网 / 链路本地 / 组播 / 未指定地址即拒绝。
-     */
-    private void checkNotPrivateAddress(String host) throws McpCimdException {
-        InetAddress[] addresses;
-        try {
-            addresses = InetAddress.getAllByName(host);
-        } catch (UnknownHostException exception) {
-            throw new McpCimdException(McpCimdError.FETCH_FAILED, "failed to resolve host", exception);
-        }
-        for (InetAddress address : addresses) {
-            if (address.isLoopbackAddress()
-                    || address.isSiteLocalAddress()
-                    || address.isLinkLocalAddress()
-                    || address.isMulticastAddress()
-                    || address.isAnyLocalAddress()) {
-                throw new McpCimdException(McpCimdError.SSRF_BLOCKED,
-                        "resolved address is not a public address");
-            }
         }
     }
 
@@ -170,20 +155,44 @@ public class McpCimdFetcher {
         return output.toByteArray();
     }
 
+    /**
+     * Content-Type 是否为 JSON：按 ';' 切出 media-type 后精确比对 application/json，
+     * 或接受 +json 后缀类型（如 application/hal+json）。
+     * 不能用 contains("application/json")：application/json-patch、application/jsonx
+     * 这类“包含但不是 JSON”的类型会被误放行。
+     */
+    static boolean isJsonContentType(String contentType) {
+        if (contentType == null || contentType.isBlank()) {
+            return false;
+        }
+        String mediaType = contentType.split(";", 2)[0].trim();
+        return ACCEPT_JSON.equalsIgnoreCase(mediaType)
+                || mediaType.toLowerCase(Locale.ROOT).endsWith("+json");
+    }
+
     /** 解析 Cache-Control 的 max-age，解析不到返回 null（由缓存层用默认 TTL）。 */
     static Long parseMaxAge(String cacheControl) {
         if (cacheControl == null || cacheControl.isBlank()) {
             return null;
         }
-        Matcher matcher = MAX_AGE_PATTERN.matcher(cacheControl);
-        if (!matcher.find()) {
-            return null;
+        for (String rawDirective : cacheControl.split(",")) {
+            String directive = rawDirective.trim();
+            if ("no-store".equalsIgnoreCase(directive) || "no-cache".equalsIgnoreCase(directive)) {
+                // 明确要求不缓存：返回 0，缓存层据此不入缓存
+                return 0L;
+            }
+            Matcher matcher = MAX_AGE_PATTERN.matcher(directive);
+            // 必须从指令开头匹配：x-max-age 这类名字相近的指令不能误解析；
+            // 大小写不敏感：Max-Age / MAX-AGE 都认
+            if (matcher.lookingAt()) {
+                try {
+                    return Long.parseLong(matcher.group(1));
+                } catch (NumberFormatException exception) {
+                    return null;
+                }
+            }
         }
-        try {
-            return Long.parseLong(matcher.group(1));
-        } catch (NumberFormatException exception) {
-            return null;
-        }
+        return null;
     }
 
     /**

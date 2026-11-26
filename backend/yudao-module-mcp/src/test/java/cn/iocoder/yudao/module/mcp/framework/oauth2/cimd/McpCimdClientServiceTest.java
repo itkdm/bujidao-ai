@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class McpCimdClientServiceTest {
@@ -85,6 +86,25 @@ class McpCimdClientServiceTest {
     }
 
     @Test
+    void shouldRejectUnregisteredRedirectUriOnCacheHit() throws Exception {
+        String clientIdUrl = clientIdUrl("/client");
+        respondJson("/client", validDocJson(clientIdUrl));
+        server.start();
+
+        // 第一次用合法回调解析，建缓存
+        McpCimdMetadata first = service.resolve(clientIdUrl, redirectUri());
+        assertThat(first.clientName()).isEqualTo("Local Client");
+        assertThat(hits.get()).isEqualTo(1);
+
+        // 第二次用未注册回调解析同一 client_id：缓存命中也必须拒绝，且不得多发请求
+        assertThatThrownBy(() -> service.resolve(clientIdUrl, "http://127.0.0.1:" + port + "/other"))
+                .isInstanceOf(McpCimdException.class)
+                .extracting(exception -> ((McpCimdException) exception).getError())
+                .isEqualTo(McpCimdError.INVALID_REDIRECT_URI);
+        assertThat(hits.get()).isEqualTo(1);
+    }
+
+    @Test
     void shouldRejectUnregisteredRedirectUri() throws Exception {
         String clientIdUrl = clientIdUrl("/client");
         respondJson("/client", validDocJson(clientIdUrl));
@@ -111,6 +131,21 @@ class McpCimdClientServiceTest {
         McpCimdMetadata metadata = service.resolve(clientIdUrl, redirectUri());
         assertThat(metadata.clientName()).isEqualTo("Local Client");
         assertThat(hits.get()).isEqualTo(2);
+    }
+
+    @Test
+    void shouldUseDefaultCimdWhenPropertiesCimdIsNull() {
+        properties.setCimd(null);
+
+        // 构造不 NPE；解析时用默认 cimd（allowPrivateAddresses=false），http 本地 URL 应被形状校验拒绝，
+        // 而不是空指针
+        McpCimdClientService nullSafeService = new McpCimdClientService(properties);
+        assertThatCode(() -> new McpCimdClientService(properties)).doesNotThrowAnyException();
+        assertThatThrownBy(() -> nullSafeService.resolve(
+                clientIdUrl("/client"), redirectUri()))
+                .isInstanceOf(McpCimdException.class)
+                .extracting(exception -> ((McpCimdException) exception).getError())
+                .isEqualTo(McpCimdError.INVALID_CLIENT_ID_URL);
     }
 
     @Test

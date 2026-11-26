@@ -11,6 +11,8 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -105,6 +107,31 @@ class McpCimdFetcherTest {
     }
 
     @Test
+    void shouldRejectCgnatAndReservedRangesBeforeRequest() {
+        for (String url : List.of(
+                "https://100.64.0.1/client",
+                "https://100.127.255.255/client",
+                "https://192.0.0.1/client",
+                "https://192.0.0.170/client",
+                "https://198.18.0.1/client",
+                "https://198.19.255.255/client",
+                "https://240.0.0.1/client",
+                "https://255.255.255.255/client",
+                // IPv4 映射 IPv6 地址归一化成 IPv4 后再判
+                "https://[::ffff:10.0.0.1]/client",
+                "https://[::ffff:127.0.0.1]/client",
+                // 十进制 / 十六进制整型 IP 写法
+                "https://2130706433/client",
+                "https://0x7f000001/client")) {
+            assertThatThrownBy(() -> strictFetcher().fetch(url))
+                    .as("SSRF should block " + url)
+                    .isInstanceOf(McpCimdException.class)
+                    .extracting(exception -> ((McpCimdException) exception).getError())
+                    .isEqualTo(McpCimdError.SSRF_BLOCKED);
+        }
+    }
+
+    @Test
     void shouldRejectHttpUrlBeforeRequest() {
         // http scheme 在生产模式下形状校验即失败，根本到不了发请求那一步
         assertThatThrownBy(() -> strictFetcher().fetch("http://127.0.0.1:8080/client"))
@@ -140,6 +167,71 @@ class McpCimdFetcherTest {
         McpCimdFetcher.FetchedDocument fetched = localFetcher().fetch(clientIdUrl);
 
         assertThat(fetched.maxAgeSeconds()).isNull();
+    }
+
+    @Test
+    void shouldReturnZeroMaxAgeForNoStore() throws Exception {
+        String clientIdUrl = localUrl("/client");
+        respondJson("/client", "{\"client_id\":\"" + clientIdUrl + "\"}", "no-store");
+        server.start();
+
+        McpCimdFetcher.FetchedDocument fetched = localFetcher().fetch(clientIdUrl);
+
+        // no-store 返回 0，缓存层据此不入缓存
+        assertThat(fetched.maxAgeSeconds()).isEqualTo(0L);
+    }
+
+    // ========== Cache-Control 解析 ==========
+
+    @Test
+    void shouldParseMaxAgeCaseInsensitively() {
+        assertThat(McpCimdFetcher.parseMaxAge("public, max-age=3600")).isEqualTo(3600L);
+        assertThat(McpCimdFetcher.parseMaxAge("public, Max-Age=60")).isEqualTo(60L);
+        assertThat(McpCimdFetcher.parseMaxAge("public, MAX-AGE=30")).isEqualTo(30L);
+        assertThat(McpCimdFetcher.parseMaxAge("max-age = 120")).isEqualTo(120L);
+    }
+
+    @Test
+    void shouldReturnZeroMaxAgeForNoStoreOrNoCache() {
+        assertThat(McpCimdFetcher.parseMaxAge("no-store")).isEqualTo(0L);
+        assertThat(McpCimdFetcher.parseMaxAge("public, no-cache")).isEqualTo(0L);
+        assertThat(McpCimdFetcher.parseMaxAge("No-Store")).isEqualTo(0L);
+        assertThat(McpCimdFetcher.parseMaxAge("NO-CACHE, max-age=3600")).isEqualTo(0L);
+    }
+
+    @Test
+    void shouldNotParseLookalikeMaxAgeDirective() {
+        assertThat(McpCimdFetcher.parseMaxAge("x-max-age=3600")).isNull();
+        assertThat(McpCimdFetcher.parseMaxAge("public")).isNull();
+        assertThat(McpCimdFetcher.parseMaxAge(null)).isNull();
+        assertThat(McpCimdFetcher.parseMaxAge("  ")).isNull();
+    }
+
+    // ========== 超时 ==========
+
+    @Test
+    void shouldTimeoutOnSlowResponse() {
+        server.createContext("/client", exchange -> {
+            try {
+                Thread.sleep(1500);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            }
+            byte[] bytes = "{}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (OutputStream output = exchange.getResponseBody()) {
+                output.write(bytes);
+            }
+        });
+        server.start();
+
+        McpCimdFetcher fetcher = new McpCimdFetcher(Duration.ofMillis(200), 5120, true, new ObjectMapper());
+
+        assertThatThrownBy(() -> fetcher.fetch(localUrl("/client")))
+                .isInstanceOf(McpCimdException.class)
+                .extracting(exception -> ((McpCimdException) exception).getError())
+                .isEqualTo(McpCimdError.FETCH_TIMEOUT);
     }
 
     // ========== 响应校验 ==========
@@ -192,6 +284,64 @@ class McpCimdFetcherTest {
     }
 
     @Test
+    void shouldAcceptJsonContentTypeWithCharset() throws Exception {
+        server.createContext("/client", exchange -> {
+            byte[] bytes = "{}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (OutputStream output = exchange.getResponseBody()) {
+                output.write(bytes);
+            }
+        });
+        server.start();
+
+        McpCimdFetcher.FetchedDocument fetched = localFetcher().fetch(localUrl("/client"));
+
+        assertThat(fetched.document()).isEmpty();
+    }
+
+    @Test
+    void shouldAcceptJsonSuffixContentType() throws Exception {
+        server.createContext("/client", exchange -> {
+            byte[] bytes = "{}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/hal+json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (OutputStream output = exchange.getResponseBody()) {
+                output.write(bytes);
+            }
+        });
+        server.start();
+
+        McpCimdFetcher.FetchedDocument fetched = localFetcher().fetch(localUrl("/client"));
+
+        assertThat(fetched.document()).isEmpty();
+    }
+
+    @Test
+    void shouldRejectLookalikeJsonContentType() throws Exception {
+        // 旧的 contains("application/json") 会误放行这些类型
+        AtomicReference<String> contentType = new AtomicReference<>("application/json-patch");
+        server.createContext("/client", exchange -> {
+            byte[] bytes = "{}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", contentType.get());
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (OutputStream output = exchange.getResponseBody()) {
+                output.write(bytes);
+            }
+        });
+        server.start();
+
+        for (String value : List.of("application/json-patch", "application/jsonx")) {
+            contentType.set(value);
+            assertThatThrownBy(() -> localFetcher().fetch(localUrl("/client")))
+                    .as("Content-Type " + value + " should be rejected")
+                    .isInstanceOf(McpCimdException.class)
+                    .extracting(exception -> ((McpCimdException) exception).getError())
+                    .isEqualTo(McpCimdError.INVALID_CONTENT_TYPE);
+        }
+    }
+
+    @Test
     void shouldRejectOversizedDocument() throws Exception {
         // 用小上限（100 字节）验证限长逻辑，不必真的发 5KB
         McpCimdFetcher fetcher = new McpCimdFetcher(TIMEOUT, 100, true, new ObjectMapper());
@@ -218,6 +368,10 @@ class McpCimdFetcherTest {
             assertThat(exception.getError()).isEqualTo(McpCimdError.INVALID_DOCUMENT);
             // 异常信息绝不能含攻击者可控的 body 原文
             assertThat(exception.getMessage()).doesNotContain("SECRET_MARKER_12345");
+            // cause 链里也只挂 Jackson 异常的类型名，不能含 body 原文
+            assertThat(exception.getCause()).isNotNull();
+            assertThat(exception.getCause().getMessage()).doesNotContain("SECRET_MARKER_12345");
+            assertThat(exception.getCause().getMessage()).isEqualTo("JsonParseException");
         }
     }
 

@@ -14,7 +14,11 @@ import java.util.concurrent.ConcurrentHashMap;
  *   <li>过期时间优先尊重响应 Cache-Control 的 max-age，但硬上限为 cacheMaxAge（默认 24 小时）；
  *       无缓存头时用 cacheDefaultTtl（默认 1 小时）；max-age=0 的文档不入缓存；</li>
  *   <li>读到过期条目视为未命中并删除；</li>
- *   <li>条目数上限默认 1000：超限时先清过期条目，仍超限则新文档不入缓存（每次现拉，不报错）。</li>
+ *   <li>条目数上限默认 1000：超限时先清过期条目，仍超限则新文档不入缓存（每次现拉，不报错）。
+ *       上限是<b>软上限</b>：put 用 synchronized 保证“检查上限 → 写入”对并发 put 原子，
+ *       但 size() 会把未清理的过期条目也算进去、get / evict 不加锁，所以不要把它当硬配额用；</li>
+ *   <li>无 singleflight：同一 client_id 并发解析只会重复拉取一次、后写入的覆盖先写入的，
+ *       结果一致，不影响正确性；高并发场景如需合并请求再另做。</li>
  * </ul>
  *
  * @author bujidao
@@ -27,9 +31,11 @@ public class McpCimdMetadataCache {
     private final ConcurrentHashMap<String, Entry> entries = new ConcurrentHashMap<>();
 
     public McpCimdMetadataCache(Duration cacheMaxAge, Duration cacheDefaultTtl, int maxEntries) {
-        this.cacheMaxAge = cacheMaxAge;
-        this.cacheDefaultTtl = cacheDefaultTtl;
-        this.maxEntries = maxEntries;
+        // 编程式构造时字段可能为 null / 非法：用默认值兜底，不 NPE（绑定层有 @NotNull / @Min 校验，
+        // 正常启动走不到这里）
+        this.cacheMaxAge = cacheMaxAge != null ? cacheMaxAge : Duration.ofHours(24);
+        this.cacheDefaultTtl = cacheDefaultTtl != null ? cacheDefaultTtl : Duration.ofHours(1);
+        this.maxEntries = maxEntries > 0 ? maxEntries : 1000;
     }
 
     /**
@@ -49,10 +55,12 @@ public class McpCimdMetadataCache {
 
     /**
      * 写缓存。只应在拉取 + 校验成功后调用，失败 / 无效文档永不入缓存。
+     * 加 synchronized：保证“检查上限 → 清过期 → 写入”对并发 put 原子，不出现
+     * 两个线程同时看到未满、同时写入导致超限的 check-then-act 竞态。
      *
      * @param responseMaxAgeSeconds 响应 Cache-Control 的 max-age（秒），无缓存头时传 null
      */
-    public void put(String clientIdUrl, McpCimdMetadata metadata, Long responseMaxAgeSeconds) {
+    public synchronized void put(String clientIdUrl, McpCimdMetadata metadata, Long responseMaxAgeSeconds) {
         Duration ttl = responseMaxAgeSeconds == null
                 ? cacheDefaultTtl : Duration.ofSeconds(responseMaxAgeSeconds);
         if (ttl.isZero() || ttl.isNegative()) {

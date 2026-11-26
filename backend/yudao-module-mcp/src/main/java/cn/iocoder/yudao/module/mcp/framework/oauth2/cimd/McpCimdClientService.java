@@ -2,19 +2,23 @@ package cn.iocoder.yudao.module.mcp.framework.oauth2.cimd;
 
 import cn.iocoder.yudao.framework.common.util.json.JsonUtils;
 import cn.iocoder.yudao.module.mcp.framework.oauth2.config.McpOAuthProperties;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 /**
  * CIMD 对外唯一入口：给定 client_id URL 与授权请求里的 redirect_uri，
  * 返回校验通过的客户端元数据。
  *
- * <p>流程：校验 URL 形状 → 查缓存（命中且未过期直接返回）→ 拉取 → 校验文档 →
- * 校验请求 redirect_uri 在文档 redirect_uris 里（精确相等）且符合 scheme 规则 →
+ * <p>流程：校验 URL 形状 → 查缓存（命中也要校验本次请求的 redirect_uri，通过才返回）→
+ * 拉取 → 校验文档 → 校验请求 redirect_uri 在文档 redirect_uris 里（精确相等）且符合 scheme 规则 →
  * 入缓存 → 返回。任一步失败抛 {@link McpCimdException}，不吞掉、不返回 null。
  *
  * @author bujidao
  */
 @Service
+@ConditionalOnProperty(prefix = McpOAuthProperties.PREFIX, name = "enabled", havingValue = "true",
+        matchIfMissing = true)
 public class McpCimdClientService {
 
     private final McpOAuthProperties properties;
@@ -23,12 +27,16 @@ public class McpCimdClientService {
 
     public McpCimdClientService(McpOAuthProperties properties) {
         this(properties,
-                new McpCimdFetcher(properties.getCimd(), JsonUtils.getObjectMapper()),
-                new McpCimdMetadataCache(properties.getCimd().getCacheMaxAge(),
-                        properties.getCimd().getCacheDefaultTtl(), properties.getCimd().getCacheMaxEntries()));
+                new McpCimdFetcher(McpOAuthProperties.cimdOrDefault(properties), JsonUtils.getObjectMapper()),
+                new McpCimdMetadataCache(
+                        McpOAuthProperties.cimdOrDefault(properties).getCacheMaxAge(),
+                        McpOAuthProperties.cimdOrDefault(properties).getCacheDefaultTtl(),
+                        McpOAuthProperties.cimdOrDefault(properties).getCacheMaxEntries()));
     }
 
-    McpCimdClientService(McpOAuthProperties properties, McpCimdFetcher fetcher, McpCimdMetadataCache cache) {
+    @Autowired
+    public McpCimdClientService(McpOAuthProperties properties, McpCimdFetcher fetcher,
+                               McpCimdMetadataCache cache) {
         this.properties = properties;
         this.fetcher = fetcher;
         this.cache = cache;
@@ -43,12 +51,15 @@ public class McpCimdClientService {
      * @throws McpCimdException 任一步失败
      */
     public McpCimdMetadata resolve(String clientIdUrl, String redirectUri) throws McpCimdException {
-        McpOAuthProperties.Cimd cimd = properties.getCimd();
+        McpOAuthProperties.Cimd cimd = McpOAuthProperties.cimdOrDefault(properties);
         // 1. 校验 URL 形状（allowPrivateAddresses=true 时放行 http，仅本地开发 / 测试用）
         McpCimdDocumentValidator.validateClientIdUrl(clientIdUrl, cimd.isAllowPrivateAddresses());
-        // 2. 查缓存
+        // 2. 查缓存：命中也要校验本次请求的 redirect_uri，通过才返回。
+        //    缓存只证明“文档曾经合法”，不证明“本次请求的回调地址在文档里”；
+        //    跳过这步会让任意未注册回调借已缓存文档通过。
         McpCimdMetadata cached = cache.get(clientIdUrl);
         if (cached != null) {
+            validateRequestedRedirectUri(cached, redirectUri);
             return cached;
         }
         // 3. 拉取
@@ -57,14 +68,20 @@ public class McpCimdClientService {
         McpCimdMetadata metadata = McpCimdDocumentValidator.validateDocument(
                 clientIdUrl, fetched.document(), properties.getLocalRedirectHosts());
         // 5. 校验请求 redirect_uri：在文档列表里（精确相等）且符合 scheme 规则
+        validateRequestedRedirectUri(metadata, redirectUri);
+        // 6. 入缓存（失败 / 无效文档走不到这里，永不入缓存）
+        cache.put(clientIdUrl, metadata, fetched.maxAgeSeconds());
+        return metadata;
+    }
+
+    /** 校验本次请求的 redirect_uri：在文档列表里（精确相等）且符合 scheme 规则。 */
+    private void validateRequestedRedirectUri(McpCimdMetadata metadata, String redirectUri)
+            throws McpCimdException {
         if (!metadata.redirectUris().contains(redirectUri)) {
             throw new McpCimdException(McpCimdError.INVALID_REDIRECT_URI,
                     "redirect_uri is not registered in the client metadata document");
         }
         McpCimdDocumentValidator.validateRedirectUri(redirectUri, properties.getLocalRedirectHosts());
-        // 6. 入缓存（失败 / 无效文档走不到这里，永不入缓存）
-        cache.put(clientIdUrl, metadata, fetched.maxAgeSeconds());
-        return metadata;
     }
 
 }

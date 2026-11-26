@@ -95,6 +95,17 @@ public class McpOAuthProperties {
     private Cimd cimd = new Cimd();
 
     /**
+     * 取 cimd 配置段：编程式构造未设 cimd 时返回默认值，不 NPE。
+     * 绑定层有 @NotNull + 字段默认值保证，正常启动走不到 null 分支。
+     */
+    public static Cimd cimdOrDefault(McpOAuthProperties properties) {
+        if (properties == null || properties.getCimd() == null) {
+            return new Cimd();
+        }
+        return properties.getCimd();
+    }
+
+    /**
      * CIMD 配置段，前缀 yudao.mcp.oauth.cimd。
      */
     @Data
