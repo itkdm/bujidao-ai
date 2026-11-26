@@ -287,14 +287,14 @@ class AcfMcpToolCallHandlerTest {
         assertThat(schema).containsEntry("type", "object")
                 .containsEntry("additionalProperties", false)
                 .doesNotContainKey("required");
-        assertThat((Map<?, ?>) schema.get("properties")).containsOnlyKeys(
+        assertThat((Map<String, Object>) schema.get("properties")).containsOnlyKeys(
                 AcfMcpToolCallHandler.CONFIRM_REMARK_FIELD);
-        Map<?, ?> remark = (Map<?, ?>) ((Map<?, ?>) schema.get("properties"))
+        Map<String, Object> remark = (Map<String, Object>) ((Map<String, Object>) schema.get("properties"))
                 .get(AcfMcpToolCallHandler.CONFIRM_REMARK_FIELD);
         assertThat(remark).containsEntry("type", "string").containsEntry("maxLength", 512);
         assertThat(required.meta()).containsEntry(AcfMcpToolProtocolMetadata.STATUS, "CONFIRM_REQUIRED")
                 .containsEntry(AcfMcpToolProtocolMetadata.TRACE_ID, "trace-confirm");
-        Map<?, ?> challengeMetadata = (Map<?, ?>) required.meta()
+        Map<String, Object> challengeMetadata = (Map<String, Object>) required.meta()
                 .get(AcfMcpToolProtocolMetadata.CONFIRMATION_CHALLENGE);
         assertThat(challengeMetadata.keySet()).containsExactlyInAnyOrder(
                 "challengeId", "capabilityName", "capabilityVersion", "riskLevel", "expiresAt");

@@ -168,7 +168,7 @@ class AcfMcpConfirmationRetryTest {
         // （见 shouldUseClientRequestIdAsTraceIdOnRetryWithoutAnswer）。
         assertThat(required.meta()).containsEntry(AcfMcpToolProtocolMetadata.STATUS, "CONFIRM_REQUIRED")
                 .doesNotContainKey(AcfMcpToolProtocolMetadata.TRACE_ID);
-        Map<?, ?> challengeMetadata = (Map<?, ?>) required.meta()
+        Map<String, Object> challengeMetadata = (Map<String, Object>) required.meta()
                 .get(AcfMcpToolProtocolMetadata.CONFIRMATION_CHALLENGE);
         assertThat(challengeMetadata.keySet()).containsExactlyInAnyOrder("challengeId", "capabilityName");
         assertThat(challengeMetadata.get("challengeId")).isEqualTo("challenge-001");

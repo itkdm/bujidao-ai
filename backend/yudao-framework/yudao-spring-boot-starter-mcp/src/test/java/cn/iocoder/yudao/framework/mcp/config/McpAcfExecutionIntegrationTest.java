@@ -173,8 +173,10 @@ class McpAcfExecutionIntegrationTest {
         @Bean
         CapabilityIdempotencyService idempotencyService() {
             // 确认重试要先过幂等关：测试里恒放行，只验证确认摘要这一层。
-            return (definition, context, idempotencyKey, requestDigest) ->
-                    CapabilityIdempotencyCheck.acquired();
+            CapabilityIdempotencyService idempotencyService = mock(CapabilityIdempotencyService.class);
+            when(idempotencyService.acquire(any(), any(), any(), any()))
+                    .thenReturn(CapabilityIdempotencyCheck.acquired());
+            return idempotencyService;
         }
 
         @Bean
