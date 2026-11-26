@@ -90,6 +90,37 @@ class McpCimdFetcherTest {
     }
 
     @Test
+    void shouldRejectPrivateNetworkRangesBeforeRequest() {
+        // 172.16.0.0/12 与 192.168.0.0/16：此前拉取层无新增用例，补回归覆盖（含段边界）
+        for (String url : List.of(
+                "https://172.16.0.1/client",
+                "https://172.31.255.255/client",
+                "https://192.168.0.1/client",
+                "https://192.168.255.255/client")) {
+            assertThatThrownBy(() -> strictFetcher().fetch(url))
+                    .as("SSRF should block " + url)
+                    .isInstanceOf(McpCimdException.class)
+                    .extracting(exception -> ((McpCimdException) exception).getError())
+                    .isEqualTo(McpCimdError.SSRF_BLOCKED);
+        }
+    }
+
+    @Test
+    void shouldRejectUniqueLocalIpv6AddressesBeforeRequest() {
+        // fc00::/7（RFC 4193 ULA）：JDK 的 isSiteLocalAddress 只认已废弃的 fec0::/10，
+        // 不显式补这一段会被当成公开地址放行
+        for (String url : List.of(
+                "https://[fd00::1]/client",
+                "https://[fc00::1]/client")) {
+            assertThatThrownBy(() -> strictFetcher().fetch(url))
+                    .as("SSRF should block " + url)
+                    .isInstanceOf(McpCimdException.class)
+                    .extracting(exception -> ((McpCimdException) exception).getError())
+                    .isEqualTo(McpCimdError.SSRF_BLOCKED);
+        }
+    }
+
+    @Test
     void shouldRejectLinkLocalAddressBeforeRequest() {
         // 169.254.169.254 是云厂商元数据地址，必须拦
         assertThatThrownBy(() -> strictFetcher().fetch("https://169.254.169.254/latest/meta-data/"))
@@ -197,6 +228,24 @@ class McpCimdFetcherTest {
         assertThat(McpCimdFetcher.parseMaxAge("public, no-cache")).isEqualTo(0L);
         assertThat(McpCimdFetcher.parseMaxAge("No-Store")).isEqualTo(0L);
         assertThat(McpCimdFetcher.parseMaxAge("NO-CACHE, max-age=3600")).isEqualTo(0L);
+    }
+
+    @Test
+    void shouldReturnZeroMaxAgeWhenNoStoreFollowsMaxAge() {
+        // no-store 写在 max-age 后面也不能漏：旧实现遇到 max-age 立即 return，
+        // 后面的指令不再看，"max-age=3600, no-store" 会错返回 3600
+        assertThat(McpCimdFetcher.parseMaxAge("max-age=3600, no-store")).isEqualTo(0L);
+        assertThat(McpCimdFetcher.parseMaxAge("max-age=3600, no-cache")).isEqualTo(0L);
+        assertThat(McpCimdFetcher.parseMaxAge("public, max-age=60, No-Store")).isEqualTo(0L);
+    }
+
+    @Test
+    void shouldParseQuotedMaxAge() {
+        // 带引号的 max-age：旧实现因引号导致 lookingAt() 失败返回 null、走默认 TTL，
+        // max-age="0" 的文档本应不缓存
+        assertThat(McpCimdFetcher.parseMaxAge("max-age=\"3600\"")).isEqualTo(3600L);
+        assertThat(McpCimdFetcher.parseMaxAge("public, max-age=\"60\"")).isEqualTo(60L);
+        assertThat(McpCimdFetcher.parseMaxAge("max-age=\"0\"")).isEqualTo(0L);
     }
 
     @Test

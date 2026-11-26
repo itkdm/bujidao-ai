@@ -242,6 +242,8 @@ class McpCimdDocumentValidatorTest {
 
     @Test
     void shouldRejectPrivateIpJwksUri() {
+        // 非公开地址由 SSRF guard 抛 SSRF_BLOCKED（只有 DNS 解析失败时才传
+        // INVALID_DOCUMENT），与拉取层保持同一错误区分，不把两类失败混成一个码
         for (String jwksUri : List.of(
                 "https://10.0.0.1/jwks.json",
                 "https://127.0.0.1/jwks.json",
@@ -257,7 +259,7 @@ class McpCimdDocumentValidatorTest {
                     .as("jwks_uri " + jwksUri + " should be rejected")
                     .isInstanceOf(McpCimdException.class)
                     .extracting(exception -> ((McpCimdException) exception).getError())
-                    .isEqualTo(McpCimdError.INVALID_DOCUMENT);
+                    .isEqualTo(McpCimdError.SSRF_BLOCKED);
         }
     }
 

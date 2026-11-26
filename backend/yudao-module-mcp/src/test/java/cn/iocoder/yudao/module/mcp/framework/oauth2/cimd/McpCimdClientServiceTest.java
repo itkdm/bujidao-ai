@@ -134,6 +134,15 @@ class McpCimdClientServiceTest {
     }
 
     @Test
+    void shouldRejectNullProperties() {
+        // properties 为 null 时 cimd 能兜底，但 getLocalRedirectHosts() 会 NPE：
+        // 构造器应明确拒绝 null，而不是在 resolve() 的某条分支上才暴露
+        assertThatThrownBy(() -> new McpCimdClientService(null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("properties must not be null");
+    }
+
+    @Test
     void shouldUseDefaultCimdWhenPropertiesCimdIsNull() {
         properties.setCimd(null);
 

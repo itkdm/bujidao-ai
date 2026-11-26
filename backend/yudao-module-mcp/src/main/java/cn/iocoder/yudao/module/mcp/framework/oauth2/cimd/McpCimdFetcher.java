@@ -38,7 +38,9 @@ public class McpCimdFetcher {
 
     private static final String ACCEPT_JSON = "application/json";
     private static final Pattern MAX_AGE_PATTERN =
-            Pattern.compile("max-age\\s*=\\s*(\\d+)", Pattern.CASE_INSENSITIVE);
+            // max-age 的值允许带可选引号：max-age="3600" / max-age="0" 都要认，
+            // 否则 lookingAt() 因引号失败、走默认 TTL，max-age="0" 的文档本应不缓存
+            Pattern.compile("max-age\\s*=\\s*\"?(\\d+)\"?", Pattern.CASE_INSENSITIVE);
 
     private final Duration fetchTimeout;
     private final int maxDocumentBytes;
@@ -175,12 +177,19 @@ public class McpCimdFetcher {
         if (cacheControl == null || cacheControl.isBlank()) {
             return null;
         }
-        for (String rawDirective : cacheControl.split(",")) {
+        String[] directives = cacheControl.split(",");
+        // 第一遍：任一 no-store / no-cache 即不缓存。不能在第一遍里遇到 max-age 就
+        // 立即 return——"max-age=3600, no-store" 里 no-store 写在后面也会被漏掉。
+        for (String rawDirective : directives) {
             String directive = rawDirective.trim();
             if ("no-store".equalsIgnoreCase(directive) || "no-cache".equalsIgnoreCase(directive)) {
                 // 明确要求不缓存：返回 0，缓存层据此不入缓存
                 return 0L;
             }
+        }
+        // 第二遍：再找 max-age
+        for (String rawDirective : directives) {
+            String directive = rawDirective.trim();
             Matcher matcher = MAX_AGE_PATTERN.matcher(directive);
             // 必须从指令开头匹配：x-max-age 这类名字相近的指令不能误解析；
             // 大小写不敏感：Max-Age / MAX-AGE 都认

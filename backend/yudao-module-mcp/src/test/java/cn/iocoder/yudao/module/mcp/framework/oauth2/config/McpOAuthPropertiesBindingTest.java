@@ -5,6 +5,7 @@ import cn.iocoder.yudao.module.mcp.framework.oauth2.cimd.McpCimdFetcher;
 import cn.iocoder.yudao.module.mcp.framework.oauth2.cimd.McpCimdMetadataCache;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.autoconfigure.validation.ValidationAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 import java.time.Duration;
@@ -22,7 +23,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 class McpOAuthPropertiesBindingTest {
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
-            .withConfiguration(AutoConfigurations.of(McpOAuthConfiguration.class))
+            // ValidationAutoConfiguration 提供 Validator bean：fetch-timeout=0s 的失败断言
+            // 依赖 @AssertTrue 校验，没有它测试不会失败而变红（与 YudaoAcfAutoConfigurationTest 同一惯例）
+            .withConfiguration(AutoConfigurations.of(ValidationAutoConfiguration.class,
+                    McpOAuthConfiguration.class))
             .withBean(McpCimdClientService.class);
 
     @Test

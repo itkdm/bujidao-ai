@@ -84,8 +84,11 @@ public final class McpCimdSsrfGuard {
             if (ipv4 != null) {
                 return isNonPublicIpv4(ipv4);
             }
-            // 原生 IPv6：JDK 谓词覆盖回环 / 内网 / 链路本地 / 组播 / 未指定
-            return address.isLoopbackAddress()
+            // 原生 IPv6：显式判 fc00::/7（RFC 4193 ULA）后再走 JDK 谓词——
+            // JDK 的 isSiteLocalAddress 只认已废弃的 fec0::/10，不认 ULA，
+            // 不显式补这一段 fd00::/8 / fc00::/8 会被当成公开地址放行。
+            return (bytes[0] & 0xFE) == 0xFC
+                    || address.isLoopbackAddress()
                     || address.isSiteLocalAddress()
                     || address.isLinkLocalAddress()
                     || address.isMulticastAddress()

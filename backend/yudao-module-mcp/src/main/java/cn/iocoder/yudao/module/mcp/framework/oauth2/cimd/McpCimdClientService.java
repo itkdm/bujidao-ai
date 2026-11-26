@@ -37,6 +37,13 @@ public class McpCimdClientService {
     @Autowired
     public McpCimdClientService(McpOAuthProperties properties, McpCimdFetcher fetcher,
                                McpCimdMetadataCache cache) {
+        if (properties == null) {
+            // properties 为 null 时 cimdOrDefault 能兜底 cimd，但 resolve() 里
+            // validateDocument / validateRequestedRedirectUri 直接调
+            // properties.getLocalRedirectHosts() 会 NPE：明确不支持 null，
+            // 早失败而不是在某条分支上才暴露出来
+            throw new IllegalArgumentException("properties must not be null");
+        }
         this.properties = properties;
         this.fetcher = fetcher;
         this.cache = cache;
