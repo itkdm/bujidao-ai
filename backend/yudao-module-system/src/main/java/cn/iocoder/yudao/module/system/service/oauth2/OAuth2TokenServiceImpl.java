@@ -79,6 +79,19 @@ public class OAuth2TokenServiceImpl implements OAuth2TokenService {
     @Transactional(rollbackFor = Exception.class)
     public OAuth2AccessTokenDO createAccessToken(Long userId, Integer userType, String clientId, List<String> scopes) {
         OAuth2ClientDO clientDO = oauth2ClientService.validOAuthClientFromCache(clientId);
+        return createAccessToken(userId, userType, clientDO, scopes);
+    }
+
+    // bujidao-ai 扩展入口：CIMD 客户端专用。不查库，直接使用调用方已解析好的 clientDO。
+    // 背景：上游默认所有客户端都已注册入库，CIMD 客户端（client_id 为 URL 形态，元数据来自客户端发布的
+    // Client Metadata Document、并不入库）会在 validOAuthClientFromCache 查库时失败。
+    // 上游同步时，可对照本方法的注释比对差异。
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public OAuth2AccessTokenDO createAccessToken(Long userId, Integer userType, OAuth2ClientDO clientDO, List<String> scopes) {
+        if (clientDO == null) {
+            throw new IllegalArgumentException("clientDO must not be null");
+        }
         // 创建刷新令牌
         OAuth2RefreshTokenDO refreshTokenDO = createOAuth2RefreshToken(userId, userType, clientDO, scopes);
         // 创建访问令牌
@@ -88,6 +101,19 @@ public class OAuth2TokenServiceImpl implements OAuth2TokenService {
     @Override
     @Transactional(noRollbackFor = ServiceException.class)
     public OAuth2AccessTokenDO refreshAccessToken(String refreshToken, String clientId) {
+        OAuth2ClientDO clientDO = oauth2ClientService.validOAuthClientFromCache(clientId);
+        return refreshAccessToken(refreshToken, clientDO);
+    }
+
+    // bujidao-ai 扩展入口：CIMD 客户端专用。不查库，直接使用调用方已解析好的 clientDO。
+    // 背景：同 createAccessToken(OAuth2ClientDO) 重载，CIMD 客户端并不入库，查库会失败。
+    // 上游同步时，可对照本方法的注释比对差异。
+    @Override
+    @Transactional(noRollbackFor = ServiceException.class)
+    public OAuth2AccessTokenDO refreshAccessToken(String refreshToken, OAuth2ClientDO clientDO) {
+        if (clientDO == null) {
+            throw new IllegalArgumentException("clientDO must not be null");
+        }
         // 查询访问令牌
         OAuth2RefreshTokenDO refreshTokenDO = oauth2RefreshTokenMapper.selectByRefreshToken(refreshToken);
         if (refreshTokenDO == null) {
@@ -95,8 +121,7 @@ public class OAuth2TokenServiceImpl implements OAuth2TokenService {
         }
 
         // 校验 Client 匹配
-        OAuth2ClientDO clientDO = oauth2ClientService.validOAuthClientFromCache(clientId);
-        if (ObjectUtil.notEqual(clientId, refreshTokenDO.getClientId())) {
+        if (ObjectUtil.notEqual(clientDO.getClientId(), refreshTokenDO.getClientId())) {
             throw exception0(GlobalErrorCodeConstants.BAD_REQUEST.getCode(), "刷新令牌的客户端编号不正确");
         }
 

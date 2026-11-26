@@ -3,6 +3,7 @@ package cn.iocoder.yudao.module.system.service.oauth2;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.module.system.controller.admin.oauth2.vo.token.OAuth2AccessTokenPageReqVO;
 import cn.iocoder.yudao.module.system.dal.dataobject.oauth2.OAuth2AccessTokenDO;
+import cn.iocoder.yudao.module.system.dal.dataobject.oauth2.OAuth2ClientDO;
 
 import java.util.Collection;
 import java.util.List;
@@ -31,6 +32,24 @@ public interface OAuth2TokenService {
     OAuth2AccessTokenDO createAccessToken(Long userId, Integer userType, String clientId, List<String> scopes);
 
     /**
+     * 创建访问令牌（bujidao-ai 扩展入口：CIMD 客户端专用）
+     * 注意：该流程中，会包含创建刷新令牌的创建
+     *
+     * 与 {@link #createAccessToken(Long, Integer, String, List)} 的区别是：直接使用调用方已解析好的
+     * {@link OAuth2ClientDO}，不再调用 {@code validOAuthClientFromCache(clientId)} 查库。
+     * 上游默认所有客户端都已注册入库，CIMD 客户端（client_id 为 URL 形态，元数据来自客户端发布的
+     * Client Metadata Document、并不入库）会查库失败，因此需要这个不查库的重载。
+     * 上游同步时，可对照本方法的注释比对差异。
+     *
+     * @param userId 用户编号
+     * @param userType 用户类型
+     * @param clientDO 客户端信息（已解析好，不可为空）
+     * @param scopes 授权范围
+     * @return 访问令牌的信息
+     */
+    OAuth2AccessTokenDO createAccessToken(Long userId, Integer userType, OAuth2ClientDO clientDO, List<String> scopes);
+
+    /**
      * 刷新访问令牌
      *
      * 参考 DefaultTokenServices 的 refreshAccessToken 方法
@@ -40,6 +59,21 @@ public interface OAuth2TokenService {
      * @return 访问令牌的信息
      */
     OAuth2AccessTokenDO refreshAccessToken(String refreshToken, String clientId);
+
+    /**
+     * 刷新访问令牌（bujidao-ai 扩展入口：CIMD 客户端专用）
+     *
+     * 与 {@link #refreshAccessToken(String, String)} 的区别是：直接使用调用方已解析好的
+     * {@link OAuth2ClientDO}，不再调用 {@code validOAuthClientFromCache(clientId)} 查库。
+     * 上游默认所有客户端都已注册入库，CIMD 客户端（client_id 为 URL 形态，元数据来自客户端发布的
+     * Client Metadata Document、并不入库）会查库失败，因此需要这个不查库的重载。
+     * 上游同步时，可对照本方法的注释比对差异。
+     *
+     * @param refreshToken 刷新令牌
+     * @param clientDO 客户端信息（已解析好，不可为空）
+     * @return 访问令牌的信息
+     */
+    OAuth2AccessTokenDO refreshAccessToken(String refreshToken, OAuth2ClientDO clientDO);
 
     /**
      * 获得访问令牌
