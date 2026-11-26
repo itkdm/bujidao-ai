@@ -9,6 +9,7 @@ import cn.iocoder.yudao.framework.acf.core.model.CapabilityContext;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityDefinition;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityConfirmationService;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityIdempotencyService;
+import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolContractSupport;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityIdempotencyCheck;
 import cn.iocoder.yudao.framework.acf.core.standard.AcfCapabilityErrorCodes;
 import cn.iocoder.yudao.framework.common.biz.system.oauth2.OAuth2TokenCommonApi;
@@ -121,7 +122,8 @@ class McpAcfExecutionIntegrationTest {
                 .build();
 
         McpSchema.CallToolOutcome first = client.tool("test.mcp.confirmecho")
-                .arguments(Map.of(McpSchemaAdapter.INPUT_VALUE_PROPERTY, "hello"))
+                .arguments(Map.of(McpSchemaAdapter.INPUT_VALUE_PROPERTY, "hello",
+                        CapabilityToolContractSupport.IDEMPOTENCY_KEY, "idem-g-001"))
                 .meta(Map.of("bujidao.ai/idempotencyKey", "idem-g-001"))
                 .callOnce();
         assertThat(first).isInstanceOf(McpSchema.InputRequiredResult.class);
@@ -132,7 +134,8 @@ class McpAcfExecutionIntegrationTest {
         assertThat(confirmationService.getCreateCalls()).isEqualTo(1);
 
         McpSchema.CallToolOutcome retried = client.tool("test.mcp.confirmecho")
-                .arguments(Map.of(McpSchemaAdapter.INPUT_VALUE_PROPERTY, "tampered"))
+                .arguments(Map.of(McpSchemaAdapter.INPUT_VALUE_PROPERTY, "tampered",
+                        CapabilityToolContractSupport.IDEMPOTENCY_KEY, "idem-g-001"))
                 .meta(Map.of("bujidao.ai/idempotencyKey", "idem-g-001"))
                 .requestState(required.requestState())
                 .inputResponses(Map.of("acf.confirmation", Map.of("action", "accept",
