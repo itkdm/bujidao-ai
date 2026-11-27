@@ -162,10 +162,13 @@ class McpOAuthTokenExchangeServiceTest {
                 .thenReturn(refreshTokenDO);
         when(clientResolver.resolve(CLIENT_ID_URL, null)).thenReturn(client);
 
+        // RFC 6749 §5.2：客户端无权用该 grant_type → unauthorized_client（不是
+        // grant 本身无效，故不用 invalid_grant）；与 DB 分支经控制器映射后的
+        // 口径一致（1_002_020_003 → unauthorized_client）。
         assertThatThrownBy(() -> service.refreshAccessToken(CLIENT_ID_URL, "refresh-token-1"))
                 .isInstanceOf(McpOAuthException.class)
                 .extracting("status", "error")
-                .containsExactly(HttpStatus.BAD_REQUEST, "invalid_grant");
+                .containsExactly(HttpStatus.BAD_REQUEST, "unauthorized_client");
         verify(oauth2TokenService, never()).refreshAccessToken(eq("refresh-token-1"), eq(client));
     }
 
@@ -175,11 +178,14 @@ class McpOAuthTokenExchangeServiceTest {
         when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
         when(clientResolver.resolve(CLIENT_ID_URL, null)).thenReturn(client);
 
+        // RFC 6749 §5.2：客户端无权用该 grant_type → unauthorized_client（不是
+        // grant 本身无效，故不用 invalid_grant）；与 DB 分支经控制器映射后的
+        // 口径一致（1_002_020_003 → unauthorized_client）。
         assertThatThrownBy(() -> service.exchangeAuthorizationCode(
                 CLIENT_ID_URL, "code-123", REDIRECT_URI, CODE_VERIFIER, RESOURCE, RESOURCE))
                 .isInstanceOf(McpOAuthException.class)
                 .extracting("status", "error")
-                .containsExactly(HttpStatus.BAD_REQUEST, "invalid_grant");
+                .containsExactly(HttpStatus.BAD_REQUEST, "unauthorized_client");
         verify(oauth2CodeService, never()).consumeAuthorizationCode(anyString());
     }
 
