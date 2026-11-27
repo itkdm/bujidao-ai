@@ -65,7 +65,8 @@ class McpOAuthAuthorizationServiceTest {
     @BeforeEach
     void setUp() {
         service = new McpOAuthAuthorizationService(oauth2ClientService, oauth2ApproveService,
-                oauth2CodeService, codeExtraRedisDAO, authorizationRequestRedisDAO, clientResolver);
+                oauth2CodeService, codeExtraRedisDAO, authorizationRequestRedisDAO, clientResolver,
+                new McpOAuthProperties());
     }
 
     @Test
@@ -195,7 +196,7 @@ class McpOAuthAuthorizationServiceTest {
                 new McpOAuthClientResolver(oauth2ClientService, provider, new McpOAuthProperties());
         McpOAuthAuthorizationService realService = new McpOAuthAuthorizationService(oauth2ClientService,
                 oauth2ApproveService, oauth2CodeService, codeExtraRedisDAO, authorizationRequestRedisDAO,
-                realResolver);
+                realResolver, new McpOAuthProperties());
         when(oauth2ApproveService.updateAfterApproval(isNull(), eq(2), eq(CLIENT_ID_URL), any()))
                 .thenReturn(true);
         when(authorizationRequestRedisDAO.markUsed(anyString())).thenReturn(true);

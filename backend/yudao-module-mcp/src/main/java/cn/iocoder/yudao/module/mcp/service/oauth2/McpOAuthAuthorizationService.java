@@ -12,8 +12,10 @@ import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
 import cn.iocoder.yudao.module.mcp.dal.redis.oauth2.McpOAuthAuthorizationCodeExtraDO;
 import cn.iocoder.yudao.module.mcp.dal.redis.oauth2.McpOAuthAuthorizationCodeExtraRedisDAO;
 import cn.iocoder.yudao.module.mcp.dal.redis.oauth2.McpOAuthAuthorizationRequestRedisDAO;
+import cn.iocoder.yudao.module.mcp.framework.oauth2.config.McpOAuthProperties;
 import cn.iocoder.yudao.module.mcp.framework.oauth2.core.McpOAuthException;
 import cn.iocoder.yudao.module.mcp.framework.oauth2.core.McpOAuthPkceVerifier;
+import cn.iocoder.yudao.module.mcp.framework.oauth2.core.McpOAuthRedirectUriMatcher;
 import cn.iocoder.yudao.module.mcp.framework.oauth2.core.McpOAuthResourceValidator;
 import cn.iocoder.yudao.module.system.convert.oauth2.OAuth2OpenConvert;
 import cn.iocoder.yudao.module.system.controller.admin.oauth2.vo.open.OAuth2OpenAuthorizeInfoRespVO;
@@ -58,6 +60,7 @@ public class McpOAuthAuthorizationService {
     private final McpOAuthAuthorizationCodeExtraRedisDAO codeExtraRedisDAO;
     private final McpOAuthAuthorizationRequestRedisDAO authorizationRequestRedisDAO;
     private final McpOAuthClientResolver clientResolver;
+    private final McpOAuthProperties properties;
 
     public OAuth2OpenAuthorizeInfoRespVO getAuthorizeInfo(String clientId) {
         try {
@@ -248,8 +251,9 @@ public class McpOAuthAuthorizationService {
         return approvedScopes.containsAll(requestedScopes);
     }
 
-    private static void validateRedirectUri(OAuth2ClientDO client, String redirectUri) {
-        if (StrUtil.isBlank(redirectUri) || !CollUtil.contains(client.getRedirectUris(), redirectUri)) {
+    private void validateRedirectUri(OAuth2ClientDO client, String redirectUri) {
+        if (!McpOAuthRedirectUriMatcher.matches(redirectUri, client.getRedirectUris(),
+                properties.getLocalRedirectHosts())) {
             throw exception0(GlobalErrorCodeConstants.BAD_REQUEST.getCode(), "redirect_uri 参数值不匹配");
         }
     }

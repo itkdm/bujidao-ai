@@ -2,6 +2,7 @@ package cn.iocoder.yudao.module.mcp.service.oauth2;
 
 import cn.iocoder.yudao.module.mcp.dal.redis.oauth2.McpOAuthAuthorizationCodeExtraDO;
 import cn.iocoder.yudao.module.mcp.dal.redis.oauth2.McpOAuthAuthorizationCodeExtraRedisDAO;
+import cn.iocoder.yudao.module.mcp.framework.oauth2.config.McpOAuthProperties;
 import cn.iocoder.yudao.module.mcp.framework.oauth2.core.McpOAuthException;
 import cn.iocoder.yudao.module.system.controller.admin.oauth2.vo.open.OAuth2OpenAccessTokenRespVO;
 import cn.iocoder.yudao.module.system.dal.dataobject.oauth2.OAuth2AccessTokenDO;
@@ -62,7 +63,8 @@ class McpOAuthTokenExchangeServiceTest {
     @BeforeEach
     void setUp() {
         service = new McpOAuthTokenExchangeService(oauth2ClientService, oauth2CodeService,
-                oauth2TokenService, oauth2RefreshTokenMapper, codeExtraRedisDAO, clientResolver);
+                oauth2TokenService, oauth2RefreshTokenMapper, codeExtraRedisDAO, clientResolver,
+                new McpOAuthProperties());
     }
 
     @Test

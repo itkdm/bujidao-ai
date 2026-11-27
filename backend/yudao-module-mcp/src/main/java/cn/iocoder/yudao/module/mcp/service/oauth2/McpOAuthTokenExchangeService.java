@@ -5,8 +5,10 @@ import cn.hutool.core.util.StrUtil;
 import cn.iocoder.yudao.framework.tenant.core.util.TenantUtils;
 import cn.iocoder.yudao.module.mcp.dal.redis.oauth2.McpOAuthAuthorizationCodeExtraDO;
 import cn.iocoder.yudao.module.mcp.dal.redis.oauth2.McpOAuthAuthorizationCodeExtraRedisDAO;
+import cn.iocoder.yudao.module.mcp.framework.oauth2.config.McpOAuthProperties;
 import cn.iocoder.yudao.module.mcp.framework.oauth2.core.McpOAuthException;
 import cn.iocoder.yudao.module.mcp.framework.oauth2.core.McpOAuthPkceVerifier;
+import cn.iocoder.yudao.module.mcp.framework.oauth2.core.McpOAuthRedirectUriMatcher;
 import cn.iocoder.yudao.module.mcp.framework.oauth2.core.McpOAuthResourceValidator;
 import cn.iocoder.yudao.module.system.convert.oauth2.OAuth2OpenConvert;
 import cn.iocoder.yudao.module.system.controller.admin.oauth2.vo.open.OAuth2OpenAccessTokenRespVO;
@@ -42,6 +44,7 @@ public class McpOAuthTokenExchangeService {
     private final OAuth2RefreshTokenMapper oauth2RefreshTokenMapper;
     private final McpOAuthAuthorizationCodeExtraRedisDAO codeExtraRedisDAO;
     private final McpOAuthClientResolver clientResolver;
+    private final McpOAuthProperties properties;
 
     public OAuth2OpenAccessTokenRespVO exchangeAuthorizationCode(String clientId, String code, String redirectUri,
                                                                  String codeVerifier, String resource,
@@ -142,8 +145,9 @@ public class McpOAuthTokenExchangeService {
         }
     }
 
-    private static void validateRedirectUri(OAuth2ClientDO client, String redirectUri) {
-        if (StrUtil.isBlank(redirectUri) || !client.getRedirectUris().contains(redirectUri)) {
+    private void validateRedirectUri(OAuth2ClientDO client, String redirectUri) {
+        if (!McpOAuthRedirectUriMatcher.matches(redirectUri, client.getRedirectUris(),
+                properties.getLocalRedirectHosts())) {
             throw McpOAuthException.invalidGrant("redirect_uri is invalid");
         }
     }
