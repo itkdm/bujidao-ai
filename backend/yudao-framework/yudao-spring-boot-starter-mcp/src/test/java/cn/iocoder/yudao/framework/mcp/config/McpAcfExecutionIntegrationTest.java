@@ -111,6 +111,11 @@ class McpAcfExecutionIntegrationTest {
         // 清单 G：首轮确认时摘要按 "hello" 生成，重试时把参数改成 "tampered"，
         // confirm() 能换到 token，但执行器验 token 时摘要对不上，必须以
         // CONFIRM_TOKEN_INVALID 拒绝，且目标方法一次也不能执行。
+        // 计数断言用增量（执行前后差值）：确认服务与目标能力是单例共享的，
+        // 本类有多个确认用例时绝对值会随执行顺序变化，增量才真正测到本用例的行为。
+        int createCallsBefore = confirmationService.getCreateCalls();
+        int confirmCallsBefore = confirmationService.getConfirmCalls();
+        int invocationsBefore = confirmEchoCapability.getInvocations();
         HttpClientMcpTransport transport = HttpClientMcpTransport
                 .builder("http://127.0.0.1:" + port + "/mcp")
                 .build();
@@ -131,7 +136,7 @@ class McpAcfExecutionIntegrationTest {
         assertThat(required.requestState()).isNotBlank();
         assertThat(required.inputRequests())
                 .containsOnlyKeys("acf.confirmation");
-        assertThat(confirmationService.getCreateCalls()).isEqualTo(1);
+        assertThat(confirmationService.getCreateCalls() - createCallsBefore).isEqualTo(1);
 
         McpSchema.CallToolOutcome retried = client.tool("test.mcp.confirmecho")
                 .arguments(Map.of(McpSchemaAdapter.INPUT_VALUE_PROPERTY, "tampered",
@@ -147,8 +152,57 @@ class McpAcfExecutionIntegrationTest {
         assertThat(result.isError()).isTrue();
         assertThat(result.meta()).containsEntry("bujidao.ai/errorCode",
                 AcfCapabilityErrorCodes.CONFIRM_TOKEN_INVALID);
-        assertThat(confirmationService.getConfirmCalls()).isEqualTo(1);
-        assertThat(confirmEchoCapability.getInvocations()).isZero();
+        assertThat(confirmationService.getConfirmCalls() - confirmCallsBefore).isEqualTo(1);
+        assertThat(confirmEchoCapability.getInvocations() - invocationsBefore).isZero();
+    }
+
+    @Test
+    void shouldAcceptConfirmationAndExecuteCapability() {
+        // 清单 C1：确认 accept 成功全程——首轮拿 InputRequiredResult（带密封的
+        // requestState），参数不变、带 requestState 重试并 accept，执行成功：
+        // 目标方法恰好执行一次，confirm 恰好调用一次。requestState 往返由重试
+        // 本身验证：密封打不开时重试到不了执行器。
+        int createCallsBefore = confirmationService.getCreateCalls();
+        int confirmCallsBefore = confirmationService.getConfirmCalls();
+        int invocationsBefore = confirmEchoCapability.getInvocations();
+        HttpClientMcpTransport transport = HttpClientMcpTransport
+                .builder("http://127.0.0.1:" + port + "/mcp")
+                .build();
+        McpSyncClient client = McpClient.sync(transport)
+                .clientInfo(McpSchema.Implementation.builder("acf-confirmation-test", "1.0.0").build())
+                .formElicitation(request -> McpSchema.ElicitResult.accept(
+                        Map.of("confirmRemark", "ok")))
+                .roundTimeout(Duration.ofSeconds(10))
+                .build();
+
+        McpSchema.CallToolOutcome first = client.tool("test.mcp.confirmecho")
+                .arguments(Map.of(McpSchemaAdapter.INPUT_VALUE_PROPERTY, "hello",
+                        CapabilityToolContractSupport.IDEMPOTENCY_KEY, "idem-c1-001"))
+                .meta(Map.of("bujidao.ai/idempotencyKey", "idem-c1-001"))
+                .callOnce();
+        assertThat(first).isInstanceOf(McpSchema.InputRequiredResult.class);
+        McpSchema.InputRequiredResult required = (McpSchema.InputRequiredResult) first;
+        assertThat(required.requestState()).isNotBlank();
+        assertThat(required.inputRequests())
+                .containsOnlyKeys("acf.confirmation");
+        assertThat(confirmationService.getCreateCalls() - createCallsBefore).isEqualTo(1);
+
+        McpSchema.CallToolOutcome retried = client.tool("test.mcp.confirmecho")
+                .arguments(Map.of(McpSchemaAdapter.INPUT_VALUE_PROPERTY, "hello",
+                        CapabilityToolContractSupport.IDEMPOTENCY_KEY, "idem-c1-001"))
+                .meta(Map.of("bujidao.ai/idempotencyKey", "idem-c1-001"))
+                .requestState(required.requestState())
+                .inputResponses(Map.of("acf.confirmation", Map.of("action", "accept",
+                        "content", Map.of("confirmRemark", "ok"))))
+                .callOnce();
+
+        assertThat(retried).isInstanceOf(McpSchema.CallToolResult.class);
+        McpSchema.CallToolResult result = (McpSchema.CallToolResult) retried;
+        assertThat(result.isError()).isFalse();
+        assertThat(result.structuredContent())
+                .isEqualTo(Map.of(McpSchemaAdapter.OUTPUT_RESULT_PROPERTY, "tenant:2001:acf:hello"));
+        assertThat(confirmationService.getConfirmCalls() - confirmCallsBefore).isEqualTo(1);
+        assertThat(confirmEchoCapability.getInvocations() - invocationsBefore).isEqualTo(1);
     }
 
     @SpringBootConfiguration
