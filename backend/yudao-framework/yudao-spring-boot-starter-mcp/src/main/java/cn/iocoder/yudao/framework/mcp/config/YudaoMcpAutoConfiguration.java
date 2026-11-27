@@ -88,6 +88,8 @@ public class YudaoMcpAutoConfiguration {
             "bujidaoMcpTenantContextFilterRegistration";
     public static final String MCP_LEGACY_SERVLET_REGISTRATION_NAME =
             "bujidaoMcpLegacyServletRegistration";
+    public static final String MCP_MODERN_SERVLET_REGISTRATION_NAME =
+            "bujidaoMcpModernServletRegistration";
 
     @Bean
     @ConditionalOnMissingBean(McpJsonMapper.class)
@@ -109,6 +111,24 @@ public class YudaoMcpAutoConfiguration {
                 .maxRequestSize(Math.toIntExact(properties.getMaxRequestSize().toBytes()))
                 .httpHeaderValidator(httpHeaderValidator)
                 .build();
+    }
+
+    @Bean(name = MCP_MODERN_SERVLET_REGISTRATION_NAME)
+    @ConditionalOnMissingBean(name = MCP_MODERN_SERVLET_REGISTRATION_NAME)
+    public ServletRegistrationBean<HttpServletMcpTransport> mcpModernServletRegistration(
+            HttpServletMcpTransport transport) {
+        // P0-1：modern transport 同样是裸 HttpServlet bean；Spring Boot 会自动注册
+        // 容器里唯一的裸 Servlet bean（单 bean 时映射为 "/"，抢走 DispatcherServlet，
+        // 整个 Spring MVC 全部 404；多于一个裸 Servlet bean 时它会落在
+        // /mcpServerTransport/，绕过 mcpSecurityFilterChain 与 query-token /
+        // 限流过滤器）。用一个 disabled 的注册占住它，与 legacy 的
+        // mcpLegacyServletRegistration 完全对称；/mcp 的注册仍归分流器
+        // （mcpServletRegistration）管，分流器直接调这个 transport bean。
+        ServletRegistrationBean<HttpServletMcpTransport> registration =
+                new ServletRegistrationBean<>(transport);
+        registration.setName(MCP_MODERN_SERVLET_REGISTRATION_NAME);
+        registration.setEnabled(false);
+        return registration;
     }
 
     @Bean
@@ -301,7 +321,8 @@ public class YudaoMcpAutoConfiguration {
         // HttpServletStatelessServerTransport 是 HttpServlet，Spring Boot 会自动
         // 注册容器里任何裸 Servlet bean；这里用一个 disabled 的注册占住它，避免
         // Boot 给它生成默认映射去抢 /mcp（或其它路径）。D3 的分流器直接调用该
-        // transport bean，/mcp 的注册归 D3 管，本块不动 modern 的注册。
+        // transport bean，/mcp 的注册归 D3 管；modern transport 也有对称的
+        // disabled 注册（mcpModernServletRegistration），同样不产生映射。
         ServletRegistrationBean<HttpServletStatelessServerTransport> registration =
                 new ServletRegistrationBean<>(transport);
         registration.setName(MCP_LEGACY_SERVLET_REGISTRATION_NAME);

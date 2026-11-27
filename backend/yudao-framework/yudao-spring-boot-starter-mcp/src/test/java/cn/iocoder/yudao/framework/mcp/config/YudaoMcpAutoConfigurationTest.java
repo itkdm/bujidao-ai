@@ -89,6 +89,14 @@ class YudaoMcpAutoConfigurationTest {
                             YudaoMcpAutoConfiguration.MCP_LEGACY_SERVLET_REGISTRATION_NAME,
                             ServletRegistrationBean.class);
                     assertThat(legacyRegistration.isEnabled()).isFalse();
+                    // P0-1：modern transport 同样只有 disabled 注册，不对外暴露；
+                    // 否则 Spring Boot 会自动给这个裸 Servlet bean 生成映射。
+                    ServletRegistrationBean<?> modernRegistration = context.getBean(
+                            YudaoMcpAutoConfiguration.MCP_MODERN_SERVLET_REGISTRATION_NAME,
+                            ServletRegistrationBean.class);
+                    assertThat(modernRegistration.isEnabled()).isFalse();
+                    assertThat(modernRegistration.getServlet())
+                            .isInstanceOf(HttpServletMcpTransport.class);
                     assertThat(context.getBean(YudaoMcpAutoConfiguration.MCP_SERVLET_NAME,
                             ServletRegistrationBean.class).getServlet())
                             .isInstanceOf(McpProtocolDispatcherServlet.class);

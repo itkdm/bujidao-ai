@@ -18,6 +18,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.common.McpTransportContext;
 import io.modelcontextprotocol.server.McpTransportContextExtractor;
+import jakarta.servlet.ServletContext;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -91,6 +92,9 @@ class McpDualProtocolIntegrationTest {
 
     @Autowired
     private TestRestTemplate restTemplate;
+
+    @Autowired
+    private ServletContext servletContext;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -243,6 +247,23 @@ class McpDualProtocolIntegrationTest {
                 .path("challengeId").asText()).isEqualTo("challenge-legacy-001");
         assertThat(call.getBody()).doesNotContain("acf.confirm");
         assertThat(call.getBody()).doesNotContain("internal-digest");
+    }
+
+    @Test
+    void shouldNotLetModernTransportStealDispatcherServletMapping() {
+        // P0-1：modern transport 是裸 HttpServlet bean，必须被 disabled 注册占住，
+        // 否则 Spring Boot 会自动给它生成映射抢走 "/"，整个 Spring MVC 全部 404。
+        // ApplicationContextRunner 测不到这个（没有真实容器），必须在 RANDOM_PORT
+        // 真启动后断言：注册表里没有 mcpServerTransport，且 DispatcherServlet
+        // 仍在；非 /mcp 请求仍由 DispatcherServlet 处理（无 handler → 404；
+        // 若被 modern transport 抢走，它的 doGet 会答 405）。
+        assertThat(servletContext.getServletRegistration("dispatcherServlet")).isNotNull();
+        assertThat(servletContext.getServletRegistration("bujidaoMcpServlet")).isNotNull();
+        assertThat(servletContext.getServletRegistration("mcpServerTransport")).isNull();
+
+        ResponseEntity<String> response = restTemplate.getForEntity(
+                "http://127.0.0.1:" + port + "/some-other-path", String.class);
+        assertThat(response.getStatusCode().value()).isEqualTo(404);
     }
 
     @Test
