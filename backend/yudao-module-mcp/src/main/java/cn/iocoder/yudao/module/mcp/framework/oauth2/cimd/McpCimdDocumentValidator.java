@@ -107,7 +107,13 @@ public class McpCimdDocumentValidator {
         if (!(clientId instanceof String) || !clientIdUrl.equals(clientId)) {
             throw new McpCimdException(McpCimdError.INVALID_DOCUMENT, "client_id mismatch");
         }
-        String clientName = requireNonBlankString(document, "client_name");
+        String clientName = optionalString(document, "client_name");
+        if (clientName == null) {
+            // client_name 在 RFC 7591 / OIDC 注册元数据里是 OPTIONAL：极简文档可以
+            // 不写；缺失时用 client_id URL 的 host 兜底，不要因此拒掉整个文档。
+            // optionalString 已把空白串归一为 null，缺失与空白同处理。
+            clientName = hostOf(clientIdUrl);
+        }
 
         List<String> redirectUris = requireNonEmptyStringList(document, "redirect_uris");
         for (String redirectUri : redirectUris) {
@@ -347,15 +353,21 @@ public class McpCimdDocumentValidator {
         return normalized;
     }
 
-    // ========== 字段读取助手 ==========
-
-    private static String requireNonBlankString(Map<String, Object> document, String key) throws McpCimdException {
-        String value = optionalString(document, key);
-        if (value == null || value.isBlank()) {
-            throw new McpCimdException(McpCimdError.INVALID_DOCUMENT, key + " must be a non-blank string");
+    /** client_id URL 的 host；生产调用方已先校验 URL 形状，解析失败时回退完整 URL。 */
+    private static String hostOf(String clientIdUrl) {
+        if (clientIdUrl == null || clientIdUrl.isBlank()) {
+            return "unknown";
         }
-        return value;
+        try {
+            URI uri = URI.create(clientIdUrl);
+            String host = extractHost(uri);
+            return host == null || host.isBlank() ? clientIdUrl : host;
+        } catch (RuntimeException exception) {
+            return clientIdUrl;
+        }
     }
+
+    // ========== 字段读取助手 ==========
 
     /** 字段缺省返回 null；出现但不是字符串则拒绝（避免数字 / 布尔被静默转成字符串）。 */
     private static String optionalString(Map<String, Object> document, String key) throws McpCimdException {

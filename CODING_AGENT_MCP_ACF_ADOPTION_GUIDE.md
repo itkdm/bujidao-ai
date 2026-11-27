@@ -135,7 +135,7 @@ SQL 菜单插入不使用固定 ID，会根据 `/acf` 和权限标识动态查�
 }
 ```
 
-其中 `client_id`、`client_name`、`redirect_uris` 必填；`grant_types` 须包含 `authorization_code`（可再加 `refresh_token`）；`token_endpoint_auth_method` 只支持 `none`，缺省时也默认为 `none`；`scope` 不填时默认 `mcp:access`。`redirect_uris` 须为 HTTPS（http 仅放行 loopback 回调：localhost、整个 127.0.0.0/8、`::1`，以及 `localRedirectHosts` 配置里显式允许的 host），自定义 URI scheme 的回调不放行。
+其中 `client_id`、`redirect_uris` 必填；`client_name` 可选，缺失/空白时用 `client_id` URL 的 host 作展示名；`grant_types` 须包含 `authorization_code`（可再加 `refresh_token`）；`token_endpoint_auth_method` 只支持 `none`，缺省时也默认为 `none`；`scope` 不填时默认 `mcp:access`，可含 `offline_access`（接受、剥离、不计入授予 scope）。`redirect_uris` 须为 HTTPS（http 仅放行 loopback 回调：localhost、整个 127.0.0.0/8、`::1`，以及 `localRedirectHosts` 配置里显式允许的 host），自定义 URI scheme 的回调不放行。
 
 ## Maven 接入步骤
 

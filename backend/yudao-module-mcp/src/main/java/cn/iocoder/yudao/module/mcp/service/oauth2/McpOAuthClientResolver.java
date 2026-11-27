@@ -57,6 +57,9 @@ import java.util.Map;
 @Slf4j
 public class McpOAuthClientResolver {
 
+    /** 只表达“想要 refresh token”的意图（见 parseScopes）：接受、剥离、不计入授予 scope。 */
+    private static final String OFFLINE_ACCESS_SCOPE = "offline_access";
+
     private final OAuth2ClientService oauth2ClientService;
     private final ObjectProvider<McpCimdClientService> cimdClientServiceProvider;
     private final McpOAuthProperties properties;
@@ -174,6 +177,10 @@ public class McpOAuthClientResolver {
      * 解析文档 scope：无 scope 时取 {@code defaultScopes}；有 scope 时必须是
      * {@code defaultScopes} 的子集，超限抛 {@code invalid_scope}（静默丢弃超限 scope
      * 会让客户端以为自己拿到了没拿到的权限，所以直接拒绝）。
+     * 例外是 {@code offline_access}：它只表达“想要 refresh token”的意图，本服务端
+     * 换码时无条件签发 refresh token、不以 offline_access 为条件（见 P1-8）；
+     * 接受它，但剥离、不计入授予 scope——授予的仍只是 defaultScopes，不扩大任何权限。
+     * 剥离后为空时视同未声明 scope，取 defaultScopes。
      */
     private List<String> parseScopes(String scope) {
         if (StrUtil.isBlank(scope)) {
@@ -187,10 +194,13 @@ public class McpOAuthClientResolver {
         if (scopes.isEmpty()) {
             return properties.getDefaultScopes();
         }
-        if (!properties.getDefaultScopes().containsAll(scopes)) {
+        List<String> grantableScopes = scopes.stream()
+                .filter(s -> !OFFLINE_ACCESS_SCOPE.equals(s))
+                .toList();
+        if (!properties.getDefaultScopes().containsAll(grantableScopes)) {
             throw McpOAuthException.invalidScope("requested scope is not allowed");
         }
-        return scopes;
+        return grantableScopes.isEmpty() ? properties.getDefaultScopes() : grantableScopes;
     }
 
     /** 只取 host 记日志，不记完整 client_id（可能含 query 等识别信息）。 */

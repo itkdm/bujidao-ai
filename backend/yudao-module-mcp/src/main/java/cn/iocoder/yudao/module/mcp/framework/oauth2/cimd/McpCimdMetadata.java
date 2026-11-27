@@ -16,7 +16,7 @@ public record McpCimdMetadata(
 
         /** 拉取文档用的 client_id URL，与文档内 client_id 逐字节相等。 */
         String clientId,
-        /** 客户端展示名，非空。 */
+        /** 客户端展示名，非空；缺失/空白时取 client_id URL 的 host。 */
         String clientName,
         /** 注册的回调地址列表，非空。 */
         List<String> redirectUris,

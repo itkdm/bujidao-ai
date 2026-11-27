@@ -139,21 +139,32 @@ class McpCimdDocumentValidatorTest {
     }
 
     @Test
-    void shouldRejectDocumentWithoutClientName() {
+    void shouldDefaultClientNameToClientIdHostWhenMissing() throws McpCimdException {
         Map<String, Object> document = validDocument();
         document.remove("client_name");
 
-        assertThatThrownBy(() -> McpCimdDocumentValidator.validateDocument(
-                "https://client.example.com/metadata", document, LOCAL_HOSTS))
-                .isInstanceOf(McpCimdException.class)
-                .extracting(exception -> ((McpCimdException) exception).getError())
-                .isEqualTo(McpCimdError.INVALID_DOCUMENT);
+        McpCimdMetadata metadata = McpCimdDocumentValidator.validateDocument(
+                "https://client.example.com/metadata", document, LOCAL_HOSTS);
+
+        // client_name 在 RFC 7591 / OIDC 里是 OPTIONAL：缺失时用 client_id URL 的 host 兜底。
+        assertThat(metadata.clientName()).isEqualTo("client.example.com");
     }
 
     @Test
-    void shouldRejectDocumentWithBlankClientName() {
+    void shouldDefaultClientNameToClientIdHostWhenBlank() throws McpCimdException {
         Map<String, Object> document = validDocument();
         document.put("client_name", "   ");
+
+        McpCimdMetadata metadata = McpCimdDocumentValidator.validateDocument(
+                "https://client.example.com/metadata", document, LOCAL_HOSTS);
+
+        assertThat(metadata.clientName()).isEqualTo("client.example.com");
+    }
+
+    @Test
+    void shouldRejectDocumentWithNonStringClientName() {
+        Map<String, Object> document = validDocument();
+        document.put("client_name", 123);
 
         assertThatThrownBy(() -> McpCimdDocumentValidator.validateDocument(
                 "https://client.example.com/metadata", document, LOCAL_HOSTS))

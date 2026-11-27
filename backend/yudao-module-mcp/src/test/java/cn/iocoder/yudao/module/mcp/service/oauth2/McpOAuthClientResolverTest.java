@@ -146,6 +146,52 @@ class McpOAuthClientResolverTest {
     }
 
     @Test
+    void shouldStripOfflineAccessScopeWhenParsing() throws Exception {
+        givenCimdServiceAvailable();
+        McpCimdMetadata metadata = new McpCimdMetadata(CLIENT_ID_URL, "Test App",
+                List.of(REDIRECT_URI), List.of("authorization_code", "refresh_token"), List.of("code"),
+                "none", null, null, "https://client.example.com",
+                "https://client.example.com/logo.png", "mcp:access offline_access", "web");
+        when(cimdClientService.resolveMetadata(CLIENT_ID_URL)).thenReturn(metadata);
+
+        OAuth2ClientDO client = resolver.resolve(CLIENT_ID_URL, null);
+
+        // offline_access 只表达刷新意图：接受、不拒绝，但剥离、不计入授予 scope。
+        assertThat(client.getScopes()).containsExactly("mcp:access");
+    }
+
+    @Test
+    void shouldDefaultScopesWhenOnlyOfflineAccessRequested() throws Exception {
+        givenCimdServiceAvailable();
+        McpCimdMetadata metadata = new McpCimdMetadata(CLIENT_ID_URL, "Test App",
+                List.of(REDIRECT_URI), List.of("authorization_code", "refresh_token"), List.of("code"),
+                "none", null, null, "https://client.example.com",
+                "https://client.example.com/logo.png", "offline_access", "web");
+        when(cimdClientService.resolveMetadata(CLIENT_ID_URL)).thenReturn(metadata);
+
+        OAuth2ClientDO client = resolver.resolve(CLIENT_ID_URL, null);
+
+        // offline_access 剥离后为空，视同未声明 scope，取 defaultScopes。
+        assertThat(client.getScopes()).containsExactly("mcp:access");
+    }
+
+    @Test
+    void shouldRejectOtherScopeEvenWithOfflineAccess() throws Exception {
+        givenCimdServiceAvailable();
+        McpCimdMetadata metadata = new McpCimdMetadata(CLIENT_ID_URL, "Test App",
+                List.of(REDIRECT_URI), List.of("authorization_code", "refresh_token"), List.of("code"),
+                "none", null, null, "https://client.example.com",
+                "https://client.example.com/logo.png", "mcp:other offline_access", "web");
+        when(cimdClientService.resolveMetadata(CLIENT_ID_URL)).thenReturn(metadata);
+
+        // 剥离 offline_access 后仍有超限 scope，照常拒 invalid_scope。
+        assertThatThrownBy(() -> resolver.resolve(CLIENT_ID_URL, null))
+                .isInstanceOf(McpOAuthException.class)
+                .extracting("status", "error")
+                .containsExactly(HttpStatus.BAD_REQUEST, "invalid_scope");
+    }
+
+    @Test
     void shouldAllowHttpClientIdWhenAllowPrivateAddresses() {
         properties.getCimd().setAllowPrivateAddresses(true);
 
