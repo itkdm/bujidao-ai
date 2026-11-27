@@ -37,6 +37,7 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.web.SecurityFilterChain;
@@ -47,6 +48,8 @@ import java.util.Map;
 import java.util.Optional;
 
 import static cn.iocoder.yudao.framework.mcp.McpTestFixtures.descriptor;
+import static cn.iocoder.yudao.framework.mcp.McpTestFixtures.legacyHeaders;
+import static cn.iocoder.yudao.framework.mcp.McpTestFixtures.modernHeaders;
 import static cn.iocoder.yudao.framework.mcp.McpTestFixtures.toolNames;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -204,7 +207,8 @@ class McpDualProtocolIntegrationTest {
         assertThat(discover.getStatusCode().is2xxSuccessful()).isTrue();
         JsonNode discoverResult = objectMapper.readTree(discover.getBody()).path("result");
         assertThat(discoverResult.path("resultType").asText()).isEqualTo("complete");
-        assertThat(discoverResult.path("supportedVersions").toString()).isEqualTo("[\"2026-07-28\"]");
+        assertThat(discoverResult.path("supportedVersions"))
+                .isEqualTo(objectMapper.readTree("[\"2026-07-28\"]"));
 
         ResponseEntity<String> initialize = post("/mcp",
                 jsonRpc(11, "initialize", "{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},"
@@ -224,16 +228,20 @@ class McpDualProtocolIntegrationTest {
         assertThat(modernList.getStatusCode().is2xxSuccessful()).isTrue();
         // 两腿共用同一份可见性判定：modern 经 export service 过滤，legacy 经
         // addToolFilter 过滤，同一用户下隐藏同一工具，两腿均为 16 个。
-        assertThat(toolNames(objectMapper.readTree(modernList.getBody()))).hasSize(16)
+        List<String> modernNames = toolNames(objectMapper.readTree(modernList.getBody()));
+        assertThat(modernNames).hasSize(16)
                 .doesNotContain(HIDDEN_TOOL)
                 .contains(ORDER_CREATE_TOOL, GATED_TOOL);
 
         ResponseEntity<String> legacyList = post("/mcp", jsonRpc(13, "tools/list", "{}"),
                 legacyHeaders());
         assertThat(legacyList.getStatusCode().is2xxSuccessful()).isTrue();
-        assertThat(toolNames(objectMapper.readTree(legacyList.getBody()))).hasSize(16)
+        List<String> legacyNames = toolNames(objectMapper.readTree(legacyList.getBody()));
+        assertThat(legacyNames).hasSize(16)
                 .doesNotContain(HIDDEN_TOOL)
                 .contains(GATED_TOOL);
+        // 两腿 tools/list 顺序一致：legacy 建表时按名升序、modern 仓库按名升序。
+        assertThat(legacyNames).containsExactlyElementsOf(modernNames);
 
         ResponseEntity<String> modernCall = post("/mcp",
                 """
@@ -387,6 +395,53 @@ class McpDualProtocolIntegrationTest {
         assertThat(response.getStatusCode().value()).isEqualTo(405);
     }
 
+    @Test
+    void shouldAnswerDeleteWith405OnLegacyLeg() {
+        // 与 GET 一样：DELETE 分流到 legacy，legacy transport 没有 doDelete，
+        // HttpServlet 默认答 405；开关关闭时 DELETE 同样绕过开关（见分流器
+        // 单测），这里锁定开关开启时的 HTTP 行为。
+        ResponseEntity<String> response = restTemplate.exchange(
+                "http://127.0.0.1:" + port + "/mcp", HttpMethod.DELETE, null, String.class);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(405);
+    }
+
+    @Test
+    void shouldRejectLegacyPostWithoutEventStreamAccept() throws Exception {
+        // Legacy Accept 门（SDK HttpServletStatelessServerTransport.doPost）：
+        // 只带 application/json、缺 text/event-stream 的 legacy POST 答 400；
+        // responseError 直接写 McpError bean，code/message 在 jsonRpcError 里，
+        // 顶层 message 同值（Jackson 序列化 McpError 的 getJsonRpcError）。
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setAccept(List.of(MediaType.APPLICATION_JSON));
+        ResponseEntity<String> response = post("/mcp",
+                jsonRpc(40, "tools/list", "{}"), headers);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(400);
+        JsonNode payload = objectMapper.readTree(response.getBody());
+        assertThat(payload.path("jsonRpcError").path("code").asInt()).isEqualTo(-32601);
+        assertThat(payload.path("jsonRpcError").path("message").asText())
+                .isEqualTo("Both application/json and text/event-stream required in Accept header");
+        assertThat(payload.path("message").asText())
+                .isEqualTo("Both application/json and text/event-stream required in Accept header");
+    }
+
+    @Test
+    void shouldIgnoreCursorOnLegacyToolsList() throws Exception {
+        // Cursor 语义差异：legacy tools/list 忽略 cursor（SDK 的
+        // toolsListRequestHandler 根本不读 params），非空 cursor 仍返回全量；
+        // modern 遇非空 cursor 以 -32602 拒绝（见
+        // McpServerInitializeIntegrationTest）。
+        ResponseEntity<String> list = post("/mcp",
+                jsonRpc(41, "tools/list", "{\"cursor\":\"page-2\"}"), legacyHeaders());
+
+        assertThat(list.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(toolNames(objectMapper.readTree(list.getBody()))).hasSize(16)
+                .doesNotContain(HIDDEN_TOOL)
+                .contains(ORDER_CREATE_TOOL, GATED_TOOL);
+    }
+
     private ResponseEntity<String> post(String path, String body, HttpHeaders headers) {
         return restTemplate.postForEntity("http://127.0.0.1:" + port + path,
                 new HttpEntity<>(body, headers), String.class);
@@ -395,34 +450,6 @@ class McpDualProtocolIntegrationTest {
     private static String jsonRpc(int id, String method, String params) {
         return "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"method\":\"" + method
                 + "\",\"params\":" + params + "}";
-    }
-
-    /**
-     * 老客户端的请求头：只有 Content-Type 与 Accept，没有任何 modern 头
-     *（无 Mcp-Method、无 MCP-Protocol-Version）。Accept 必须同时含
-     * application/json 与 text/event-stream，否则 legacy transport 以 400 拒绝。
-     */
-    private static HttpHeaders legacyHeaders() {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.setAccept(List.of(MediaType.APPLICATION_JSON, MediaType.TEXT_EVENT_STREAM));
-        return headers;
-    }
-
-    private static HttpHeaders modernHeaders(String method) {
-        return modernHeaders(method, null);
-    }
-
-    private static HttpHeaders modernHeaders(String method, String name) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.setAccept(List.of(MediaType.APPLICATION_JSON, MediaType.TEXT_EVENT_STREAM));
-        headers.set("Mcp-Method", method);
-        headers.set("MCP-Protocol-Version", MODERN_PROTOCOL_VERSION);
-        if (name != null) {
-            headers.set("Mcp-Name", name);
-        }
-        return headers;
     }
 
     private static CapabilityConfirmationChallenge confirmationChallenge() {
