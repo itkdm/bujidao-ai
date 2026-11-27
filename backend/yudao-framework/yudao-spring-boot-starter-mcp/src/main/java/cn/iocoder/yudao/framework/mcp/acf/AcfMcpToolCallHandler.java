@@ -14,6 +14,7 @@ import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvocationInput;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import cn.iocoder.yudao.framework.mcp.tool.McpSchemaAdapter;
 import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
+import io.modelcontextprotocol.common.McpTransportContext;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.modern.McpSchema;
 import io.modelcontextprotocol.modern.McpSchema.CallToolOutcome;
@@ -115,54 +116,99 @@ public class AcfMcpToolCallHandler {
      * {@code requestContext.transportContext()} 取，控制字段从 {@code requestContext.meta()}
      *（即请求 _meta）取；返回值包一层 {@link McpSyncResponse#result(Object)}。
      *
-     * <p>带签名 {@code requestState} 的请求是 MRTR 重试：SDK 已在 handler 运行前
-     * 验签开封，{@code request.requestState()} 拿到的是原始 challengeId。重试时
-     * 不重新创建 challenge、不重新执行，先读 elicitation 答案再决定确认或拒绝。</p>
+     * <p>本方法只是协议薄壳，执行逻辑在 {@link #execute} 里，与 legacy 入口共用。</p>
      */
     public McpSyncResponse<CallToolOutcome> handle(McpRequestContext requestContext,
                                                    CapabilityToolDescriptor descriptor,
                                                    McpSchema.CallToolRequest request) {
+        return McpSyncResponse.result(execute(requestContext.transportContext(), requestContext.meta(),
+                supportsElicitationForm(requestContext), descriptor, request.arguments(),
+                request.requestState(), request.inputResponses()));
+    }
+
+    /**
+     * Legacy sync tool handler（MCP 2025-11-25，stateless）：第一个参数直接是
+     * {@link McpTransportContext}，控制字段从请求 {@code _meta}（即
+     * {@code request.meta()}）取——与 main 的 legacy handler 行为一致；返回值是 legacy
+     * {@code io.modelcontextprotocol.spec.McpSchema.CallToolResult}。
+     *
+     * <p>与 modern 入口共用 {@link #execute}，同一条 ACF 执行链（权限、幂等、审计），
+     * 两边行为一致；差别只在协议壳上：</p>
+     * <ul>
+     * <li>2025-11-25 没有 MRTR 的 requestState / inputResponses 往返，所以这里固定传
+     * null——不存在确认重试，首轮即终轮。</li>
+     * <li>legacy 腿不支持 elicitation 表单（stateless 服务端的 callHandler 也拿不到能
+     * 发 elicitation 的 exchange），所以固定传“不支持”：需要确认的能力以明确的
+     * CONFIRMATION_UNAVAILABLE 错误结果返回，不静默执行；{@code acf.confirm} 工具
+     * 不复活，legacy 腿的确认流程留给后续块决定。</li>
+     * </ul>
+     *
+     * <p>Java 没有 import 别名，modern 与 legacy 的 {@code McpSchema} 同名，本方法签名
+     * 里的 legacy 类型用全限定名写出。</p>
+     */
+    public io.modelcontextprotocol.spec.McpSchema.CallToolResult handleLegacy(
+            McpTransportContext transportContext,
+            CapabilityToolDescriptor descriptor,
+            io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        CallToolOutcome outcome = execute(transportContext, request.meta(), false, descriptor,
+                request.arguments(), null, null);
+        return AcfMcpLegacyToolAdapter.toLegacyResult(outcome, jsonMapper);
+    }
+
+    /**
+     * 协议无关的执行核心：modern 与 legacy 两个入口都把“身份上下文、请求 _meta、
+     * 是否支持 elicitation 表单、业务参数、MRTR 重试状态”拆出来传进来，本方法只负责
+     * ACF 执行链本身。
+     *
+     * <p>带签名 {@code requestState} 的请求是 MRTR 重试：SDK 已在 handler 运行前
+     * 验签开封，{@code requestState} 拿到的是原始 challengeId。重试时不重新创建
+     * challenge、不重新执行，先读 elicitation 答案再决定确认或拒绝。</p>
+     */
+    private CallToolOutcome execute(McpTransportContext transportContext, Map<String, Object> meta,
+                                    boolean elicitationFormSupported, CapabilityToolDescriptor descriptor,
+                                    Map<String, Object> arguments, String requestState,
+                                    Map<String, Object> inputResponses) {
         AcfMcpToolProtocolMetadata.ToolCallControl control;
         try {
-            control = AcfMcpToolProtocolMetadata.readCallControl(requestContext.meta());
+            control = AcfMcpToolProtocolMetadata.readCallControl(meta);
         } catch (IllegalArgumentException exception) {
-            return McpSyncResponse.result(errorResult(CapabilityStatus.FAILURE, "BAD_REQUEST",
-                    exception.getMessage(), false, null, null));
+            return errorResult(CapabilityStatus.FAILURE, "BAD_REQUEST",
+                    exception.getMessage(), false, null, null);
         }
         CapabilityToolInvocationInput invocationInput;
         CapabilityContext context;
         try {
-            invocationInput = toolContractSupport.resolveInvocationInput(request.arguments());
-            context = AcfMcpContextSupport.fromTransport(requestContext.transportContext(),
+            invocationInput = toolContractSupport.resolveInvocationInput(arguments);
+            context = AcfMcpContextSupport.fromTransport(transportContext,
                     firstPresent(invocationInput.getClientRequestId(), control.clientRequestId()));
         } catch (IllegalArgumentException exception) {
-            return McpSyncResponse.result(errorResult(CapabilityStatus.FAILURE, "BAD_REQUEST",
-                    exception.getMessage(), false, null, null));
+            return errorResult(CapabilityStatus.FAILURE, "BAD_REQUEST",
+                    exception.getMessage(), false, null, null);
         }
-        String challengeId = blankToNull(request.requestState());
+        String challengeId = blankToNull(requestState);
         if (challengeId != null) {
             // 故意放在 try/catch 之外：答案格式错误时 InputResponses.get 抛出的
             // McpException（-32602 invalid params）必须原样到达服务端框架，
             // 不能被下面兜底的 RuntimeException 分支压成内部错误。
-            McpSchema.ElicitResult answer = InputResponses.get(request.inputResponses(),
+            McpSchema.ElicitResult answer = InputResponses.get(inputResponses,
                     CONFIRMATION_INPUT_KEY, McpSchema.ElicitResult.class, jsonMapper);
-            return McpSyncResponse.result(handleConfirmationRetry(requestContext, descriptor,
-                    control, invocationInput, context, challengeId, answer));
+            return handleConfirmationRetry(elicitationFormSupported, descriptor,
+                    control, invocationInput, context, challengeId, answer);
         }
         try {
             CapabilityToolCall call = buildCall(descriptor, invocationInput, context,
                     firstPresent(invocationInput.getIdempotencyKey(), control.idempotencyKey()),
                     firstPresent(invocationInput.getConfirmationToken(), control.confirmationToken()));
-            return McpSyncResponse.result(invokeWithTenantContext(requestContext, descriptor, call,
-                    context.getTenantId()));
+            return invokeWithTenantContext(elicitationFormSupported, descriptor, call,
+                    context.getTenantId());
         } catch (IllegalArgumentException exception) {
-            return McpSyncResponse.result(errorResult(CapabilityStatus.FAILURE, "BAD_REQUEST",
-                    exception.getMessage(), false, null, null));
+            return errorResult(CapabilityStatus.FAILURE, "BAD_REQUEST",
+                    exception.getMessage(), false, null, null);
         } catch (RuntimeException exception) {
             LOGGER.warn("Unexpected MCP tool invocation failure: capability={}, exceptionType={}",
                     descriptor.getCapabilityName(), exception.getClass().getName());
-            return McpSyncResponse.result(errorResult(CapabilityStatus.FAILURE, INTERNAL_ERROR_CODE,
-                    INTERNAL_ERROR_MESSAGE, false, null, null));
+            return errorResult(CapabilityStatus.FAILURE, INTERNAL_ERROR_CODE,
+                    INTERNAL_ERROR_MESSAGE, false, null, null);
         }
     }
 
@@ -178,7 +224,7 @@ public class AcfMcpToolCallHandler {
      * 错误，不执行。</li>
      * </ul>
      */
-    private CallToolOutcome handleConfirmationRetry(McpRequestContext requestContext,
+    private CallToolOutcome handleConfirmationRetry(boolean elicitationFormSupported,
                                                     CapabilityToolDescriptor descriptor,
                                                     AcfMcpToolProtocolMetadata.ToolCallControl control,
                                                     CapabilityToolInvocationInput invocationInput,
@@ -193,7 +239,7 @@ public class AcfMcpToolCallHandler {
                                 + "but no confirmation service is configured.",
                         false, context.getTraceId(), null);
             }
-            if (!supportsElicitationForm(requestContext)) {
+            if (!elicitationFormSupported) {
                 return errorResult(CapabilityStatus.FAILURE,
                         AcfCapabilityErrorCodes.CONFIRMATION_UNAVAILABLE,
                         "Capability requires confirmation, but the client did not declare "
@@ -273,7 +319,7 @@ public class AcfMcpToolCallHandler {
             CapabilityToolCall call = buildCall(descriptor, invocationInput, context,
                     firstPresent(invocationInput.getIdempotencyKey(), control.idempotencyKey()),
                     token.getConfirmationToken());
-            return invokeWithTenantContext(requestContext, descriptor, call, context.getTenantId());
+            return invokeWithTenantContext(elicitationFormSupported, descriptor, call, context.getTenantId());
         } catch (IllegalArgumentException exception) {
             return errorResult(CapabilityStatus.FAILURE, "BAD_REQUEST",
                     exception.getMessage(), false, null, null);
@@ -349,14 +395,14 @@ public class AcfMcpToolCallHandler {
                 .build();
     }
 
-    private CallToolOutcome invokeWithTenantContext(McpRequestContext requestContext,
+    private CallToolOutcome invokeWithTenantContext(boolean elicitationFormSupported,
                                                     CapabilityToolDescriptor descriptor,
                                                     CapabilityToolCall call, Long tenantId) {
         Long previousTenantId = TenantContextHolder.getTenantId();
         try {
             setTenantId(tenantId);
             CapabilityResult result = capabilityToolInvoker.invoke(call);
-            return adaptOutcome(requestContext, descriptor, result);
+            return adaptOutcome(elicitationFormSupported, descriptor, result);
         } finally {
             setTenantId(previousTenantId);
         }
@@ -386,7 +432,7 @@ public class AcfMcpToolCallHandler {
         return safeArguments.get(McpSchemaAdapter.INPUT_VALUE_PROPERTY);
     }
 
-    private CallToolOutcome adaptOutcome(McpRequestContext requestContext,
+    private CallToolOutcome adaptOutcome(boolean elicitationFormSupported,
                                          CapabilityToolDescriptor descriptor,
                                          CapabilityResult result) {
         if (result == null) {
@@ -399,7 +445,7 @@ public class AcfMcpToolCallHandler {
         CapabilityConfirmationChallenge challenge = result.getData() instanceof CapabilityConfirmationChallenge item
                 ? item : null;
         if (result.getStatus() == CapabilityStatus.CONFIRM_REQUIRED && challenge != null) {
-            return adaptConfirmationRequired(requestContext, result, challenge);
+            return adaptConfirmationRequired(elicitationFormSupported, result, challenge);
         }
         return errorResult(result.getStatus(), result.getErrorCode(),
                 defaultMessage(result.getMessage(), "Capability invocation failed"),
@@ -415,7 +461,7 @@ public class AcfMcpToolCallHandler {
      * 表单能力时回明确的 CONFIRMATION_UNAVAILABLE——此时去 elicite 的话 SDK
      * 会把未声明的 input 请求当作服务端 bug 以内部错误回答。</p>
      */
-    private CallToolOutcome adaptConfirmationRequired(McpRequestContext requestContext,
+    private CallToolOutcome adaptConfirmationRequired(boolean elicitationFormSupported,
                                                       CapabilityResult result,
                                                       CapabilityConfirmationChallenge challenge) {
         if (confirmationService == null) {
@@ -425,7 +471,7 @@ public class AcfMcpToolCallHandler {
                             + "but no confirmation service is configured.",
                     result.isRetryable(), result.getTraceId(), challenge);
         }
-        if (!supportsElicitationForm(requestContext)) {
+        if (!elicitationFormSupported) {
             return errorResult(CapabilityStatus.FAILURE,
                     AcfCapabilityErrorCodes.CONFIRMATION_UNAVAILABLE,
                     "Capability requires confirmation, but the client did not declare "

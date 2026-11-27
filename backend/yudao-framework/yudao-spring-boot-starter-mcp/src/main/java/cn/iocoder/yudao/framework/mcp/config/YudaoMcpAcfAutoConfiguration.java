@@ -8,6 +8,7 @@ import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import cn.iocoder.yudao.framework.mcp.acf.AcfMcpToolCallHandler;
 import cn.iocoder.yudao.framework.mcp.acf.AcfMcpToolMapper;
 import cn.iocoder.yudao.framework.mcp.acf.AcfMcpToolRepository;
+import cn.iocoder.yudao.framework.mcp.acf.AcfMcpToolSpecificationProvider;
 import cn.iocoder.yudao.framework.mcp.acf.AcfMcpStructuredContentNormalizer;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import org.springframework.beans.factory.ObjectProvider;
@@ -77,6 +78,16 @@ public class YudaoMcpAcfAutoConfiguration {
         // 而不是让整个 ACF 自动配置启动失败。
         return new AcfMcpToolRepository(capabilityToolCatalog, toolMapper, toolCallHandler,
                 toolExportService.getIfAvailable());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public AcfMcpToolSpecificationProvider acfMcpToolSpecificationProvider(
+            CapabilityToolCatalog capabilityToolCatalog, AcfMcpToolMapper toolMapper,
+            AcfMcpToolCallHandler toolCallHandler) {
+        // 只产出 legacy（2025-11-25）规格列表，不建服务端：legacy 服务端与传输路由
+        // 由后续块接线，这里先把桥接交给 Spring 管理，供其注入。
+        return new AcfMcpToolSpecificationProvider(capabilityToolCatalog, toolMapper, toolCallHandler);
     }
 
 }

@@ -87,6 +87,91 @@ class AcfMcpToolCallHandlerTest {
     }
 
     @Test
+    void shouldInvokeThroughLegacyHandle() {
+        // legacy 入口与 modern 入口共用 execute：控制字段从请求 _meta 取（与 main 的
+        // legacy handler 一致），身份从 McpTransportContext 取，走同一条 ACF 执行链。
+        CapabilityToolInvoker invoker = mock(CapabilityToolInvoker.class);
+        CapabilityToolDescriptor descriptor = descriptor(Map.of("type", "object"), Map.of("type", "object"));
+        ArgumentCaptor<CapabilityToolCall> callCaptor = ArgumentCaptor.forClass(CapabilityToolCall.class);
+        when(invoker.invoke(callCaptor.capture())).thenAnswer(invocation -> {
+            assertThat(TenantContextHolder.getTenantId()).isEqualTo(2L);
+            return CapabilityResult.success("demo.echo", Map.of("message", "hello"));
+        });
+        McpTransportContext transportContext = McpTransportContext.create(Map.of(
+                McpTransportContextKeys.USER_ID, 1L,
+                McpTransportContextKeys.TENANT_ID, 2L,
+                McpTransportContextKeys.CONSUMER_ID, "user:1"));
+        io.modelcontextprotocol.spec.McpSchema.CallToolRequest request =
+                new io.modelcontextprotocol.spec.McpSchema.CallToolRequest("demo.echo",
+                        Map.of("message", "hello"),
+                        Map.of(AcfMcpToolProtocolMetadata.IDEMPOTENCY_KEY, "idem-legacy",
+                                AcfMcpToolProtocolMetadata.CLIENT_REQUEST_ID, "request-legacy"));
+
+        TenantContextHolder.setTenantId(9L);
+        io.modelcontextprotocol.spec.McpSchema.CallToolResult result;
+        try {
+            result = createHandler(invoker).handleLegacy(transportContext, descriptor, request);
+            assertThat(TenantContextHolder.getTenantId()).isEqualTo(9L);
+        } finally {
+            TenantContextHolder.clear();
+        }
+
+        assertThat(result.isError()).isFalse();
+        assertThat(result.content()).hasSize(1);
+        assertThat(result.content().get(0).toString()).contains("{\"message\":\"hello\"}");
+        assertThat(result.structuredContent()).isEqualTo(Map.of("message", "hello"));
+        CapabilityToolCall call = callCaptor.getValue();
+        assertThat(call.getCapabilityName()).isEqualTo("demo.echo");
+        assertThat(call.getArguments()).isEqualTo(Map.of("message", "hello"));
+        assertThat(call.getIdempotencyKey()).isEqualTo("idem-legacy");
+        assertThat(call.getContext().getClientRequestId()).isEqualTo("request-legacy");
+        assertThat(call.getContext().getUserId()).isEqualTo(1L);
+        assertThat(call.getContext().getTenantId()).isEqualTo(2L);
+        verify(invoker).invoke(call);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldReturnConfirmationUnavailableOnLegacyLeg() {
+        // legacy 腿没有 MRTR elicitation：需要确认的能力必须以明确错误返回，不执行、
+        // 不复活 acf.confirm；challenge 摘要仍进 _meta 供排查，但不含 requestDigest。
+        CapabilityToolInvoker invoker = mock(CapabilityToolInvoker.class);
+        CapabilityToolDescriptor descriptor = descriptor(Map.of("type", "object"), Map.of("type", "object"));
+        CapabilityConfirmationChallenge challenge = CapabilityConfirmationChallenge.builder()
+                .challengeId("challenge-001")
+                .capabilityName("demo.echo")
+                .capabilityVersion("1.0.0")
+                .riskLevel(CapabilityRiskLevel.HIGH)
+                .expiresAt(LocalDateTime.of(2026, 7, 24, 20, 0))
+                .requestDigest("internal-digest")
+                .build();
+        when(invoker.invoke(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(CapabilityResult.confirmationRequired("demo.echo", challenge)
+                        .withTraceId("trace-confirm"));
+        McpTransportContext transportContext = McpTransportContext.create(Map.of(
+                McpTransportContextKeys.USER_ID, 1L,
+                McpTransportContextKeys.TENANT_ID, 2L,
+                McpTransportContextKeys.CONSUMER_ID, "user:1"));
+        io.modelcontextprotocol.spec.McpSchema.CallToolRequest request =
+                new io.modelcontextprotocol.spec.McpSchema.CallToolRequest("demo.echo",
+                        Map.of(), Map.of());
+
+        io.modelcontextprotocol.spec.McpSchema.CallToolResult result =
+                createHandler(invoker, mock(CapabilityConfirmationService.class))
+                        .handleLegacy(transportContext, descriptor, request);
+
+        assertThat(result.isError()).isTrue();
+        assertThat(result.meta()).containsEntry(AcfMcpToolProtocolMetadata.ERROR_CODE,
+                "CONFIRMATION_UNAVAILABLE");
+        Map<String, Object> challengeMetadata = (Map<String, Object>) result.meta()
+                .get(AcfMcpToolProtocolMetadata.CONFIRMATION_CHALLENGE);
+        assertThat(challengeMetadata).containsEntry("challengeId", "challenge-001");
+        assertThat(result.content().get(0).toString()).doesNotContain("acf.confirm");
+        assertThat(result.meta().toString()).doesNotContain("internal-digest");
+        verify(invoker).invoke(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
     void shouldReadControlFieldsFromRequestContextMeta() {
         CapabilityToolInvoker invoker = mock(CapabilityToolInvoker.class);
         CapabilityToolDescriptor descriptor = descriptor(Map.of("type", "object"), Map.of("type", "object"));
