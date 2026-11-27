@@ -65,7 +65,7 @@ public class McpOAuthAuthorizationController {
             @Parameter(name = "state"),
             @Parameter(name = "code_challenge", required = true),
             @Parameter(name = "code_challenge_method", required = true, example = "S256"),
-            @Parameter(name = "resource", required = true)
+            @Parameter(name = "resource", required = false, description = "资源指示符（RFC 8707，可选；不带时兑换也须不带）")
     })
     public CommonResult<String> approveOrDeny(HttpServletRequest request,
                                               @RequestParam("response_type") String responseType,
@@ -76,7 +76,7 @@ public class McpOAuthAuthorizationController {
                                               @RequestParam(value = "state", required = false) String state,
                                               @RequestParam(value = "code_challenge") String codeChallenge,
                                               @RequestParam(value = "code_challenge_method") String codeChallengeMethod,
-                                              @RequestParam(value = "resource") String resource) {
+                                              @RequestParam(value = "resource", required = false) String resource) {
         checkRateLimit(request);
         return success(authorizationService.approveOrDeny(responseType, clientId, scope, redirectUri,
                 autoApprove, state, codeChallenge, codeChallengeMethod, resource,

@@ -148,7 +148,9 @@ public class McpOAuthAuthorizationService {
                 .setRedirectUri(codeDO.getRedirectUri())
                 .setCodeChallenge(codeChallenge)
                 .setCodeChallengeMethod(codeChallengeMethod)
-                .setResource(resource)
+                // 空白 resource 归一化为 null：与兑换入口一致，否则授权 ""、兑换不带
+                // 会在 validateAuthorizationCode 的 equals 比对里误判 invalid_grant。
+                .setResource(StrUtil.blankToNull(resource))
                 .setUserId(codeDO.getUserId())
                 .setUserType(codeDO.getUserType())
                 .setTenantId(TenantContextHolder.getTenantId())

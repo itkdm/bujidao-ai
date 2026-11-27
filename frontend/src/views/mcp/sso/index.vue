@@ -74,7 +74,9 @@ interface QueryParams {
   scopes: string[]
   codeChallenge: string
   codeChallengeMethod: string
-  resource: string
+  // resource 是 RFC 8707 可选参数：无 PRM 的客户端不发 resource，缺失即 undefined，
+  // 后端按“不带”处理；不要给默认值 ''，否则会以 resource= 空串发到后端。
+  resource?: string
 }
 
 const queryParams = reactive<QueryParams>({
@@ -85,7 +87,7 @@ const queryParams = reactive<QueryParams>({
   scopes: [],
   codeChallenge: '',
   codeChallengeMethod: '',
-  resource: ''
+  resource: undefined
 })
 const formData = reactive({
   scopes: [] as string[]
@@ -117,7 +119,7 @@ const init = async () => {
     queryParams.state = queryValue('state') || undefined
     queryParams.codeChallenge = queryValue('code_challenge')
     queryParams.codeChallengeMethod = queryValue('code_challenge_method')
-    queryParams.resource = queryValue('resource')
+    queryParams.resource = queryValue('resource') || undefined
     queryParams.scopes = queryValue('scope')
       .split(' ')
       .map((scope) => scope.trim())
@@ -128,8 +130,7 @@ const init = async () => {
       !queryParams.clientId ||
       !queryParams.redirectUri ||
       !queryParams.codeChallenge ||
-      !queryParams.codeChallengeMethod ||
-      !queryParams.resource
+      !queryParams.codeChallengeMethod
     ) {
       errorMessage.value = '授权请求参数不完整'
       return

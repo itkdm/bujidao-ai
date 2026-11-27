@@ -1,6 +1,7 @@
 package cn.iocoder.yudao.module.mcp.service.oauth2;
 
 import cn.iocoder.yudao.framework.common.exception.ServiceException;
+import cn.iocoder.yudao.module.mcp.dal.redis.oauth2.McpOAuthAuthorizationCodeExtraDO;
 import cn.iocoder.yudao.module.mcp.dal.redis.oauth2.McpOAuthAuthorizationCodeExtraRedisDAO;
 import cn.iocoder.yudao.module.mcp.dal.redis.oauth2.McpOAuthAuthorizationRequestRedisDAO;
 import cn.iocoder.yudao.module.mcp.framework.oauth2.cimd.McpCimdClientService;
@@ -17,6 +18,7 @@ import cn.iocoder.yudao.module.system.service.oauth2.OAuth2CodeService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
@@ -130,6 +132,31 @@ class McpOAuthAuthorizationServiceTest {
 
         assertThat(redirect).startsWith(REDIRECT_URI).contains("code=code-123").contains("state=state-1");
         verify(codeExtraRedisDAO).set(any());
+    }
+
+    @Test
+    void shouldApproveCimdClientWithoutResource() {
+        // resource 是可选参数（RFC 8707）：授权不带 resource 也应成功，
+        // codeExtra.resource 存空；绑定由兑换步 validateAuthorizationCode 兜底。
+        when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
+        when(clientResolver.resolve(CLIENT_ID_URL, REDIRECT_URI)).thenReturn(cimdClient());
+        when(oauth2ApproveService.updateAfterApproval(isNull(), eq(2), eq(CLIENT_ID_URL), any()))
+                .thenReturn(true);
+        when(authorizationRequestRedisDAO.markUsed(anyString())).thenReturn(true);
+        when(oauth2CodeService.createAuthorizationCode(isNull(), eq(2), eq(CLIENT_ID_URL),
+                eq(List.of("mcp:access")), eq(REDIRECT_URI), eq("state-1")))
+                .thenReturn(new OAuth2CodeDO().setCode("code-123").setUserId(null).setUserType(2)
+                        .setClientId(CLIENT_ID_URL).setRedirectUri(REDIRECT_URI)
+                        .setExpiresTime(LocalDateTime.now().plusSeconds(300)));
+
+        String redirect = service.approveOrDeny("code", CLIENT_ID_URL, "{\"mcp:access\":true}",
+                REDIRECT_URI, false, "state-1", s256Challenge(CODE_VERIFIER), "S256", null, null);
+
+        assertThat(redirect).startsWith(REDIRECT_URI).contains("code=code-123").contains("state=state-1");
+        ArgumentCaptor<McpOAuthAuthorizationCodeExtraDO> captor =
+                ArgumentCaptor.forClass(McpOAuthAuthorizationCodeExtraDO.class);
+        verify(codeExtraRedisDAO).set(captor.capture());
+        assertThat(captor.getValue().getResource()).isNull();
     }
 
     @Test

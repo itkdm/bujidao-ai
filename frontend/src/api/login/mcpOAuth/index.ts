@@ -27,7 +27,8 @@ export const authorize = (
   uncheckedScopes: string[],
   codeChallenge: string,
   codeChallengeMethod: string,
-  resource: string
+  // resource 为 undefined 时 axios 不发该参数（不发 resource= 空串），后端按“不带”处理。
+  resource: string | undefined
 ) => {
   const scopes: Record<string, boolean> = {}
   for (const scope of checkedScopes) {

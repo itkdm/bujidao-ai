@@ -226,6 +226,61 @@ class McpOAuthTokenExchangeServiceTest {
     }
 
     @Test
+    void shouldExchangeWhenResourceOmittedOnBothSides() {
+        // 授权与兑换都不带 resource：兑换步 resource 比对（null == null）通过，换码成功。
+        OAuth2ClientDO client = cimdClient();
+        when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
+        when(clientResolver.resolve(CLIENT_ID_URL, null)).thenReturn(client);
+        when(codeExtraRedisDAO.get("code-123")).thenReturn(codeExtra().setResource(null));
+        when(oauth2CodeService.consumeAuthorizationCode("code-123")).thenReturn(codeDO());
+        when(oauth2TokenService.createAccessToken(eq(1L), eq(2), eq(client), eq(List.of("mcp:access"))))
+                .thenReturn(accessTokenDO());
+
+        OAuth2OpenAccessTokenRespVO respVO = service.exchangeAuthorizationCode(
+                CLIENT_ID_URL, "code-123", REDIRECT_URI, CODE_VERIFIER, null, null);
+
+        assertThat(respVO.getAccessToken()).isEqualTo("access-token-1");
+        verify(codeExtraRedisDAO).delete("code-123");
+    }
+
+    @Test
+    void shouldRejectExchangeWhenResourceOmittedButAuthorizedWithResource() {
+        // 授权带 R、兑换不带：兑换步 resource 比对（null != R）判 invalid_grant，
+        // 带与不带的 resource 混不过去。注意授权码已在校验前被消费（P1-2），
+        // 重试须重新授权；codeExtra 未删、随 Redis TTL 过期。
+        when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
+        when(clientResolver.resolve(CLIENT_ID_URL, null)).thenReturn(cimdClient());
+        when(codeExtraRedisDAO.get("code-123")).thenReturn(codeExtra());
+        when(oauth2CodeService.consumeAuthorizationCode("code-123")).thenReturn(codeDO());
+
+        assertThatThrownBy(() -> service.exchangeAuthorizationCode(
+                CLIENT_ID_URL, "code-123", REDIRECT_URI, CODE_VERIFIER, null, null))
+                .isInstanceOf(McpOAuthException.class)
+                .extracting("status", "error")
+                .containsExactly(HttpStatus.BAD_REQUEST, "invalid_grant");
+        verify(oauth2CodeService).consumeAuthorizationCode("code-123");
+        verify(codeExtraRedisDAO, never()).delete(anyString());
+    }
+
+    @Test
+    void shouldRejectExchangeWhenResourceAddedButAuthorizedWithoutResource() {
+        // 授权不带、兑换带 R：兑换步 matches() 先放行合规的 R（与注册/current 比对），
+        // 真正拦住它的是 validateAuthorizationCode（R != null）判 invalid_grant。
+        when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
+        when(clientResolver.resolve(CLIENT_ID_URL, null)).thenReturn(cimdClient());
+        when(codeExtraRedisDAO.get("code-123")).thenReturn(codeExtra().setResource(null));
+        when(oauth2CodeService.consumeAuthorizationCode("code-123")).thenReturn(codeDO());
+
+        assertThatThrownBy(() -> service.exchangeAuthorizationCode(
+                CLIENT_ID_URL, "code-123", REDIRECT_URI, CODE_VERIFIER, RESOURCE, RESOURCE))
+                .isInstanceOf(McpOAuthException.class)
+                .extracting("status", "error")
+                .containsExactly(HttpStatus.BAD_REQUEST, "invalid_grant");
+        verify(oauth2CodeService).consumeAuthorizationCode("code-123");
+        verify(codeExtraRedisDAO, never()).delete(anyString());
+    }
+
+    @Test
     void shouldFailExchangeWhenCodeExtraIsMissing() {
         when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
         when(clientResolver.resolve(CLIENT_ID_URL, null)).thenReturn(cimdClient());

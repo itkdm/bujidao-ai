@@ -96,6 +96,7 @@
    - 检查目标前端登录成功后对 `redirect` 的处理。
    - 如果 OAuth / SSO 重定向 URL 包含完整 query，例如 `response_type`、`client_id`、`resource`、`code_challenge`，登录成功后必须使用 `window.location.href = redirect` 保留完整 URL。
    - 不要把完整 URL 当作普通路由对象拆开 push，否则 query 参数可能被破坏，MCP 授权页会出现“参数不完整”。
+   - resource 为 RFC 8707 可选参数：无 PRM 的客户端不发 resource，同意页与授权接口都不要求它，不带时兑换也须不带。
 
 如果目标前端不是 Vue3：
 
