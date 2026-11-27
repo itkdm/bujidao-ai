@@ -10,6 +10,8 @@ import jakarta.servlet.ServletResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.boot.web.servlet.ServletRegistrationBean;
 import org.springframework.context.ApplicationContext;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
@@ -60,6 +62,66 @@ public final class McpTestFixtures {
         request.setContentType("application/json");
         request.setContent(json.getBytes(StandardCharsets.UTF_8));
         return new CacheRequestBodyWrapper(request);
+    }
+
+    /**
+     * 老客户端的请求头（供 TestRestTemplate 用）：只有 Content-Type 与 Accept，
+     * 没有任何 modern 头（无 Mcp-Method、无 MCP-Protocol-Version）。Accept
+     * 必须同时含 application/json 与 text/event-stream，否则 legacy
+     * transport 以 400 拒绝。
+     */
+    public static HttpHeaders legacyHeaders() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setAccept(List.of(MediaType.APPLICATION_JSON, MediaType.TEXT_EVENT_STREAM));
+        return headers;
+    }
+
+    /** Modern 客户端的请求头（供 TestRestTemplate 用）：见 {@link #modernHeaders(String, String)}。 */
+    public static HttpHeaders modernHeaders(String method) {
+        return modernHeaders(method, null);
+    }
+
+    /**
+     * Modern 客户端的请求头（供 TestRestTemplate 用）：Content-Type 与 Accept
+     * 同 legacy，另带 {@code Mcp-Method}、{@code MCP-Protocol-Version:
+     * 2026-07-28}；{@code tools/call} / {@code prompts/get} 等按名调用的
+     * 方法还要带 {@code Mcp-Name}。
+     */
+    public static HttpHeaders modernHeaders(String method, String name) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setAccept(List.of(MediaType.APPLICATION_JSON, MediaType.TEXT_EVENT_STREAM));
+        headers.set("Mcp-Method", method);
+        headers.set("MCP-Protocol-Version", "2026-07-28");
+        if (name != null) {
+            headers.set("Mcp-Name", name);
+        }
+        return headers;
+    }
+
+    /** Modern 客户端的 servlet 请求（供分流器单测用）：见 {@link #modernRequest(String, String, String)}。 */
+    public static HttpServletRequest modernRequest(String json, String method) {
+        return modernRequest(json, method, null);
+    }
+
+    /**
+     * Modern 客户端的 servlet 请求（供分流器单测用）：POST /mcp、包好 body
+     * 缓存，头与 {@link #modernHeaders(String, String)} 一致。
+     */
+    public static HttpServletRequest modernRequest(String json, String method, String name) {
+        MockHttpServletRequest source = new MockHttpServletRequest();
+        source.setMethod("POST");
+        source.setRequestURI("/mcp");
+        source.setContentType("application/json");
+        source.addHeader("Accept", "application/json, text/event-stream");
+        source.setContent(json.getBytes(StandardCharsets.UTF_8));
+        source.addHeader("Mcp-Method", method);
+        source.addHeader("MCP-Protocol-Version", "2026-07-28");
+        if (name != null) {
+            source.addHeader("Mcp-Name", name);
+        }
+        return new CacheRequestBodyWrapper(source);
     }
 
     /** 从 tools/list 响应里取出工具名列表（按响应顺序）。 */
