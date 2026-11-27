@@ -202,8 +202,10 @@ yudao:
       # request-state:
       #   shared-key: ${MCP_REQUEST_STATE_SHARED_KEY}
       # Legacy MCP 2025-11-25 兼容开关：默认开启（不配即 true），同一 /mcp 端点
-      # 同时服务新旧两个协议版本；改成 false 后旧客户端的 legacy 请求一律被拒绝
-      # （HTTP 400 + JSON-RPC -32022），modern 客户端不受影响。见“双协议分流”一节。
+      # 同时服务新旧两个协议版本；改成 false 后旧客户端的 legacy POST 请求被拒绝：
+      # JSON-RPC 请求答 HTTP 400 + JSON-RPC -32022，通知答 HTTP 202；GET / DELETE
+      # 不走 kill-switch，由 legacy transport 答 405；modern 客户端不受影响。
+      # 改配置后重启生效（非热更新）。见“双协议分流”一节。
       # legacy:
       #   enabled: true
       # 如果后端在反向代理后无法正确推导外部地址，显式配置下面几项
