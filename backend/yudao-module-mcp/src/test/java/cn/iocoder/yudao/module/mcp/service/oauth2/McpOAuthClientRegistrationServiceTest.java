@@ -22,6 +22,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -56,8 +57,10 @@ class McpOAuthClientRegistrationServiceTest {
 
         ArgumentCaptor<OAuth2ClientDO> clientCaptor = ArgumentCaptor.forClass(OAuth2ClientDO.class);
         verify(oauth2ClientMapper).insert(clientCaptor.capture());
-        verify(cache).clear();
         OAuth2ClientDO client = clientCaptor.getValue();
+        // 只逐出本次注册的客户端：全量 clear 会把其他客户端的缓存条目也清掉。
+        verify(cache).evict(client.getClientId());
+        verify(cache, never()).clear();
         assertThat(response.getClientId()).isEqualTo(client.getClientId()).startsWith("mcp-dcr-");
         assertThat(response.getTokenEndpointAuthMethod()).isEqualTo("none");
         assertThat(response.getScope()).isEqualTo("mcp:access");
@@ -148,6 +151,7 @@ class McpOAuthClientRegistrationServiceTest {
 
         assertThat(response.getClientId()).startsWith("mcp-dcr-");
         assertThat(response.getRedirectUris()).containsExactly("workbuddy-ai://workbuddy/mcp/callback");
+        verify(cache, never()).clear();
     }
 
     @Test
@@ -188,6 +192,7 @@ class McpOAuthClientRegistrationServiceTest {
         ArgumentCaptor<OAuth2ClientDO> clientCaptor = ArgumentCaptor.forClass(OAuth2ClientDO.class);
         verify(oauth2ClientMapper).insert(clientCaptor.capture());
         assertThat(clientCaptor.getValue().getRedirectUris()).containsExactly("workbuddy://oauth/callback");
+        verify(cache, never()).clear();
     }
 
     @Test
@@ -241,6 +246,7 @@ class McpOAuthClientRegistrationServiceTest {
         verify(oauth2ClientMapper).insert(clientCaptor.capture());
         assertThat(clientCaptor.getValue().getAuthorizedGrantTypes())
                 .containsExactly("authorization_code", "refresh_token");
+        verify(cache, never()).clear();
     }
 
 }

@@ -129,7 +129,7 @@ public class McpOAuthClientRegistrationService {
                 .setAccessTokenValiditySeconds(properties.getAccessTokenValiditySeconds())
                 .setRefreshTokenValiditySeconds(properties.getRefreshTokenValiditySeconds());
         oauth2ClientMapper.insert(client);
-        clearClientCache();
+        evictClientCache(client.getClientId());
         return client;
     }
 
@@ -250,10 +250,17 @@ public class McpOAuthClientRegistrationService {
                 && StrUtil.isNotBlank(uri.getSchemeSpecificPart());
     }
 
-    private void clearClientCache() {
+    /**
+     * 注册后只逐出本次注册的客户端缓存条目：client_id 是现生成的 UUID，正常
+     * 不会与已有条目冲突；即使撞上陈旧条目，本次逐出也会清掉它。全量 clear
+     * 会把其他客户端的缓存也清掉，下次访问全部回源 DB——注册可被反复触发，
+     * 是放大器。缓存键约定与上游一致：{@code OAuth2ClientServiceImpl} 以
+     * clientId 为键。
+     */
+    private void evictClientCache(String clientId) {
         Cache cache = cacheManager.getCache(RedisKeyConstants.OAUTH_CLIENT);
         if (cache != null) {
-            cache.clear();
+            cache.evict(clientId);
         }
     }
 
