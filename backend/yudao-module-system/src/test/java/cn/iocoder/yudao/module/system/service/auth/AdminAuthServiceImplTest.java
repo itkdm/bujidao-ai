@@ -468,13 +468,13 @@ public class AdminAuthServiceImplTest extends BaseDbUnitTest {
         // 准备参数与 mock
         AuthQrcodePollReqVO reqVO = mockConfirmedQrcode();
         when(userService.getUser(1L)).thenReturn(qrcodeUser());
-        when(oauth2TokenService.createAccessToken(any(), any(), any(), any()))
+        when(oauth2TokenService.createAccessToken(any(), any(), anyString(), any()))
                 .thenThrow(new IllegalStateException("issue failed"));
 
         // 调用并校验：失败不重领二维码或重签令牌。
         assertThrows(IllegalStateException.class, () -> authService.qrcodeLogin(reqVO));
         verify(authQrcodeService, times(1)).pollAuthQrcode(reqVO);
-        verify(oauth2TokenService, times(1)).createAccessToken(any(), any(), any(), any());
+        verify(oauth2TokenService, times(1)).createAccessToken(any(), any(), anyString(), any());
     }
 
     private AuthQrcodePollReqVO mockConfirmedQrcode() {
