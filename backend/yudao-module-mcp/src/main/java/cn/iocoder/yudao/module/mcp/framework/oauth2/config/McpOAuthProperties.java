@@ -70,6 +70,11 @@ public class McpOAuthProperties {
 
     /**
      * 额外允许的 redirect_uri 前缀，用于部署方显式开放 HTTPS 回调等场景。
+     *
+     * <p>注意：前缀匹配在 scheme 黑名单与回环限制之前短路返回，配了前缀就
+     * 同时绕过这两道检查；只配自己完全信任的前缀，不要配过宽的前缀
+     * （前缀是 {@code startsWith} 匹配，{@code https://trusted.example} 也会
+     * 匹配 {@code https://trusted.example.evil.com}）。
      */
     private List<@NotBlank String> allowedRedirectUriPrefixes = List.of();
 

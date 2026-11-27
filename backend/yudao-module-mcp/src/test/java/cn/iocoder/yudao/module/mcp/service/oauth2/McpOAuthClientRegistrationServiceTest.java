@@ -84,6 +84,73 @@ class McpOAuthClientRegistrationServiceTest {
     }
 
     @Test
+    void shouldRejectDangerousPrivateSchemeRedirectUris() {
+        // 覆盖黑名单全部 34 个 scheme（http/https 走回环分支，同样拒绝非回环 host），
+        // 逐个断言：黑名单里某一项拼错，测试会立即发现。另加一个大写变体，确认
+        // scheme 比对不区分大小写。
+        List<String> dangerousUris = List.of(
+                "http://attacker.example/cb",
+                "https://attacker.example/cb",
+                "javascript:alert(1)",
+                "data:text/html,hi",
+                "file:///etc/passwd",
+                "ftp://attacker.example/x",
+                "mailto:a@b.example",
+                "tel:+123",
+                "sms:+123",
+                "vbscript:alert(1)",
+                "intent:example",
+                "ms-msdt:/id",
+                "search-ms:query=test",
+                "ms-officeapp:edit",
+                "ms-excel:edit",
+                "ms-word:edit",
+                "ms-powerpoint:edit",
+                "ms-access:edit",
+                "ms-publisher:edit",
+                "ms-visio:edit",
+                "ms-project:edit",
+                "ms-settings:network",
+                "ms-screenclip:edit",
+                "ms-gamingoverlay:edit",
+                "ms-browser-extension:edit",
+                "ms-calculator:edit",
+                "calculator:edit",
+                "ms-people:edit",
+                "ms-call:edit",
+                "ms-sms:edit",
+                "ms-chat:edit",
+                "ms-store:edit",
+                "ms-windows-store://pdp/?ProductId=1",
+                "microsoft-edge:https://attacker.example/cb",
+                // scheme 比对不区分大小写，同样拒绝
+                "MS-MSDT:/id");
+        for (String redirectUri : dangerousUris) {
+            McpOAuthClientRegistrationReqVO reqVO = new McpOAuthClientRegistrationReqVO();
+            reqVO.setRedirectUris(List.of(redirectUri));
+            assertThatThrownBy(() -> service.register(reqVO, "http://127.0.0.1:48080/mcp"))
+                    .as("redirectUri=%s", redirectUri)
+                    .isInstanceOf(McpOAuthException.class)
+                    .extracting("status", "error")
+                    .containsExactly(HttpStatus.BAD_REQUEST, "invalid_redirect_uri");
+        }
+    }
+
+    @Test
+    void shouldAcceptRealWorkBuddyDeepLinkScheme() {
+        McpOAuthClientRegistrationReqVO reqVO = new McpOAuthClientRegistrationReqVO();
+        reqVO.setClientName("WorkBuddy");
+        reqVO.setRedirectUris(List.of("workbuddy-ai://workbuddy/mcp/callback"));
+        when(oauth2ClientMapper.selectByClientId(anyString())).thenReturn(null);
+        when(cacheManager.getCache(RedisKeyConstants.OAUTH_CLIENT)).thenReturn(cache);
+
+        McpOAuthClientRegistrationRespVO response = service.register(reqVO, "http://127.0.0.1:48080/mcp");
+
+        assertThat(response.getClientId()).startsWith("mcp-dcr-");
+        assertThat(response.getRedirectUris()).containsExactly("workbuddy-ai://workbuddy/mcp/callback");
+    }
+
+    @Test
     void shouldRejectRegistrationWhenDcrIsDisabled() {
         properties.setDynamicClientRegistrationEnabled(false);
 

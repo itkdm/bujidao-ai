@@ -43,8 +43,27 @@ public class McpOAuthClientRegistrationService {
             OAuth2GrantTypeEnum.AUTHORIZATION_CODE.getGrantType(),
             OAuth2GrantTypeEnum.REFRESH_TOKEN.getGrantType());
     private static final List<String> SUPPORTED_RESPONSE_TYPES = List.of("code");
+    // 私有 scheme 黑名单：注册时拒绝这些 scheme 作 redirect_uri。
+    // 原因：授权通过后浏览器会直接导航到注册的 redirect_uri（带 code），
+    // 若 scheme 对应操作系统/浏览器的协议处理器，攻击者只需骗用户点一次
+    // “同意”，就能触发本地程序（如 ms-msdt 的 Follina、search-ms 的资源管理器搜索）。
+    // 注意：黑名单永远补不完，新协议处理器还会出现；这里只堵已知的危险项，
+    // 残余风险须在部署时接受：不要把本服务端暴露给不可信网络，或改用
+    // allowedRedirectUriPrefixes 由管理员逐个放行。不要改成白名单：开放 DCR
+    // 的意义就是任意桌面客户端都能注册，而合法应用 scheme（如 workbuddy-ai://）
+    // 无法事先枚举。
     private static final List<String> DISALLOWED_PRIVATE_USE_SCHEMES = List.of(
-            "http", "https", "javascript", "data", "file", "ftp", "mailto");
+            // 通用危险 scheme
+            "http", "https", "javascript", "data", "file", "ftp", "mailto", "tel", "sms",
+            "vbscript", "intent",
+            // Windows 协议处理器：曾被用于钓鱼 / 远程执行
+            "ms-msdt", "search-ms", "ms-officeapp", "ms-excel", "ms-word", "ms-powerpoint",
+            "ms-access", "ms-publisher", "ms-visio", "ms-project", "ms-settings",
+            "ms-screenclip", "ms-gamingoverlay", "ms-browser-extension", "ms-calculator",
+            "calculator", "ms-people", "ms-call", "ms-sms", "ms-chat", "ms-store",
+            "ms-windows-store",
+            // 浏览器启动 scheme：会绕过 http(s) 仅回环的限制，把 code 送到攻击者 URL
+            "microsoft-edge");
 
     private final McpOAuthProperties properties;
     private final OAuth2ClientMapper oauth2ClientMapper;
