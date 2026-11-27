@@ -8,7 +8,7 @@ import java.util.List;
  * <p>字段对应 draft-ietf-oauth-client-id-metadata-document 的客户端元数据字段。
  * 其中 {@code jwks} 保留原始 JSON 文本（文档里它通常是 JSON 对象，序列化后存放）；
  * {@code grantTypes} / {@code responseTypes} 缺省时分别补默认值
- * {@code [authorization_code]} / {@code [code]}，由校验器负责填充。
+ * {@code [authorization_code, refresh_token]} / {@code [code]}，由校验器负责填充。
  *
  * @author bujidao
  */
@@ -20,7 +20,7 @@ public record McpCimdMetadata(
         String clientName,
         /** 注册的回调地址列表，非空。 */
         List<String> redirectUris,
-        /** 允许的授权类型，缺省 [authorization_code]。 */
+        /** 允许的授权类型，缺省 [authorization_code, refresh_token]。 */
         List<String> grantTypes,
         /** 允许的响应类型，缺省 [code]。 */
         List<String> responseTypes,

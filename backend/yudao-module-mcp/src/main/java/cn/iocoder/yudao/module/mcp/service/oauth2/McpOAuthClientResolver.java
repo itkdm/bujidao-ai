@@ -130,10 +130,10 @@ public class McpOAuthClientResolver {
      * 不设 mcp_resource，让 {@code McpOAuthResourceValidator} 走 currentResource 回退分支；
      * 有效期取 {@link McpOAuthProperties} 的两个配置值。
      *
-     * <p>注意：文档缺省 grant_types 时校验器补的是 {@code [authorization_code]}（Block A 行为），
-     * 这里沿用文档值、只在列表为空时才补 {@code [authorization_code]}；缺省即含 refresh_token
-     * 是不允许的——如需放宽，应改校验器的缺省值，而不是在这里悄悄加 refresh 权限。
-     * （显式空列表在校验器里直接判 INVALID_DOCUMENT，该分支生产不可达，仅作防御性兜底。）
+     * <p>注意：文档缺省 grant_types 时校验器补的是 {@code [authorization_code, refresh_token]}
+     * （与元数据宣告的 grant_types_supported 及上游无条件发 refresh 一致）；
+     * 这里沿用文档值，只在列表为空时才防御性补 {@code [authorization_code]}
+     * （显式空列表在校验器里直接判 INVALID_DOCUMENT，该分支生产不可达，仅作防御性兜底）。
      */
     private OAuth2ClientDO toClient(McpCimdMetadata metadata) {
         List<String> grantTypes = metadata.grantTypes();

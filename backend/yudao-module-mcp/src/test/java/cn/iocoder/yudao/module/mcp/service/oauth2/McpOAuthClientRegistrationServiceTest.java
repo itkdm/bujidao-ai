@@ -67,7 +67,10 @@ class McpOAuthClientRegistrationServiceTest {
         assertThat(client.getSecret()).isEmpty();
         assertThat(client.getScopes()).containsExactly("mcp:access");
         assertThat(client.getAutoApproveScopes()).isEmpty();
-        assertThat(client.getAuthorizedGrantTypes()).containsExactly("authorization_code");
+        // 未声明 grant_types 时缺省含 refresh_token（与 CIMD 校验器缺省一致），
+        // 否则该客户端 30 分钟后刷新会被 validateCimdGrant 拒绝。
+        assertThat(client.getAuthorizedGrantTypes()).containsExactly("authorization_code", "refresh_token");
+        assertThat(response.getGrantTypes()).containsExactly("authorization_code", "refresh_token");
         assertThat(client.getAdditionalInformation())
                 .contains("\"token_endpoint_auth_method\":\"none\"")
                 .contains("\"public_client\":true")

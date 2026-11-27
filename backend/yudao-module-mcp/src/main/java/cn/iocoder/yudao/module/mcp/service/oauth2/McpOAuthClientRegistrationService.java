@@ -189,7 +189,11 @@ public class McpOAuthClientRegistrationService {
     private static List<String> normalizeGrantTypes(List<String> grantTypes) {
         List<String> normalized = normalizeList(grantTypes);
         if (CollUtil.isEmpty(normalized)) {
-            normalized = List.of(OAuth2GrantTypeEnum.AUTHORIZATION_CODE.getGrantType());
+            // 缺省含 refresh_token：与 CIMD 校验器缺省一致（AS 元数据已宣告 refresh，
+            // 上游换码时无条件签发 refresh token）；缺省只给 authorization_code 会让
+            // 省略 grant_types 的 DCR 客户端 30 分钟后刷新被拒。
+            normalized = List.of(OAuth2GrantTypeEnum.AUTHORIZATION_CODE.getGrantType(),
+                    OAuth2GrantTypeEnum.REFRESH_TOKEN.getGrantType());
         }
         if (!normalized.contains(OAuth2GrantTypeEnum.AUTHORIZATION_CODE.getGrantType())
                 || !CollUtil.containsAll(SUPPORTED_GRANT_TYPES, normalized)) {

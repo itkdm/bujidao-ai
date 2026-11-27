@@ -120,7 +120,7 @@ class McpCimdDocumentValidatorTest {
         assertThat(metadata.clientId()).isEqualTo("https://client.example.com/metadata");
         assertThat(metadata.clientName()).isEqualTo("Test Client");
         assertThat(metadata.redirectUris()).containsExactly("https://client.example.com/callback");
-        assertThat(metadata.grantTypes()).containsExactly("authorization_code");
+        assertThat(metadata.grantTypes()).containsExactly("authorization_code", "refresh_token");
         assertThat(metadata.responseTypes()).containsExactly("code");
         assertThat(metadata.tokenEndpointAuthMethod()).isEqualTo("none");
         assertThat(metadata.applicationType()).isEqualTo("web");

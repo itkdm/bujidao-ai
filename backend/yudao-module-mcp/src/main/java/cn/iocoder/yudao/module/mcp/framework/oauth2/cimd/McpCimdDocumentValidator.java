@@ -138,7 +138,12 @@ public class McpCimdDocumentValidator {
 
         List<String> grantTypes = optionalStringList(document, "grant_types");
         if (grantTypes == null) {
-            grantTypes = List.of("authorization_code");
+            // 缺省含 refresh_token：与 AS 元数据宣告及上游签发行为一致——refresh token
+            // 换码时本来就会签发，缺省不给只会让已签发的 token 无法使用。注意这是对
+            // RFC 7591 注册缺省（仅 authorization_code）的刻意偏离：省略字段的客户端
+            // 刷新能力确实是新获得的，但它只让已持有对应 token 的客户端能刷新，
+            // 不改变 token 的签发面。
+            grantTypes = List.of("authorization_code", "refresh_token");
         } else {
             if (grantTypes.isEmpty() || !grantTypes.contains("authorization_code")
                     || !ALLOWED_GRANT_TYPES.containsAll(grantTypes)) {
