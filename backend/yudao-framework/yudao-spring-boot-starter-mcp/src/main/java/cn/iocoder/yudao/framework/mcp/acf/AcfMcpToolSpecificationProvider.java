@@ -37,7 +37,8 @@ import java.util.List;
  *
  * <p>确认不走独立工具：本类不把已删除的 {@code acf.confirm} 加进规格列表；需要确认的
  * 能力在 legacy 腿上以明确的 CONFIRMATION_UNAVAILABLE 错误结果返回（见
- * {@link AcfMcpToolCallHandler#handleLegacy}），不静默执行，确认流程留给后续块决定。</p>
+ * {@link AcfMcpToolCallHandler#handleLegacy}），不静默执行、不复活
+ * {@code acf.confirm}；确认只走 modern 腿的 MRTR。</p>
  *
  * @author bujidao
  */

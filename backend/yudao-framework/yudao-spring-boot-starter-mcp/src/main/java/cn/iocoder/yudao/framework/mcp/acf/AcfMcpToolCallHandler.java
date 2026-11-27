@@ -140,7 +140,7 @@ public class AcfMcpToolCallHandler {
      * <li>legacy 腿不支持 elicitation 表单（stateless 服务端的 callHandler 也拿不到能
      * 发 elicitation 的 exchange），所以固定传“不支持”：需要确认的能力以明确的
      * CONFIRMATION_UNAVAILABLE 错误结果返回，不静默执行；{@code acf.confirm} 工具
-     * 不复活，legacy 腿的确认流程留给后续块决定。</li>
+     * 不复活——已定结论：legacy 腿不做确认流程，确认只走 modern 腿的 MRTR。</li>
      * </ul>
      *
      * <p>Java 没有 import 别名，modern 与 legacy 的 {@code McpSchema} 同名，本方法签名

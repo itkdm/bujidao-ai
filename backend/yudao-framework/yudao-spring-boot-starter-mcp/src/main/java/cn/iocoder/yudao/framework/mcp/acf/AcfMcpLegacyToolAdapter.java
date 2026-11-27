@@ -41,8 +41,9 @@ import java.util.List;
  * 在 legacy 入口固定传“不支持 elicitation 表单”，需要确认的能力在 handler 内就已经
  * 以 CONFIRMATION_UNAVAILABLE 错误结果返回，不会走到这里。</p>
  *
- * <p>确认能力不在这里复活：本类不产生 {@code acf.confirm} 工具，legacy 腿需要确认的
- * 能力怎么处理留给后续块决定，本块只保证不把它加进规格列表。</p>
+ * <p>确认能力不在这里复活：本类不产生 {@code acf.confirm} 工具；已定结论——legacy
+ * 腿需要确认的能力一律以 CONFIRMATION_UNAVAILABLE 错误结果返回，不执行、不复活
+ * {@code acf.confirm}，确认只走 modern 腿的 MRTR elicitation。</p>
  *
  * @author bujidao
  */
