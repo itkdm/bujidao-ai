@@ -302,8 +302,10 @@ class McpAcfExecutionIntegrationTest {
 
     /**
      * 内存版确认服务：challenge 建在首轮调用的参数摘要上，confirm 只认
-     * PENDING 的 challenge，verify 时比对当前请求的摘要——与真实服务的
-     * 摘要绑定语义一致（见 AcfCapabilityConfirmationService）。
+     * PENDING 的 challenge，verify 时比对当前请求的摘要——摘要绑定语义与真实服务
+     * 一致（见 AcfCapabilityConfirmationService）。唯一不同：真实服务在摘要失配时把
+     * 已确认的 challenge 打回 PENDING 以便重确认，fake 不模拟这一步；集成测试只
+     * 断言可观测行为（错误码 + 不执行），两者一致。
      */
     static class InMemoryConfirmationService implements CapabilityConfirmationService {
 

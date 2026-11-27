@@ -132,6 +132,72 @@ class AcfCapabilityConfirmationServiceTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void shouldResetConfirmedChallengeToPendingWhenInvocationMismatches() {
+        AcfConfirmationChallengeDO challenge = challenge();
+        challenge.setStatus(AcfConfirmationChallengeStatus.CONFIRMED.name());
+        String token = "acf-token-test";
+        challenge.setTokenHash(hashOf(token));
+        when(mapper.selectByTokenHash(challenge.getTokenHash())).thenReturn(challenge);
+        when(mapper.update(any(AcfConfirmationChallengeDO.class), any(Wrapper.class))).thenReturn(1);
+
+        // 重试摘要与确认时绑定的摘要不一致：拒绝本次执行，但把 challenge 打回 PENDING，
+        // 客户端可重新确认、换新 token 按原始摘要重试；否则状态卡在 CONFIRMED，
+        // 重调 confirm() 会因“非 pending”被拒，challenge 就烧掉了。
+        CapabilityConfirmationCheck check = service.verifyAndConsumeToken(definition(), context(),
+                token, "idem-001", "digest-002");
+
+        assertThat(check.isValid()).isFalse();
+        assertThat(check.getErrorCode()).isEqualTo(AcfCapabilityErrorCodes.CONFIRM_TOKEN_INVALID);
+        ArgumentCaptor<AcfConfirmationChallengeDO> captor =
+                ArgumentCaptor.forClass(AcfConfirmationChallengeDO.class);
+        verify(mapper).update(captor.capture(), any(Wrapper.class));
+        assertThat(captor.getValue().getStatus()).isEqualTo(AcfConfirmationChallengeStatus.PENDING.name());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldNotResetChallengeWhenAlreadyPendingOnMismatch() {
+        AcfConfirmationChallengeDO challenge = challenge();
+        String token = "acf-token-test";
+        challenge.setTokenHash(hashOf(token));
+        when(mapper.selectByTokenHash(challenge.getTokenHash())).thenReturn(challenge);
+
+        // 已是 PENDING（例如打回后的旧 token T1 又拿错摘要来）：失配只返回 invalid，
+        // 不重复打回、不调 update。
+        CapabilityConfirmationCheck check = service.verifyAndConsumeToken(definition(), context(),
+                token, "idem-001", "digest-002");
+
+        assertThat(check.isValid()).isFalse();
+        assertThat(check.getErrorCode()).isEqualTo(AcfCapabilityErrorCodes.CONFIRM_TOKEN_INVALID);
+        verify(mapper, never()).update(any(), any());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldNotResetConfirmedChallengeWhenExpiredOnMismatch() {
+        AcfConfirmationChallengeDO challenge = challenge();
+        challenge.setStatus(AcfConfirmationChallengeStatus.CONFIRMED.name());
+        challenge.setExpiresAt(LocalDateTime.now().minusMinutes(1));
+        String token = "acf-token-test";
+        challenge.setTokenHash(hashOf(token));
+        when(mapper.selectByTokenHash(challenge.getTokenHash())).thenReturn(challenge);
+        when(mapper.update(any(AcfConfirmationChallengeDO.class), any(Wrapper.class))).thenReturn(0);
+
+        // 已过期 + 失配：拒绝本次执行；过期 guard 在 wrapper 的 WHERE 里
+        //（expires_at > now），由数据库求值，mock 层面 update 仍会被调一次
+        //（返回 0 行），断言 wrapper 里确实带了过期条件。
+        CapabilityConfirmationCheck check = service.verifyAndConsumeToken(definition(), context(),
+                token, "idem-001", "digest-002");
+
+        assertThat(check.isValid()).isFalse();
+        assertThat(check.getErrorCode()).isEqualTo(AcfCapabilityErrorCodes.CONFIRM_TOKEN_INVALID);
+        ArgumentCaptor<Wrapper> wrapperCaptor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(mapper).update(any(AcfConfirmationChallengeDO.class), wrapperCaptor.capture());
+        assertThat(wrapperCaptor.getValue().getSqlSegment()).contains("expires_at");
+    }
+
+    @Test
     void shouldDeclinePendingChallengeAndBlockLaterConfirm() {
         AcfConfirmationChallengeDO challenge = challenge();
         when(mapper.selectByChallengeIdForUpdate("challenge-001")).thenReturn(challenge);

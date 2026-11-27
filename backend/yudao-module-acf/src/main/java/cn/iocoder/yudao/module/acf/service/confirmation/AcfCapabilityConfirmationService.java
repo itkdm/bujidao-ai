@@ -155,6 +155,20 @@ public class AcfCapabilityConfirmationService implements CapabilityConfirmationS
                     "Confirmation token is invalid");
         }
         if (!matchesInvocation(challenge, definition, context, idempotencyKey, requestDigest)) {
+            // 摘要失配时把已确认的 challenge 打回 PENDING：否则状态卡在 CONFIRMED，
+            // 客户端重调 confirm() 会因“非 pending”被拒，而 token 只存在 handler
+            // 局部变量、失败即丢，整个 challenge 就烧掉了。打回后客户端可重新确认、
+            // 换新 token 按原始摘要重试（challenge 仍绑定原始摘要，改过的调用仍会被拒）。
+            // 条件更新（与消费更新同款写法）：只在仍为 CONFIRMED 且未过期时打回，防并发竞态。
+            if (AcfConfirmationChallengeStatus.CONFIRMED.name().equals(challenge.getStatus())) {
+                AcfConfirmationChallengeDO reset = new AcfConfirmationChallengeDO();
+                reset.setStatus(AcfConfirmationChallengeStatus.PENDING.name());
+                confirmationChallengeMapper.update(reset, new LambdaUpdateWrapper<AcfConfirmationChallengeDO>()
+                        .eq(AcfConfirmationChallengeDO::getId, challenge.getId())
+                        .eq(AcfConfirmationChallengeDO::getTokenHash, tokenHash)
+                        .eq(AcfConfirmationChallengeDO::getStatus, AcfConfirmationChallengeStatus.CONFIRMED.name())
+                        .gt(AcfConfirmationChallengeDO::getExpiresAt, LocalDateTime.now()));
+            }
             return CapabilityConfirmationCheck.invalid(AcfCapabilityErrorCodes.CONFIRM_TOKEN_INVALID,
                     "Confirmation token does not match current request");
         }
