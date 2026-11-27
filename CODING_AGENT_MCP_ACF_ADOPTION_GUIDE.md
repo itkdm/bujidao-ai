@@ -263,6 +263,8 @@ yudao:
 4. 其余 POST 默认 legacy（老客户端兼容优先）。`Mcp-Method` 头不参与分类（它只是 modern 腿的校验对象）、方法名不参与分类（无 claim 的 `server/discover` 也落默认 legacy）、顶层 `params.protocolVersion` 不参与分类（那是 legacy `initialize` 的参数，带 `2026-07-28` 的 `initialize` 走 legacy 协商降级回 `2025-11-25`）；无 claim 的 `initialize` 自然落默认 legacy，不需要单独分支。
 5. 未知 HTTP 方法（PUT / OPTIONS / HEAD / PATCH / TRACE 等）同样落入 `default-legacy`，由目标 transport 的 `HttpServlet` 默认行为答复（405），分流器不另做处理。
 
+已知限制：无头且无 `_meta` 版本的 modern 形态调用（如 `tools/*` 且体里只有方法名）也会落到默认 legacy，有意不加启发式规则——WorkBuddy 等 legacy 客户端实际发的 `_meta` 未核实，凭体方法 + clientCapabilities 猜 modern 有误伤 legacy 客户端的风险。
+
 两条腿的区别：
 
 - modern（2026-07-28）：无 `initialize` 握手，先调 `server/discover`，再直接调工具；确认走 MRTR elicitation（见下）。
