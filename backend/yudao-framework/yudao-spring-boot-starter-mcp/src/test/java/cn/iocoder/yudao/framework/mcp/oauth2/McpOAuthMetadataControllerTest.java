@@ -46,13 +46,14 @@ class McpOAuthMetadataControllerTest {
         assertThat(metadata.get("token_endpoint_auth_methods_supported"))
                 .isEqualTo(List.of("none"));
         assertThat(metadata.get("code_challenge_methods_supported")).isEqualTo(List.of("S256"));
-        // CIMD 是唯一的客户端注册方式（DCR 已移除），元数据必须声明支持。
+        // CIMD 与 DCR 并存，CIMD 优先；元数据必须声明 CIMD 支持。
         assertThat(metadata.get("client_id_metadata_document_supported")).isEqualTo(Boolean.TRUE);
     }
 
     @Test
-    void shouldNeverExposeRegistrationEndpoint() {
-        // DCR 已移除：默认配置与配了 issuer / 各端点的配置下，元数据都不含 registration_endpoint。
+    void shouldExposeRegistrationEndpointOnlyWhenEnabled() {
+        // 默认关闭：元数据不含 registration_endpoint（只藏入口，端点本身由
+        // yudao.mcp.oauth.dynamic-client-registration-enabled 控制）。
         Map<String, Object> defaultMetadata = new McpOAuthMetadataController(
                 new YudaoMcpServerProperties(), emptyBeanProvider()).authorizationServerMetadata(request());
 
@@ -61,18 +62,25 @@ class McpOAuthMetadataControllerTest {
         // 只在“配了各端点”的测试里断言，默认路径丢了标志测试仍会全绿。
         assertThat(defaultMetadata.get("client_id_metadata_document_supported")).isEqualTo(Boolean.TRUE);
 
-        YudaoMcpServerProperties properties = new YudaoMcpServerProperties();
-        properties.setAuthorizationServerIssuer("https://auth.example.com");
-        properties.setAuthorizationEndpoint("https://auth.example.com/sso");
-        properties.setTokenEndpoint("https://auth.example.com/admin-api/system/oauth2/token");
-        properties.setRevocationEndpoint("https://auth.example.com/admin-api/system/oauth2/token");
+        // 开关开启：默认注册端点为 admin-api 前缀 + /mcp/oauth2/register。
+        YudaoMcpServerProperties enabledProperties = new YudaoMcpServerProperties();
+        enabledProperties.setDynamicClientRegistrationEnabled(true);
+        Map<String, Object> enabledMetadata = new McpOAuthMetadataController(
+                enabledProperties, emptyBeanProvider()).authorizationServerMetadata(request());
 
-        Map<String, Object> metadata = new McpOAuthMetadataController(
-                properties, emptyBeanProvider()).authorizationServerMetadata(request());
+        assertThat(enabledMetadata.get("registration_endpoint"))
+                .isEqualTo("https://erp.example.com/admin-api/mcp/oauth2/register");
+        assertThat(enabledMetadata.get("client_id_metadata_document_supported")).isEqualTo(Boolean.TRUE);
 
-        assertThat(metadata.get("issuer")).isEqualTo("https://auth.example.com");
-        assertThat(metadata.get("authorization_endpoint")).isEqualTo("https://auth.example.com/sso");
-        assertThat(metadata).doesNotContainKey("registration_endpoint");
+        // 自定义注册端点覆盖默认值。
+        YudaoMcpServerProperties customProperties = new YudaoMcpServerProperties();
+        customProperties.setDynamicClientRegistrationEnabled(true);
+        customProperties.setRegistrationEndpoint("https://auth.example.com/oauth2/register");
+        Map<String, Object> customMetadata = new McpOAuthMetadataController(
+                customProperties, emptyBeanProvider()).authorizationServerMetadata(request());
+
+        assertThat(customMetadata.get("registration_endpoint"))
+                .isEqualTo("https://auth.example.com/oauth2/register");
     }
 
     @Test

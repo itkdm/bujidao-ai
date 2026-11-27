@@ -57,10 +57,15 @@ public class McpOAuthMetadataController {
         if (StrUtil.isNotBlank(revocationEndpoint)) {
             metadata.put("revocation_endpoint", revocationEndpoint);
         }
+        String registrationEndpoint = registrationEndpoint(origin);
+        if (StrUtil.isNotBlank(registrationEndpoint)) {
+            metadata.put("registration_endpoint", registrationEndpoint);
+        }
         metadata.put("response_types_supported", List.of("code"));
         metadata.put("grant_types_supported", List.of("authorization_code", "refresh_token"));
-        // CIMD 是本服务端唯一的客户端注册方式（DCR 已移除）：必须声明支持，
-        // 否则按规范实现的客户端（如 WorkBuddy / MCP TS SDK）在元数据里既找不到
+        // CIMD 与 DCR 并存：CIMD 是优先的客户端注册方式，DCR 是面向不托管
+        // CIMD 文档的桌面客户端的兼容路径。两者都必须声明，否则按规范实现的
+        // 客户端（如 WorkBuddy / MCP TS SDK）在元数据里既找不到
         // registration_endpoint、又看不到本标志时，会直接判定授权服务器不兼容而中止。
         metadata.put("client_id_metadata_document_supported", Boolean.TRUE);
         metadata.put("code_challenge_methods_supported", List.of("S256"));
@@ -101,6 +106,16 @@ public class McpOAuthMetadataController {
             return absolute(origin, properties.getRevocationEndpoint());
         }
         return absolute(origin, adminApiPrefix() + "/mcp/oauth2/revoke");
+    }
+
+    private String registrationEndpoint(String origin) {
+        if (!properties.isDynamicClientRegistrationEnabled()) {
+            return null;
+        }
+        if (StrUtil.isNotBlank(properties.getRegistrationEndpoint())) {
+            return absolute(origin, properties.getRegistrationEndpoint());
+        }
+        return absolute(origin, adminApiPrefix() + "/mcp/oauth2/register");
     }
 
     private String adminApiPrefix() {
