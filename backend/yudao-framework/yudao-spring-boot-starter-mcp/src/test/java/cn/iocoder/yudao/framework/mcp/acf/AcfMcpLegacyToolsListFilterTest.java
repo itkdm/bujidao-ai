@@ -8,10 +8,14 @@ import cn.iocoder.yudao.framework.mcp.security.McpTransportContextKeys;
 import io.modelcontextprotocol.common.McpTransportContext;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -38,24 +42,22 @@ class AcfMcpLegacyToolsListFilterTest {
         return McpSchema.Tool.builder(name, Map.of("type", "object")).build();
     }
 
-    @Test
-    void shouldShowVisibleTool() {
-        when(visibilityService.getVisible(eq("cap-a"), any()))
-                .thenReturn(Optional.of(mock(CapabilityDefinition.class)));
+    @ParameterizedTest
+    @MethodSource("visibilityCases")
+    void shouldDecideVisibilityFromService(String toolName, boolean visible) {
+        when(visibilityService.getVisible(eq(toolName), any()))
+                .thenReturn(visible ? Optional.of(mock(CapabilityDefinition.class))
+                        : Optional.empty());
 
-        assertThat(filter.isVisible(CONTEXT, tool("cap-a"))).isTrue();
+        assertThat(filter.isVisible(CONTEXT, tool(toolName))).isEqualTo(visible);
 
-        verify(visibilityService, times(1)).getVisible(eq("cap-a"), any());
+        verify(visibilityService, times(1)).getVisible(eq(toolName), any());
     }
 
-    @Test
-    void shouldHideInvisibleTool() {
-        when(visibilityService.getVisible(eq("cap-b"), any()))
-                .thenReturn(Optional.empty());
-
-        assertThat(filter.isVisible(CONTEXT, tool("cap-b"))).isFalse();
-
-        verify(visibilityService, times(1)).getVisible(eq("cap-b"), any());
+    static Stream<Arguments> visibilityCases() {
+        return Stream.of(
+                Arguments.of("cap-a", true),
+                Arguments.of("cap-b", false));
     }
 
     @Test
