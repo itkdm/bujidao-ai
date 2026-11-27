@@ -57,6 +57,9 @@ class McpOAuthMetadataControllerTest {
                 new YudaoMcpServerProperties(), emptyBeanProvider()).authorizationServerMetadata(request());
 
         assertThat(defaultMetadata).doesNotContainKey("registration_endpoint");
+        // 默认配置下也必须声明 CIMD 支持：真实客户端先读元数据再决定注册方式，
+        // 只在“配了各端点”的测试里断言，默认路径丢了标志测试仍会全绿。
+        assertThat(defaultMetadata.get("client_id_metadata_document_supported")).isEqualTo(Boolean.TRUE);
 
         YudaoMcpServerProperties properties = new YudaoMcpServerProperties();
         properties.setAuthorizationServerIssuer("https://auth.example.com");
