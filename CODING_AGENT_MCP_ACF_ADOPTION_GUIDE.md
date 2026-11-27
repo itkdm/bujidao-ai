@@ -277,7 +277,7 @@ yudao:
 
 认证与元数据两条腿共用同一套：OAuth（CIMD / PKCE / Bearer token + `mcp:access` scope）、租户、限流、安全过滤器都在分流之前跑完；OAuth 元数据端点（`/.well-known/oauth-protected-resource/mcp`、`/.well-known/oauth-authorization-server`）不区分协议版本，不用为 legacy 另做说明或另配——它们描述的是 OAuth 资源与授权服务器，不是 MCP 协议版本。
 
-Legacy 开关：`yudao.mcp.server.legacy.enabled`，默认 `true`（不配即开启）。改成 `false` 后，分流到 legacy 的请求在分流器里被明确拒绝，不会静默落到 modern，也不会 500：JSON-RPC 请求答 HTTP 400 + JSON-RPC 错误信封（`code -32022`，`id` 原样回显，`message` 说明 legacy 已关闭、请用 modern 客户端）；通知（无 `id`）按 JSON-RPC 语义无响应，答 HTTP 202；modern 请求完全不受影响。改配置后重启生效（非热更新）：开关值在分流器构造时快照为 boolean，运行期改配置需重启才生效。关掉开关只是关分流入口，legacy transport 与 stateless server 的 bean 仍会建出来（不产生 URL 映射、不被调用）。
+Legacy 开关：`yudao.mcp.server.legacy.enabled`，默认 `true`（不配即开启）。改成 `false` 后，分流到 legacy 的 POST 请求在分流器里被明确拒绝，不会静默落到 modern，也不会 500：JSON-RPC 请求答 HTTP 400 + JSON-RPC 错误信封（`code -32022`，`id` 原样回显，`message` 说明 legacy 已关闭、请用 modern 客户端）；通知（无 `id`）按 JSON-RPC 语义无响应，答 HTTP 202；无 body 的 POST 请求答 HTTP 400 + `id: null` 的错误信封。GET / DELETE / 未知方法绕过开关，直接转发给 legacy transport 由它答 405（它们根本不是 legacy 协议请求，不包装成“legacy 已关闭”）；modern 请求完全不受影响。改配置后重启生效（非热更新）：开关值在分流器构造时快照为 boolean，运行期改配置需重启才生效。关掉开关只是关分流入口，legacy transport 与 stateless server 的 bean 仍会建出来（不产生 URL 映射、不被调用）。
 
 何时下掉 legacy：到达分流器的每个请求记一行日志（`MCP dispatch leg={} protocolVersion={} ... rule={}`），以后按该日志统计 modern 与 legacy 的流量：legacy 流量归零一段时间后再考虑关开关、最终下掉 legacy 代码；开关关闭后的拒绝也记为 `rule=legacy-disabled`，便于统计还有多少旧客户端在撞墙。注意统计口径：被安全链（401/403）、`McpRequestSizeLimitFilter`、`McpQueryTokenRejectingFilter` 在分流器之前拦掉的请求到不了分流器，不产生分流日志、不计入该统计口径。
 

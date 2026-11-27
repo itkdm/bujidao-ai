@@ -69,13 +69,15 @@ import java.util.Objects;
  * 凭体方法 + clientCapabilities 猜 modern 有误伤 legacy 客户端的风险。</p>
  *
  * <p>Legacy 开关（{@code yudao.mcp.server.legacy.enabled}，默认 true）：关掉后
- * 分流到 legacy 的请求在这里被明确拒绝，不转发给任何一条 transport——既不静默
- * 落到 modern，也不产生 500。拒绝形态：JSON-RPC 请求（带 {@code id}）答
+ * 分流到 legacy 的 <b>POST</b> 请求在这里被明确拒绝，不转发给任何一条 transport——
+ * 既不静默落到 modern，也不产生 500。拒绝形态：JSON-RPC 请求（带 {@code id}）答
  * HTTP 400 + JSON-RPC 错误信封（{@code code -32022}，与 modern transport 对不
  * 支持协议版本的回答一致，见 SDK v2.2.0
  * {@code HttpServletMcpTransport.DEFAULT_ERROR_STATUSES}）；通知（无 {@code id}）
- * 按 JSON-RPC 语义无响应，答 HTTP 202；无 body 的请求（GET / DELETE 等）答
- * HTTP 400 + {@code id: null} 的错误信封。Modern 请求不受开关影响。
+ * 按 JSON-RPC 语义无响应，答 HTTP 202；无 body 的 POST 请求答 HTTP 400 +
+ * {@code id: null} 的错误信封。GET / DELETE / 未知方法绕过开关，直接转发给 legacy
+ * transport 由它答 405——它们根本不是 legacy 协议请求，开关关闭时把它包装成
+ * “legacy 已关闭、请用 modern 客户端”是语义误导。Modern 请求不受开关影响。
  * 拒绝的那一行分流日志记为 {@code rule=legacy-disabled}，便于以后按流量决定何时
  * 下掉 legacy。</p>
  *
@@ -131,7 +133,10 @@ public class McpProtocolDispatcherServlet extends HttpServlet {
         }
         Decision decision = decide(request.getMethod(),
                 request.getHeader(Headers.MCP_PROTOCOL_VERSION), body);
-        if (decision.leg() == Leg.LEGACY && !legacyEnabled) {
+        if (decision.leg() == Leg.LEGACY && !legacyEnabled
+                && "POST".equalsIgnoreCase(request.getMethod())) {
+            // Legacy 腿已关：只拦截 POST——GET / DELETE / 未知方法不是 legacy
+            // 协议请求，绕过开关直接转发给 legacy transport 由它答 405（见类注释）。
             // Legacy 腿已关：记一行 rule=legacy-disabled 的分流日志（流量统计口径
             // 与正常分流一致），再明确拒绝，不转发给任何一条 transport。
             Decision rejected = new Decision(Leg.LEGACY, decision.protocolVersion(), "legacy-disabled");
@@ -161,7 +166,9 @@ public class McpProtocolDispatcherServlet extends HttpServlet {
      *
      * <p>JSON-RPC 请求（带 {@code id}）答 HTTP 400 + JSON-RPC 错误信封，
      * {@code id} 原样回显；通知（无 {@code id}）按 JSON-RPC 语义无响应，答
-     * HTTP 202 空体；无 body 的请求答 HTTP 400 + {@code id: null} 的错误信封。
+     * HTTP 202 空体；无 body 的 POST 请求答 HTTP 400 + {@code id: null} 的错误信封。
+     * 本方法只对 POST 调用（见 {@link #service}）：GET / DELETE / 未知方法绕过
+     * kill-switch，由 legacy transport 答 405。
      * 错误码用 modern {@code McpSchema.ErrorCodes.UNSUPPORTED_PROTOCOL_VERSION}
      * （{@code -32022}，SDK v2.2.0 tag 源码；legacy {@code McpSchema.ErrorCodes}
      * 里没有这个常量，但 -32022 本就是 JSON-RPC 服务端错误段的取值，modern
