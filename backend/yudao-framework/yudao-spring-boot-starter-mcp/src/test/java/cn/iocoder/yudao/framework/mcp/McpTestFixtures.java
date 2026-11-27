@@ -116,6 +116,11 @@ public final class McpTestFixtures {
         source.setContentType("application/json");
         source.addHeader("Accept", "application/json, text/event-stream");
         source.setContent(json.getBytes(StandardCharsets.UTF_8));
+        // Host 必带：SDK 2.2.0 的 DefaultServerTransportSecurityValidator 在
+        // allowedHosts 非空时要求 Host 头（缺失即 421，DNS-rebinding 防护）；
+        // 真实 HTTP 客户端总会自动带 Host，只有 MockHttpServletRequest 不会合成。
+        // localhost 在默认允许列表（localhost:*）内，不削弱生产校验。
+        source.addHeader("Host", "localhost");
         source.addHeader("Mcp-Method", method);
         source.addHeader("MCP-Protocol-Version", "2026-07-28");
         if (name != null) {

@@ -273,6 +273,9 @@ class YudaoMcpAutoConfigurationTest {
                     source.setContentType("application/json");
                     source.addHeader("Accept", "application/json, text/event-stream");
                     source.setContent(json.getBytes(StandardCharsets.UTF_8));
+                    // Host 必带（原因见 McpTestFixtures.modernRequest）：缺失时
+                    // SDK 的 Host 校验以 421 拦截，到不了 discover 处理。
+                    source.addHeader("Host", "localhost");
                     source.addHeader("Mcp-Method", "server/discover");
                     source.addHeader("MCP-Protocol-Version", "2026-07-28");
                     LoginUser loginUser = new LoginUser();
@@ -372,6 +375,9 @@ class YudaoMcpAutoConfigurationTest {
                     request.setContentType("application/json");
                     request.addHeader("Accept", "application/json, text/event-stream");
                     request.setContent(json.getBytes(StandardCharsets.UTF_8));
+                    // Host 必带（原因见 McpTestFixtures.modernRequest）：缺失时
+                    // SDK 的 Host 校验以 421 拦截，到不了 McpServer 的 -32022 拒绝。
+                    request.addHeader("Host", "localhost");
                     MockHttpServletResponse response = new MockHttpServletResponse();
                     transport.service((ServletRequest) request, (ServletResponse) response);
                     assertThat(response.getStatus()).isEqualTo(400);
