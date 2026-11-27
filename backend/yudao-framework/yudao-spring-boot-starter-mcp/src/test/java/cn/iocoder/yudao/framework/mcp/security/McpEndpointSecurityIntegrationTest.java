@@ -37,7 +37,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 
 import java.time.LocalDateTime;
@@ -45,6 +44,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static cn.iocoder.yudao.framework.mcp.McpTestFixtures.modernHeaders;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -152,13 +152,8 @@ class McpEndpointSecurityIntegrationTest {
         ResponseEntity<String> discoverResponse = postDiscover(headers);
         assertThat(discoverResponse.getStatusCode().is2xxSuccessful()).isTrue();
 
-        HttpHeaders toolHeaders = new HttpHeaders();
+        HttpHeaders toolHeaders = modernHeaders("tools/call", "demo.echo");
         toolHeaders.setBearerAuth("valid-token");
-        toolHeaders.setContentType(MediaType.APPLICATION_JSON);
-        toolHeaders.setAccept(List.of(MediaType.APPLICATION_JSON, MediaType.TEXT_EVENT_STREAM));
-        toolHeaders.set("Mcp-Method", "tools/call");
-        toolHeaders.set("MCP-Protocol-Version", "2026-07-28");
-        toolHeaders.set("Mcp-Name", "demo.echo");
         String callRequest = """
                 {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{
                   "name":"demo.echo","arguments":{"message":"hello"},
@@ -246,10 +241,8 @@ class McpEndpointSecurityIntegrationTest {
     // 放开需要 JVM 级系统属性，且 Origin 用例已经证明 Validator 已接入 Transport。
 
     private ResponseEntity<String> postDiscover(HttpHeaders headers) {
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.setAccept(List.of(MediaType.APPLICATION_JSON, MediaType.TEXT_EVENT_STREAM));
-        headers.set("Mcp-Method", "server/discover");
-        headers.set("MCP-Protocol-Version", "2026-07-28");
+        // 调用方传进来的 headers 可能已带认证信息（Bearer），这里只补 modern 头。
+        headers.putAll(modernHeaders("server/discover"));
         return restTemplate.postForEntity(endpoint(), new HttpEntity<>(DISCOVER_REQUEST, headers), String.class);
     }
 
@@ -258,10 +251,7 @@ class McpEndpointSecurityIntegrationTest {
     }
 
     private ResponseEntity<String> postToolsList(HttpHeaders headers, String queryString) {
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.setAccept(List.of(MediaType.APPLICATION_JSON, MediaType.TEXT_EVENT_STREAM));
-        headers.set("Mcp-Method", "tools/list");
-        headers.set("MCP-Protocol-Version", "2026-07-28");
+        headers.putAll(modernHeaders("tools/list"));
         return restTemplate.postForEntity(endpoint() + queryString,
                 new HttpEntity<>(TOOLS_LIST_REQUEST, headers), String.class);
     }
