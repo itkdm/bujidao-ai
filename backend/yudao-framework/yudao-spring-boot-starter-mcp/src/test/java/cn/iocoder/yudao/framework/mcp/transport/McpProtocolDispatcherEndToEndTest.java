@@ -5,6 +5,7 @@ import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import cn.iocoder.yudao.framework.common.biz.system.oauth2.OAuth2TokenCommonApi;
+import cn.iocoder.yudao.framework.mcp.McpTestFixtures;
 import cn.iocoder.yudao.framework.mcp.acf.AcfMcpToolProtocolMetadata;
 import cn.iocoder.yudao.framework.mcp.config.YudaoMcpAcfAutoConfiguration;
 import cn.iocoder.yudao.framework.mcp.config.YudaoMcpAutoConfiguration;
@@ -32,7 +33,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
-import static cn.iocoder.yudao.framework.mcp.McpTestFixtures.descriptor;
 import static cn.iocoder.yudao.framework.mcp.McpTestFixtures.dispatch;
 import static cn.iocoder.yudao.framework.mcp.McpTestFixtures.toolNames;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -79,7 +79,7 @@ class McpProtocolDispatcherEndToEndTest {
         HttpServletMcpTransport modernTransport = mock(HttpServletMcpTransport.class);
         CapabilityToolCatalog catalog = mock(CapabilityToolCatalog.class);
         when(catalog.listDeclared()).thenReturn(ALL_TOOL_NAMES.stream()
-                .map(McpProtocolDispatcherEndToEndTest::descriptor)
+                .map(McpTestFixtures::descriptor)
                 .toList());
         CapabilityToolInvoker invoker = mock(CapabilityToolInvoker.class);
         when(invoker.invoke(any())).thenAnswer(invocation -> {
