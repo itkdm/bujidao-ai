@@ -21,6 +21,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * /mcp 的双协议分流入口：同一 endpoint 同时服务 MCP 2026-07-28（modern）与
@@ -143,7 +144,7 @@ public class McpProtocolDispatcherServlet extends HttpServlet {
             logger.info("MCP dispatch leg={} protocolVersion={} httpMethod={} rpcMethod={} rule={}",
                     rejected.leg(), loggableProtocolVersion(rejected.protocolVersion()),
                     request.getMethod(),
-                    rpcMethod == null ? "-" : rpcMethod, rejected.rule());
+                    loggableRpcMethod(rpcMethod), rejected.rule());
             rejectLegacyDisabled(response, body);
             return;
         }
@@ -152,7 +153,7 @@ public class McpProtocolDispatcherServlet extends HttpServlet {
         logger.info("MCP dispatch leg={} protocolVersion={} httpMethod={} rpcMethod={} rule={}",
                 decision.leg(), loggableProtocolVersion(decision.protocolVersion()),
                 request.getMethod(),
-                rpcMethod == null ? "-" : rpcMethod, decision.rule());
+                loggableRpcMethod(rpcMethod), decision.rule());
         if (decision.leg() == Leg.MODERN) {
             // 显式转型命中 GenericServlet 的 public service 重载（见类注释）。
             modernTransport.service((ServletRequest) request, (ServletResponse) response);
@@ -324,6 +325,56 @@ public class McpProtocolDispatcherServlet extends HttpServlet {
             return null;
         }
         return text(meta.get(MetaKeys.PROTOCOL_VERSION));
+    }
+
+    /**
+     * 日志里的 RPC 方法名只记已知方法（modern 与 legacy 两套 SDK {@code McpSchema}
+     * 的方法常量全集），未知记长度——与 {@link #loggableProtocolVersion(String)}
+     * 同一口径。方法名来自请求体，是攻击者可控字符串：体里的 {@code \r} / {@code \n}
+     * 转义经 Jackson 解码后就是真换行，容器层拦裸 CRLF 头的理由对体值不成立，
+     * 所以不记原文；已知方法名是固定常量，不含控制字符。
+     */
+    private static final Set<String> KNOWN_RPC_METHODS = Set.of(
+            McpSchema.METHOD_SERVER_DISCOVER,
+            McpSchema.METHOD_INITIALIZE,
+            McpSchema.METHOD_TOOLS_LIST,
+            McpSchema.METHOD_TOOLS_CALL,
+            McpSchema.METHOD_RESOURCES_LIST,
+            McpSchema.METHOD_RESOURCES_TEMPLATES_LIST,
+            McpSchema.METHOD_RESOURCES_READ,
+            McpSchema.METHOD_PROMPTS_LIST,
+            McpSchema.METHOD_PROMPTS_GET,
+            McpSchema.METHOD_COMPLETION_COMPLETE,
+            McpSchema.METHOD_SUBSCRIPTIONS_LISTEN,
+            McpSchema.METHOD_NOTIFICATION_CANCELLED,
+            McpSchema.METHOD_NOTIFICATION_PROGRESS,
+            McpSchema.METHOD_NOTIFICATION_MESSAGE,
+            McpSchema.METHOD_NOTIFICATION_SUBSCRIPTIONS_ACKNOWLEDGED,
+            McpSchema.METHOD_NOTIFICATION_RESOURCES_UPDATED,
+            McpSchema.METHOD_NOTIFICATION_TOOLS_LIST_CHANGED,
+            McpSchema.METHOD_NOTIFICATION_PROMPTS_LIST_CHANGED,
+            McpSchema.METHOD_NOTIFICATION_RESOURCES_LIST_CHANGED,
+            McpSchema.METHOD_ELICITATION_CREATE,
+            McpSchema.METHOD_SAMPLING_CREATE_MESSAGE,
+            McpSchema.METHOD_ROOTS_LIST,
+            io.modelcontextprotocol.spec.McpSchema.METHOD_NOTIFICATION_INITIALIZED,
+            io.modelcontextprotocol.spec.McpSchema.METHOD_PING,
+            io.modelcontextprotocol.spec.McpSchema.METHOD_RESOURCES_SUBSCRIBE,
+            io.modelcontextprotocol.spec.McpSchema.METHOD_RESOURCES_UNSUBSCRIBE,
+            io.modelcontextprotocol.spec.McpSchema.METHOD_PROMPT_LIST,
+            io.modelcontextprotocol.spec.McpSchema.METHOD_PROMPT_GET,
+            io.modelcontextprotocol.spec.McpSchema.METHOD_LOGGING_SET_LEVEL,
+            io.modelcontextprotocol.spec.McpSchema.METHOD_NOTIFICATION_ROOTS_LIST_CHANGED,
+            io.modelcontextprotocol.spec.McpSchema.METHOD_NOTIFICATION_ELICITATION_COMPLETE);
+
+    private static String loggableRpcMethod(String rpcMethod) {
+        if (rpcMethod == null) {
+            return "-";
+        }
+        if (KNOWN_RPC_METHODS.contains(rpcMethod)) {
+            return rpcMethod;
+        }
+        return "unknown(len=" + rpcMethod.length() + ")";
     }
 
     /**
