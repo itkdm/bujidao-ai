@@ -237,6 +237,41 @@ class YudaoMcpAutoConfigurationTest {
                 });
     }
 
+    @Test
+    void shouldRejectLegacyInitializeDirectlyOnModernTransport() throws Exception {
+        // P1-2：绕过分流器、直驱 modern transport，锁定 initialize → -32022。
+        // D5 把 /mcp 上的 legacy initialize 改为接受后，全仓不再有测试覆盖
+        // modern transport 自己对 initialize 的拒绝（分流器自造的 kill-switch
+        // -32022 不算，那不是 modern transport 发出的）。直驱时 transport 的
+        // 头校验豁免无 _meta 版本的 initialize（SDK HttpServletMcpTransport），
+        // 由 McpServer 以 -32022（HTTP 400）拒绝。
+        String json = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":"
+                + "{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},"
+                + "\"clientInfo\":{\"name\":\"workbuddy\",\"version\":\"1.0\"}}}";
+        contextRunner.withPropertyValues("yudao.mcp.server.enabled=true")
+                .run(context -> {
+                    LoginUser loginUser = new LoginUser();
+                    loginUser.setId(10L);
+                    loginUser.setTenantId(20L);
+                    SecurityFrameworkUtils.setLoginUser(loginUser, new MockHttpServletRequest());
+                    HttpServletMcpTransport transport = context.getBean(HttpServletMcpTransport.class);
+                    MockHttpServletRequest request = new MockHttpServletRequest();
+                    request.setMethod("POST");
+                    request.setRequestURI("/mcp");
+                    request.setContentType("application/json");
+                    request.addHeader("Accept", "application/json, text/event-stream");
+                    request.setContent(json.getBytes(StandardCharsets.UTF_8));
+                    MockHttpServletResponse response = new MockHttpServletResponse();
+                    transport.service((ServletRequest) request, (ServletResponse) response);
+                    assertThat(response.getStatus()).isEqualTo(400);
+                    JsonNode payload = new ObjectMapper().readTree(response.getContentAsString());
+                    assertThat(payload.path("id").asInt()).isEqualTo(1);
+                    assertThat(payload.path("error").path("code").asInt()).isEqualTo(-32022);
+                    assertThat(payload.path("error").path("message").asText())
+                            .contains("Unsupported protocol version");
+                });
+    }
+
     /**
      * 直接调注册在 /mcp 上的分流器（GenericServlet 的 public service 重载，
      * protected 的 HttpServlet 重载在 config 包调不到）。
