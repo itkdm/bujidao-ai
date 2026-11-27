@@ -300,6 +300,10 @@ class McpProtocolDispatcherServletTest {
         JsonNode payload = OBJECT_MAPPER.readTree(response.getContentAsString());
         assertThat(payload.path("id").asInt()).isEqualTo(7);
         assertThat(payload.path("error").path("code").asInt()).isEqualTo(-32022);
+        assertThat(payload.path("error").path("message").asText()).contains("disabled");
+        assertThat(payload.path("error").path("data").path("legacyEnabled").asBoolean()).isFalse();
+        assertThat(payload.path("error").path("data").path("supportedProtocolVersion").asText())
+                .isEqualTo("2026-07-28");
     }
 
     @Test
@@ -321,6 +325,10 @@ class McpProtocolDispatcherServletTest {
         JsonNode payload = OBJECT_MAPPER.readTree(response.getContentAsString());
         assertThat(payload.path("id").isNull()).isTrue();
         assertThat(payload.path("error").path("code").asInt()).isEqualTo(-32022);
+        assertThat(payload.path("error").path("message").asText()).contains("disabled");
+        assertThat(payload.path("error").path("data").path("legacyEnabled").asBoolean()).isFalse();
+        assertThat(payload.path("error").path("data").path("supportedProtocolVersion").asText())
+                .isEqualTo("2026-07-28");
     }
 
     @Test

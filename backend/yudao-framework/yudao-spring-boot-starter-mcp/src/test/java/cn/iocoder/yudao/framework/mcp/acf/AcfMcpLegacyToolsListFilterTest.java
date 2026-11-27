@@ -17,7 +17,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class AcfMcpLegacyToolsListFilterTest {
@@ -42,6 +44,8 @@ class AcfMcpLegacyToolsListFilterTest {
                 .thenReturn(Optional.of(mock(CapabilityDefinition.class)));
 
         assertThat(filter.isVisible(CONTEXT, tool("cap-a"))).isTrue();
+
+        verify(visibilityService, times(1)).getVisible(eq("cap-a"), any());
     }
 
     @Test
@@ -50,6 +54,8 @@ class AcfMcpLegacyToolsListFilterTest {
                 .thenReturn(Optional.empty());
 
         assertThat(filter.isVisible(CONTEXT, tool("cap-b"))).isFalse();
+
+        verify(visibilityService, times(1)).getVisible(eq("cap-b"), any());
     }
 
     @Test
@@ -71,6 +77,18 @@ class AcfMcpLegacyToolsListFilterTest {
     @Test
     void shouldHideNullTool() {
         assertThat(filter.isVisible(CONTEXT, null)).isFalse();
+    }
+
+    @Test
+    void shouldHideNullNameToolWithoutCallingVisibilityService() {
+        // Tool.builder 不接受 null name（record 紧凑构造器 Assert.notNull），
+        // 用 mock 造一个 name() 为 null 的工具：守卫分支直接返回 false，
+        // 可见性服务全程零调用。
+        McpSchema.Tool nullNameTool = mock(McpSchema.Tool.class);
+
+        assertThat(filter.isVisible(CONTEXT, nullNameTool)).isFalse();
+
+        verifyNoInteractions(visibilityService);
     }
 
     @Test

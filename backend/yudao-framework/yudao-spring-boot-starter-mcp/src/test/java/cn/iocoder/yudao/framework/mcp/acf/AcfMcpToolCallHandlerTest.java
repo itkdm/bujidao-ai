@@ -69,7 +69,9 @@ class AcfMcpToolCallHandlerTest {
         }
 
         assertThat(result.isError()).isFalse();
-        assertThat(result.content().get(0).toString()).contains("{\"message\":\"hello\"}");
+        assertThat(result.content().get(0)).isInstanceOf(McpSchema.TextContent.class);
+        assertThat(((McpSchema.TextContent) result.content().get(0)).text())
+                .isEqualTo("{\"message\":\"hello\"}");
         assertThat(result.content()).hasSize(1);
         assertThat(result.structuredContent()).isEqualTo(Map.of("message", "hello"));
         CapabilityToolCall call = callCaptor.getValue();
@@ -118,7 +120,10 @@ class AcfMcpToolCallHandlerTest {
 
         assertThat(result.isError()).isFalse();
         assertThat(result.content()).hasSize(1);
-        assertThat(result.content().get(0).toString()).contains("{\"message\":\"hello\"}");
+        assertThat(result.content().get(0))
+                .isInstanceOf(io.modelcontextprotocol.spec.McpSchema.TextContent.class);
+        assertThat(((io.modelcontextprotocol.spec.McpSchema.TextContent) result.content().get(0))
+                .text()).isEqualTo("{\"message\":\"hello\"}");
         assertThat(result.structuredContent()).isEqualTo(Map.of("message", "hello"));
         CapabilityToolCall call = callCaptor.getValue();
         assertThat(call.getCapabilityName()).isEqualTo("demo.echo");
@@ -166,8 +171,11 @@ class AcfMcpToolCallHandlerTest {
         Map<String, Object> challengeMetadata = (Map<String, Object>) result.meta()
                 .get(AcfMcpToolProtocolMetadata.CONFIRMATION_CHALLENGE);
         assertThat(challengeMetadata).containsEntry("challengeId", "challenge-001");
-        assertThat(result.content().get(0).toString()).doesNotContain("acf.confirm");
-        assertThat(result.meta().toString()).doesNotContain("internal-digest");
+        assertThat(challengeMetadata).doesNotContainKey("requestDigest");
+        assertThat(result.content().get(0))
+                .isInstanceOf(io.modelcontextprotocol.spec.McpSchema.TextContent.class);
+        assertThat(((io.modelcontextprotocol.spec.McpSchema.TextContent) result.content().get(0))
+                .text()).doesNotContain("acf.confirm");
         verify(invoker).invoke(org.mockito.ArgumentMatchers.any());
     }
 

@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
 
 /**
  * {@link AcfMcpLegacyToolAdapter} 单测：只验 modern -&gt; legacy 的字段级转写，
@@ -117,7 +119,71 @@ class AcfMcpLegacyToolAdapterTest {
         assertThat(legacy.meta()).containsEntry(AcfMcpToolProtocolMetadata.STATUS, "CONFIRM_REQUIRED");
         assertThat(legacy.meta()).containsKey(AcfMcpToolProtocolMetadata.CONFIRMATION_CHALLENGE);
         assertThat(legacy.content()).hasSize(1);
-        assertThat(legacy.content().get(0).toString()).contains("confirmation");
+        assertThat(legacy.content().get(0))
+                .isInstanceOf(io.modelcontextprotocol.spec.McpSchema.TextContent.class);
+        assertThat(((io.modelcontextprotocol.spec.McpSchema.TextContent) legacy.content().get(0))
+                .text()).contains("cannot elicit confirmation");
+    }
+
+    @Test
+    void shouldMapMinimalModernToolToLegacyToolWithNullOptionals() {
+        // 只给必填字段：outputSchema / annotations / meta / icons 全是 null，
+        // 守卫分支必须直接跳过、不抛异常，legacy 侧对应字段同样为 null。
+        McpSchema.Tool modern = McpSchema.Tool.builder("demo.minimal",
+                Map.of("type", "object")).build();
+
+        io.modelcontextprotocol.spec.McpSchema.Tool legacy =
+                AcfMcpLegacyToolAdapter.toLegacyTool(modern);
+
+        assertThat(legacy.name()).isEqualTo("demo.minimal");
+        assertThat(legacy.inputSchema()).isEqualTo(Map.of("type", "object"));
+        assertThat(legacy.title()).isNull();
+        assertThat(legacy.description()).isNull();
+        assertThat(legacy.outputSchema()).isNull();
+        assertThat(legacy.annotations()).isNull();
+        assertThat(legacy.meta()).isNull();
+        assertThat(legacy.icons()).isNull();
+    }
+
+    @Test
+    void shouldRejectUnknownModernCallToolOutcome() {
+        // CallToolOutcome 是普通接口（非密封），mock 一个既非 CallToolResult
+        // 又非 InputRequiredResult 的实现，必须以 IllegalArgumentException 拒绝。
+        McpSchema.CallToolOutcome unknown = mock(McpSchema.CallToolOutcome.class);
+
+        assertThatThrownBy(() -> AcfMcpLegacyToolAdapter.toLegacyResult(unknown, jsonMapper()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Unsupported modern CallToolOutcome");
+    }
+
+    @Test
+    void shouldPassThroughTextContentAnnotationsAndMeta() {
+        McpSchema.CallToolResult modern = McpSchema.CallToolResult.builder()
+                .addContent(McpSchema.TextContent.builder("hello")
+                        .annotations(McpSchema.Annotations.builder()
+                                .audience(List.of(McpSchema.Role.USER))
+                                .priority(0.5)
+                                .lastModified("2026-07-24T20:00:00Z")
+                                .build())
+                        .meta(Map.of("trace", "trace-001"))
+                        .build())
+                .isError(false)
+                .build();
+
+        io.modelcontextprotocol.spec.McpSchema.CallToolResult legacy =
+                AcfMcpLegacyToolAdapter.toLegacyResult(modern, jsonMapper());
+
+        assertThat(legacy.content()).hasSize(1);
+        assertThat(legacy.content().get(0))
+                .isInstanceOf(io.modelcontextprotocol.spec.McpSchema.TextContent.class);
+        io.modelcontextprotocol.spec.McpSchema.TextContent text =
+                (io.modelcontextprotocol.spec.McpSchema.TextContent) legacy.content().get(0);
+        assertThat(text.text()).isEqualTo("hello");
+        assertThat(text.annotations().audience())
+                .containsExactly(io.modelcontextprotocol.spec.McpSchema.Role.USER);
+        assertThat(text.annotations().priority()).isEqualTo(0.5);
+        assertThat(text.annotations().lastModified()).isEqualTo("2026-07-24T20:00:00Z");
+        assertThat(text.meta()).containsEntry("trace", "trace-001");
     }
 
     @Test

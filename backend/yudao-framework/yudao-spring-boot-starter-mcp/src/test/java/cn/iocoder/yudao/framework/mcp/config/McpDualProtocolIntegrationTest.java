@@ -32,6 +32,8 @@ import org.springframework.boot.autoconfigure.web.servlet.WebMvcAutoConfiguratio
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.boot.web.servlet.ServletRegistrationBean;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -50,6 +52,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -95,6 +99,9 @@ class McpDualProtocolIntegrationTest {
 
     @Autowired
     private TestRestTemplate restTemplate;
+
+    @Autowired
+    private ApplicationContext applicationContext;
 
     @Autowired
     private ServletContext servletContext;
@@ -153,6 +160,13 @@ class McpDualProtocolIntegrationTest {
         assertThat(hiddenCall.getStatusCode().is2xxSuccessful()).isTrue();
         assertThat(objectMapper.readTree(hiddenCall.getBody()).path("result").path("isError")
                 .asBoolean()).isFalse();
+
+        // mock 交互计数：两次 tools/call 各调一次 invoker；一次 legacy tools/list
+        // 对 17 个声明工具各调一次 getVisible（过滤逐工具判定，不过滤调用）。
+        verify(applicationContext.getBean(CapabilityToolInvoker.class), times(2))
+                .invoke(any());
+        verify(applicationContext.getBean(CapabilityVisibilityService.class), times(17))
+                .getVisible(anyString(), any());
     }
 
     @Test
@@ -181,6 +195,7 @@ class McpDualProtocolIntegrationTest {
                 jsonRpc(11, "initialize", "{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},"
                         + "\"clientInfo\":{\"name\":\"workbuddy\",\"version\":\"1.0\"}}"),
                 legacyHeaders());
+        assertThat(initialize.getStatusCode().is2xxSuccessful()).isTrue();
         assertThat(objectMapper.readTree(initialize.getBody()).path("result")
                 .path("protocolVersion").asText()).isEqualTo(LEGACY_PROTOCOL_VERSION);
 
@@ -200,6 +215,7 @@ class McpDualProtocolIntegrationTest {
 
         ResponseEntity<String> legacyList = post("/mcp", jsonRpc(13, "tools/list", "{}"),
                 legacyHeaders());
+        assertThat(legacyList.getStatusCode().is2xxSuccessful()).isTrue();
         assertThat(toolNames(objectMapper.readTree(legacyList.getBody()))).hasSize(16)
                 .doesNotContain(HIDDEN_TOOL)
                 .contains(GATED_TOOL);
@@ -243,6 +259,13 @@ class McpDualProtocolIntegrationTest {
         JsonNode legacyResult = objectMapper.readTree(legacyCall.getBody()).path("result");
         assertThat(legacyResult.path("isError").asBoolean()).isFalse();
         assertThat(legacyResult.path("structuredContent").path("result").asText()).isEqualTo("hello");
+
+        // mock 交互计数：三次 tools/call（modern 两次 + legacy 一次）各调一次
+        // invoker；一次 legacy tools/list 对 17 个声明工具各调一次 getVisible。
+        verify(applicationContext.getBean(CapabilityToolInvoker.class), times(3))
+                .invoke(any());
+        verify(applicationContext.getBean(CapabilityVisibilityService.class), times(17))
+                .getVisible(anyString(), any());
     }
 
     @Test
@@ -268,6 +291,14 @@ class McpDualProtocolIntegrationTest {
                 .path("challengeId").asText()).isEqualTo("challenge-legacy-001");
         assertThat(call.getBody()).doesNotContain("acf.confirm");
         assertThat(call.getBody()).doesNotContain("internal-digest");
+        // HTTP 层也不应出现 requestDigest 键名（handler 层的结构化断言见单测，
+        // 这里锁定整条 HTTP 响应体不含该键）。
+        assertThat(call.getBody()).doesNotContain("requestDigest");
+
+        // 需要确认的调用同样进 ACF 执行链一次（由 invoker 返回确认态），不是被
+        // handler 提前拦下。
+        verify(applicationContext.getBean(CapabilityToolInvoker.class), times(1))
+                .invoke(any());
     }
 
     @Test
@@ -281,6 +312,14 @@ class McpDualProtocolIntegrationTest {
         assertThat(servletContext.getServletRegistration("dispatcherServlet")).isNotNull();
         assertThat(servletContext.getServletRegistration("bujidaoMcpServlet")).isNotNull();
         assertThat(servletContext.getServletRegistration("mcpServerTransport")).isNull();
+        // 与 modern transport 对称：legacy transport 同样只有 disabled 注册，
+        // 不对外暴露——容器里没有它的映射（分流器直接调 transport bean），
+        // 上下文里的注册 bean 处于 disabled 状态。
+        assertThat(servletContext.getServletRegistration(
+                YudaoMcpAutoConfiguration.MCP_LEGACY_SERVLET_REGISTRATION_NAME)).isNull();
+        assertThat(applicationContext.getBean(
+                YudaoMcpAutoConfiguration.MCP_LEGACY_SERVLET_REGISTRATION_NAME,
+                ServletRegistrationBean.class).isEnabled()).isFalse();
 
         ResponseEntity<String> response = restTemplate.getForEntity(
                 "http://127.0.0.1:" + port + "/some-other-path", String.class);

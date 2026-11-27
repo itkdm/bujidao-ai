@@ -47,6 +47,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 class YudaoMcpAutoConfigurationTest {
 
@@ -169,6 +170,10 @@ class YudaoMcpAutoConfigurationTest {
                     assertThat(payload.path("id").asInt()).isEqualTo(1);
                     assertThat(payload.path("error").path("code").asInt()).isEqualTo(-32022);
                     assertThat(payload.path("error").path("message").asText()).contains("disabled");
+                    assertThat(payload.path("error").path("data").path("legacyEnabled").asBoolean())
+                            .isFalse();
+                    assertThat(payload.path("error").path("data").path("supportedProtocolVersion")
+                            .asText()).isEqualTo("2026-07-28");
                 });
     }
 
@@ -184,6 +189,11 @@ class YudaoMcpAutoConfigurationTest {
                     JsonNode payload = new ObjectMapper().readTree(response.getContentAsString());
                     assertThat(payload.path("id").asInt()).isEqualTo(7);
                     assertThat(payload.path("error").path("code").asInt()).isEqualTo(-32022);
+                    assertThat(payload.path("error").path("message").asText()).contains("disabled");
+                    assertThat(payload.path("error").path("data").path("legacyEnabled").asBoolean())
+                            .isFalse();
+                    assertThat(payload.path("error").path("data").path("supportedProtocolVersion")
+                            .asText()).isEqualTo("2026-07-28");
                 });
     }
 
@@ -202,6 +212,12 @@ class YudaoMcpAutoConfigurationTest {
                     assertThat(payload.path("id").asInt()).isEqualTo(9);
                     assertThat(payload.path("error").path("code").asInt()).isEqualTo(-32022);
                     assertThat(payload.path("error").path("message").asText()).contains("disabled");
+                    assertThat(payload.path("error").path("data").path("legacyEnabled").asBoolean())
+                            .isFalse();
+                    assertThat(payload.path("error").path("data").path("supportedProtocolVersion")
+                            .asText()).isEqualTo("2026-07-28");
+                    // 未进 ACF 执行链：拒绝发生在分流器，invoker 全程零交互。
+                    verifyNoInteractions(context.getBean(CapabilityToolInvoker.class));
                 });
     }
 
