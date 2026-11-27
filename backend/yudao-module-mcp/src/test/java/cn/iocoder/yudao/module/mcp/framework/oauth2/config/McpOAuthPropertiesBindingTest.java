@@ -113,10 +113,10 @@ class McpOAuthPropertiesBindingTest {
                 .withPropertyValues("yudao.mcp.oauth.cimd.fetch-timeout=0s")
                 .run(context -> {
                     assertThat(context).hasFailed();
-                    assertThat(context.getFailure()).isNotNull();
+                    assertThat(context.getStartupFailure()).isNotNull();
                     // 失败信息（沿 cause 链）应提到 fetchTimeout：@AssertTrue 的校验信息是
                     // "cimd.fetchTimeout 必须大于 0"
-                    assertThat(context.getFailure()).hasStackTraceContaining("fetchTimeout");
+                    assertThat(context.getStartupFailure()).hasStackTraceContaining("fetchTimeout");
                 });
     }
 

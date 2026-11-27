@@ -123,9 +123,11 @@ class McpOAuthTokenExchangeServiceTest {
         OAuth2ClientDO client = cimdClient();
         when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
         when(clientResolver.resolve(CLIENT_ID_URL, null)).thenReturn(client);
+        OAuth2RefreshTokenDO refreshTokenDO = new OAuth2RefreshTokenDO().setRefreshToken("refresh-token-1")
+                .setClientId(CLIENT_ID_URL);
+        refreshTokenDO.setTenantId(1L);
         when(oauth2RefreshTokenMapper.selectByRefreshToken("refresh-token-1"))
-                .thenReturn(new OAuth2RefreshTokenDO().setRefreshToken("refresh-token-1")
-                        .setClientId(CLIENT_ID_URL).setTenantId(1L));
+                .thenReturn(refreshTokenDO);
         // CIMD 客户端走上游 OAuth2ClientDO 重载（不查库），不用 String 重载
         when(oauth2TokenService.refreshAccessToken("refresh-token-1", client))
                 .thenReturn(accessTokenDO());
@@ -143,9 +145,11 @@ class McpOAuthTokenExchangeServiceTest {
         OAuth2ClientDO client = cimdClient().setAuthorizedGrantTypes(List.of("authorization_code"));
         when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
         // 刷新先查令牌再解析客户端：令牌匹配才能走到 grant 校验
+        OAuth2RefreshTokenDO refreshTokenDO = new OAuth2RefreshTokenDO().setRefreshToken("refresh-token-1")
+                .setClientId(CLIENT_ID_URL);
+        refreshTokenDO.setTenantId(1L);
         when(oauth2RefreshTokenMapper.selectByRefreshToken("refresh-token-1"))
-                .thenReturn(new OAuth2RefreshTokenDO().setRefreshToken("refresh-token-1")
-                        .setClientId(CLIENT_ID_URL).setTenantId(1L));
+                .thenReturn(refreshTokenDO);
         when(clientResolver.resolve(CLIENT_ID_URL, null)).thenReturn(client);
 
         assertThatThrownBy(() -> service.refreshAccessToken(CLIENT_ID_URL, "refresh-token-1"))
@@ -321,9 +325,11 @@ class McpOAuthTokenExchangeServiceTest {
 
     @Test
     void shouldRejectRefreshWhenRefreshTokenClientMismatches() {
+        OAuth2RefreshTokenDO refreshTokenDO = new OAuth2RefreshTokenDO().setRefreshToken("refresh-token-1")
+                .setClientId("mcp-dcr-other");
+        refreshTokenDO.setTenantId(1L);
         when(oauth2RefreshTokenMapper.selectByRefreshToken("refresh-token-1"))
-                .thenReturn(new OAuth2RefreshTokenDO().setRefreshToken("refresh-token-1")
-                        .setClientId("mcp-dcr-other").setTenantId(1L));
+                .thenReturn(refreshTokenDO);
 
         assertThatThrownBy(() -> service.refreshAccessToken(CLIENT_ID_URL, "refresh-token-1"))
                 .isInstanceOf(McpOAuthException.class)
@@ -337,9 +343,11 @@ class McpOAuthTokenExchangeServiceTest {
         when(clientResolver.isCimdClientId("mcp-dcr-abc")).thenReturn(false);
         when(oauth2ClientService.validOAuthClientFromCache("mcp-dcr-abc", null,
                 "refresh_token", null, null)).thenReturn(dbClient());
+        OAuth2RefreshTokenDO refreshTokenDO = new OAuth2RefreshTokenDO().setRefreshToken("refresh-token-1")
+                .setClientId("mcp-dcr-abc");
+        refreshTokenDO.setTenantId(1L);
         when(oauth2RefreshTokenMapper.selectByRefreshToken("refresh-token-1"))
-                .thenReturn(new OAuth2RefreshTokenDO().setRefreshToken("refresh-token-1")
-                        .setClientId("mcp-dcr-abc").setTenantId(1L));
+                .thenReturn(refreshTokenDO);
         when(oauth2TokenService.refreshAccessToken("refresh-token-1", "mcp-dcr-abc"))
                 .thenReturn(accessTokenDO());
 
