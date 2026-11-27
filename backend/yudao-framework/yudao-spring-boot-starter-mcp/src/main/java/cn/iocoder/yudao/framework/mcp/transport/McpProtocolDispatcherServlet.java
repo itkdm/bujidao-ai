@@ -333,7 +333,9 @@ public class McpProtocolDispatcherServlet extends HttpServlet {
      * 的方法常量全集），未知记长度——与 {@link #loggableProtocolVersion(String)}
      * 同一口径。方法名来自请求体，是攻击者可控字符串：体里的 {@code \r} / {@code \n}
      * 转义经 Jackson 解码后就是真换行，容器层拦裸 CRLF 头的理由对体值不成立，
-     * 所以不记原文；已知方法名是固定常量，不含控制字符。
+     * 所以不记原文；已知方法名是固定常量，不含控制字符。注意 legacy 的
+     * {@code METHOD_PROMPT_LIST} / {@code METHOD_PROMPT_GET} 与 modern 同值
+     * （"prompts/list" / "prompts/get"），{@code Set.of} 不接受重复元素，故不重复列出。
      */
     private static final Set<String> KNOWN_RPC_METHODS = Set.of(
             McpSchema.METHOD_SERVER_DISCOVER,
@@ -362,8 +364,6 @@ public class McpProtocolDispatcherServlet extends HttpServlet {
             io.modelcontextprotocol.spec.McpSchema.METHOD_PING,
             io.modelcontextprotocol.spec.McpSchema.METHOD_RESOURCES_SUBSCRIBE,
             io.modelcontextprotocol.spec.McpSchema.METHOD_RESOURCES_UNSUBSCRIBE,
-            io.modelcontextprotocol.spec.McpSchema.METHOD_PROMPT_LIST,
-            io.modelcontextprotocol.spec.McpSchema.METHOD_PROMPT_GET,
             io.modelcontextprotocol.spec.McpSchema.METHOD_LOGGING_SET_LEVEL,
             io.modelcontextprotocol.spec.McpSchema.METHOD_NOTIFICATION_ROOTS_LIST_CHANGED,
             io.modelcontextprotocol.spec.McpSchema.METHOD_NOTIFICATION_ELICITATION_COMPLETE);
