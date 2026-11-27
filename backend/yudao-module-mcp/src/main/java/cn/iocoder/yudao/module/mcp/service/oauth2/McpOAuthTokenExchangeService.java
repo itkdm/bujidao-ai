@@ -60,7 +60,7 @@ public class McpOAuthTokenExchangeService {
         // 空白 resource 归一化为 null：matches() 用 isBlank（null/"" 等价），
         // validateAuthorizationCodeBinding 用 equals（不等价），不归一化会让授权 ""、
         // 兑换不带这类组合在兑换步误判 invalid_grant。
-        resource = StrUtil.blankToNull(resource);
+        resource = StrUtil.isBlank(resource) ? null : resource;
         OAuth2ClientDO client = validatePublicClient(clientId,
                 OAuth2GrantTypeEnum.AUTHORIZATION_CODE.getGrantType(), null);
         validateRedirectUri(client, redirectUri);
