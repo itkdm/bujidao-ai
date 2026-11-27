@@ -262,20 +262,46 @@ public class McpCimdDocumentValidator {
         }
         String scheme = uri.getScheme();
         if ("https".equalsIgnoreCase(scheme)) {
-            if (uri.getHost() == null || uri.getHost().isBlank()) {
+            String host = extractHost(uri);
+            if (host == null || host.isBlank()) {
                 throw new McpCimdException(McpCimdError.INVALID_REDIRECT_URI,
                         "https redirect_uri must have a host");
             }
             return;
         }
         if ("http".equalsIgnoreCase(scheme)) {
-            if (uri.getHost() != null && isLoopbackHost(uri.getHost(), localRedirectHosts)) {
+            String host = extractHost(uri);
+            if (host != null && isLoopbackHost(host, localRedirectHosts)) {
                 return;
             }
             throw new McpCimdException(McpCimdError.INVALID_REDIRECT_URI,
                     "http redirect_uri is only allowed for loopback hosts");
         }
         throw new McpCimdException(McpCimdError.INVALID_REDIRECT_URI, "unsupported redirect_uri scheme");
+    }
+
+    /**
+     * 取 URI 的 host。java.net.URI 对 "127.0.0.1." 这类带尾点的数字型 IPv4 认不出 host
+     *（getHost() 返回 null，连端口也取不到），这时从 raw authority 里手工拆出 host 部分；
+     * 域名带尾点（localhost.）时 getHost() 正常返回，不走这条路。
+     */
+    private static String extractHost(URI uri) {
+        String host = uri.getHost();
+        if (host != null) {
+            return host;
+        }
+        String authority = uri.getRawAuthority();
+        if (authority == null) {
+            return null;
+        }
+        int at = authority.lastIndexOf('@');
+        String hostPort = at >= 0 ? authority.substring(at + 1) : authority;
+        if (hostPort.startsWith("[")) {
+            int close = hostPort.indexOf(']');
+            return close >= 0 ? hostPort.substring(0, close + 1) : null;
+        }
+        int colon = hostPort.lastIndexOf(':');
+        return colon >= 0 ? hostPort.substring(0, colon) : hostPort;
     }
 
     /**

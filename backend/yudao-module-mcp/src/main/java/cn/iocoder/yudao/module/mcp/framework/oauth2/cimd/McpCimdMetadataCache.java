@@ -88,6 +88,15 @@ public class McpCimdMetadataCache {
         entries.entrySet().removeIf(entry -> now.isAfter(entry.getValue().expiresAt()));
     }
 
+    /**
+     * 按 key 删除一条缓存。供 {@link McpCimdClientService#resolve} 在 redirect_uri 校验失败时
+     * 清理本次刚写入的条目：失败的解析永不入缓存。调用前已缓存的合法文档不受影响（调用方只在
+     * 本次调用前无缓存时才调它）。
+     */
+    public void remove(String clientIdUrl) {
+        entries.remove(clientIdUrl);
+    }
+
     /** 当前条目数（含未过期检查前的过期条目），供测试与运维观察。 */
     public int size() {
         return entries.size();

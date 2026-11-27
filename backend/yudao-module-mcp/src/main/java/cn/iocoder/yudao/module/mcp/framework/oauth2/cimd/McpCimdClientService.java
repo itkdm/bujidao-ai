@@ -10,8 +10,9 @@ import org.springframework.stereotype.Service;
  * 返回校验通过的客户端元数据。
  *
  * <p>流程：校验 URL 形状 → 查缓存（命中也要校验本次请求的 redirect_uri，通过才返回）→
- * 拉取 → 校验文档 → 校验请求 redirect_uri 在文档 redirect_uris 里（精确相等）且符合 scheme 规则 →
- * 入缓存 → 返回。任一步失败抛 {@link McpCimdException}，不吞掉、不返回 null。
+ * 拉取 → 校验文档 → 入缓存 → 校验请求 redirect_uri 在文档 redirect_uris 里（精确相等）
+ * 且符合 scheme 规则 → 返回。redirect_uri 校验失败时，若本次调用前缓存里没有这条（即是
+ * 本次刚拉取后入缓存的），把它清掉——失败的解析永不入缓存；调用前已缓存的条目不受影响。
  *
  * @author bujidao
  */
@@ -48,9 +49,20 @@ public class McpCimdClientService {
      * @throws McpCimdException 任一步失败
      */
     public McpCimdMetadata resolve(String clientIdUrl, String redirectUri) throws McpCimdException {
+        boolean cachedBefore = cache.get(clientIdUrl) != null;
         McpCimdMetadata metadata = resolveMetadata(clientIdUrl);
-        // 校验请求 redirect_uri：在文档列表里（精确相等）且符合 scheme 规则
-        validateRequestedRedirectUri(metadata, redirectUri);
+        try {
+            // 校验请求 redirect_uri：在文档列表里（精确相等）且符合 scheme 规则
+            validateRequestedRedirectUri(metadata, redirectUri);
+        } catch (McpCimdException exception) {
+            if (!cachedBefore) {
+                // 失败的解析永不入缓存：本次调用前缓存里没有这条，本次是刚拉取后入缓存的，
+                // redirect 校验失败就把它清掉，下次请求重新拉取；调用前已缓存的条目（文档
+                // 本身合法，只是本次请求的 redirect 不对）不受影响。
+                cache.remove(clientIdUrl);
+            }
+            throw exception;
+        }
         return metadata;
     }
 
