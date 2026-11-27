@@ -187,13 +187,12 @@ public class McpOAuthTokenExchangeService {
     }
 
     /** CIMD 客户端的 grant 本地校验。注意与上游 valid* 不同：上游抛 ServiceException
-     * （1_002_020_003），token 控制器只 catch McpOAuthException，那样会走到
-     * GlobalExceptionHandler 变成 CommonResult(1_002_020_003) + HTTP 200；这里改抛
-     * OAuth {@code invalid_grant}，让控制器返回标准 OAuth JSON 错误。DB 分支仍走上游
-     * valid*，行为不变（本次不修）。 */
+     * （1_002_020_003），token 控制器把它映射成 OAuth {@code unauthorized_client}；
+     * 这里直接抛 {@code unauthorized_client}，与 DB 分支保持一致（RFC 6749 §5.2：
+     * 客户端无权用该授权方式，不是 grant 本身无效，故不用 {@code invalid_grant}）。 */
     private static void validateCimdGrant(OAuth2ClientDO client, String grantType) {
         if (StrUtil.isNotBlank(grantType) && !client.getAuthorizedGrantTypes().contains(grantType)) {
-            throw McpOAuthException.invalidGrant("grant_type is not supported by this client");
+            throw McpOAuthException.unauthorizedClient("grant_type is not supported by this client");
         }
     }
 

@@ -49,6 +49,15 @@ public class McpOAuthException extends RuntimeException {
     }
 
     /**
+     * 客户端无权用该方式请求令牌（RFC 6749 §5.2）：客户端存在，但其授权类型里没有
+     * 本次请求的 grant_type（上游 OAUTH2_CLIENT_AUTHORIZED_GRANT_TYPE_NOT_EXISTS）。
+     * 不用 {@code invalid_client}：客户端本身没错，错的是它无权用这种授权方式。
+     */
+    public static McpOAuthException unauthorizedClient(String description) {
+        return new McpOAuthException(HttpStatus.BAD_REQUEST, "unauthorized_client", description);
+    }
+
+    /**
      * 限流：HTTP 429 + OAuth {@code temporarily_unavailable}（RFC 6749 §5.2 临时性问题），
      * 带 {@code Retry-After: 60}。不用 {@code invalid_client}（400）：合规客户端会把
      * {@code invalid_client} 当作配置错误而不重试。
