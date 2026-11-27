@@ -288,6 +288,38 @@ class McpDualProtocolIntegrationTest {
     }
 
     @Test
+    void shouldReturnEmptyResourceListsAndRejectPromptsOnLegacyLeg() throws Exception {
+        // P1-6：legacy 腿的 resources 能力是 resources(false, false)（非空，
+        // 故 SDK 注册了 handler），但资源列表本身是空的 → resources/list 与
+        // resources/templates/list 均回 200 空列表；prompts 未配能力，handler
+        // 未注册 → -32601（注意 legacy transport 对已处理的 JSON-RPC 请求一
+        // 律回 HTTP 200，错误只体现在信封里，与 modern 腿的 404 不同）。
+        // 指南 L12 的说法（legacy resources/list 返回空列表）经 SDK 源码核实
+        // 属实，无需修正。
+        ResponseEntity<String> resources = post("/mcp",
+                jsonRpc(30, "resources/list", "{}"), legacyHeaders());
+        assertThat(resources.getStatusCode().is2xxSuccessful()).isTrue();
+        JsonNode resourcesPayload = objectMapper.readTree(resources.getBody());
+        assertThat(resourcesPayload.path("result").path("resources").isArray()).isTrue();
+        assertThat(resourcesPayload.path("result").path("resources")).isEmpty();
+
+        ResponseEntity<String> templates = post("/mcp",
+                jsonRpc(31, "resources/templates/list", "{}"), legacyHeaders());
+        assertThat(templates.getStatusCode().is2xxSuccessful()).isTrue();
+        JsonNode templatesPayload = objectMapper.readTree(templates.getBody());
+        assertThat(templatesPayload.path("result").path("resourceTemplates").isArray()).isTrue();
+        assertThat(templatesPayload.path("result").path("resourceTemplates")).isEmpty();
+
+        ResponseEntity<String> prompts = post("/mcp",
+                jsonRpc(32, "prompts/list", "{}"), legacyHeaders());
+        assertThat(prompts.getStatusCode().is2xxSuccessful()).isTrue();
+        JsonNode promptsPayload = objectMapper.readTree(prompts.getBody());
+        assertThat(promptsPayload.path("error").path("code").asInt()).isEqualTo(-32601);
+        assertThat(promptsPayload.path("error").path("message").asText())
+                .contains("Method not found: prompts/list");
+    }
+
+    @Test
     void shouldAnswerGetWith405OnLegacyLeg() {
         // 已纠正的验收标准：legacy stateless 没有 GET SSE 流，doGet 直接答 405，
         // 与 modern 相同、与 main 的行为一致；WorkBuddy 连 main 成功靠的是 POST
