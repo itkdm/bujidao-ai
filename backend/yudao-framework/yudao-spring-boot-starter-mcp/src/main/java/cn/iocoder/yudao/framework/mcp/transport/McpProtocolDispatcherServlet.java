@@ -55,7 +55,11 @@ import java.util.Objects;
  * <p>边界：未知 HTTP 方法、未知 JSON-RPC 方法、无头 POST、重复 initialize、
  * {@code Mcp-Session-Id} 头——前三者都落到默认 legacy（modern 腿不建 session，
  * session 头不是分流信号，目标服务端自己决定怎么答）；重复 initialize 由目标
- * 服务端按自己的无状态语义处理，分流器不拦截。</p>
+ * 服务端按自己的无状态语义处理，分流器不拦截。已知限制：无头且无 {@code _meta}
+ * 版本的 modern 形态调用（如 tools/* 且体里只有方法名）也会落到默认 legacy，
+ * 有意不加启发式规则——WorkBuddy 等 legacy 客户端实际发的 {@code _meta} 未核实，
+ * 凭体方法 + clientCapabilities 猜 modern 有误伤 legacy 客户端的风险；modern
+ * 客户端一定带 {@code Mcp-Method} 头，不会落到这里。</p>
  *
  * <p>Legacy 开关（{@code yudao.mcp.server.legacy.enabled}，默认 true）：关掉后
  * 分流到 legacy 的请求在这里被明确拒绝，不转发给任何一条 transport——既不静默
@@ -76,6 +80,9 @@ public class McpProtocolDispatcherServlet extends HttpServlet {
 
     /** Modern 协议版本：SDK v2.2.0 的 {@code McpSchema.LATEST_PROTOCOL_VERSION}。 */
     static final String MODERN_PROTOCOL_VERSION = McpSchema.LATEST_PROTOCOL_VERSION;
+
+    /** Legacy 协议版本：SDK v2.2.0 的 legacy stateless 服务端支持的最高版本。 */
+    static final String LEGACY_PROTOCOL_VERSION = "2025-11-25";
 
     /** 分流目标。 */
     public enum Leg {
@@ -122,14 +129,17 @@ public class McpProtocolDispatcherServlet extends HttpServlet {
             // 与正常分流一致），再明确拒绝，不转发给任何一条 transport。
             Decision rejected = new Decision(Leg.LEGACY, decision.protocolVersion(), "legacy-disabled");
             logger.info("MCP dispatch leg={} protocolVersion={} httpMethod={} rpcMethod={} rule={}",
-                    rejected.leg(), rejected.protocolVersion(), request.getMethod(),
+                    rejected.leg(), loggableProtocolVersion(rejected.protocolVersion()),
+                    request.getMethod(),
                     rpcMethod == null ? "-" : rpcMethod, rejected.rule());
             rejectLegacyDisabled(response, body);
             return;
         }
         // 每个请求记一行：leg + 协商到的协议版本，便于以后按流量决定何时下掉 legacy.
+        // 协议版本记 loggableProtocolVersion() 处理过的值，不记请求头原文（见该方法注释）。
         logger.info("MCP dispatch leg={} protocolVersion={} httpMethod={} rpcMethod={} rule={}",
-                decision.leg(), decision.protocolVersion(), request.getMethod(),
+                decision.leg(), loggableProtocolVersion(decision.protocolVersion()),
+                request.getMethod(),
                 rpcMethod == null ? "-" : rpcMethod, decision.rule());
         if (decision.leg() == Leg.MODERN) {
             // 显式转型命中 GenericServlet 的 public service 重载（见类注释）。
@@ -175,7 +185,7 @@ public class McpProtocolDispatcherServlet extends HttpServlet {
                 + "Use a modern MCP client (2026-07-28) instead.");
         ObjectNode data = error.putObject("data");
         data.put("legacyEnabled", false);
-        data.put("legacyProtocolVersion", "2025-11-25");
+        data.put("legacyProtocolVersion", LEGACY_PROTOCOL_VERSION);
         data.put("supportedProtocolVersion", MODERN_PROTOCOL_VERSION);
         response.getWriter().write(objectMapper.writeValueAsString(errorEnvelope));
         response.getWriter().flush();
@@ -207,10 +217,14 @@ public class McpProtocolDispatcherServlet extends HttpServlet {
             // 未知输入一致），由目标 transport 的 HttpServlet 默认行为答复。
             return new Decision(Leg.LEGACY, versionOrDash(protocolVersionHeader), "default-legacy");
         }
-        if (hasText(mcpMethodHeader)) {
+        if (mcpMethodHeader != null) {
             // Mcp-Method 是 2026-07-28 的必备头：modern transport 缺了它就对
             // 非 initialize 请求答 -32020（HEADER_MISMATCH，HTTP 400）。头在，
             // 就是 modern 客户端；头值与体方法不符时由 modern transport 自己拒。
+            // 这里判的是“头存在”（非 null），不是“头非空”：空串 / 空白头是“头存在
+            // 但非法”，同样判 modern、交给 modern transport 以 -32020 拒，而不
+            // 是当成“无头”落到 legacy——legacy 客户端根本不发这个头，只有明确发
+            // 了空头的调用方才会走到这条分支。
             return new Decision(Leg.MODERN,
                     versionOrDash(protocolVersionHeader, metaProtocolVersion(body),
                             paramsProtocolVersion(body)),
@@ -251,6 +265,8 @@ public class McpProtocolDispatcherServlet extends HttpServlet {
         // 其余 POST（无 modern 头、非 initialize/discover，如 tools/list、
         // tools/call、notifications/*、未知方法、体解析失败）：默认 legacy，
         // 老客户端兼容优先；modern 客户端一定带 Mcp-Method 头，不会落到这里。
+        // 已知限制：无头、无 _meta 版本的 modern 形态调用也会落在这里（见类注释），
+        // 有意不用体方法启发式分流。
         return new Decision(Leg.LEGACY, versionOrDash(metaVersion, paramsVersion), "default-legacy");
     }
 
@@ -295,6 +311,7 @@ public class McpProtocolDispatcherServlet extends HttpServlet {
     /**
      * {@code params._meta["io.modelcontextprotocol/protocolVersion"]}。
      * 注意 key 本身含 "/"，不能用 JSON Pointer（"/" 是分隔符），必须逐级 get。
+     * 返回前 trim：体版本比较与头版本比较的宽容度一致，空白包围的版本号同样识别。
      */
     private static String metaProtocolVersion(JsonNode body) {
         if (body == null) {
@@ -308,10 +325,14 @@ public class McpProtocolDispatcherServlet extends HttpServlet {
         if (meta == null || !meta.isObject()) {
             return null;
         }
-        return text(meta.get(MetaKeys.PROTOCOL_VERSION));
+        String version = text(meta.get(MetaKeys.PROTOCOL_VERSION));
+        return version == null ? null : version.trim();
     }
 
-    /** Legacy 握手风格的顶层 {@code params.protocolVersion}。 */
+    /**
+     * Legacy 握手风格的顶层 {@code params.protocolVersion}。
+     * 返回前 trim，理由同 {@link #metaProtocolVersion(JsonNode)}。
+     */
     private static String paramsProtocolVersion(JsonNode body) {
         if (body == null) {
             return null;
@@ -320,7 +341,26 @@ public class McpProtocolDispatcherServlet extends HttpServlet {
         if (params == null || !params.isObject()) {
             return null;
         }
-        return text(params.get("protocolVersion"));
+        String version = text(params.get("protocolVersion"));
+        return version == null ? null : version.trim();
+    }
+
+    /**
+     * 日志里的协议版本只记“已知值或未知 + 长度”：{@code MCP-Protocol-Version}
+     * 头是攻击者可控字符串，直接记原文会把任意长字符串写进日志；已知版本
+     * （modern / legacy）与认不出来（"-"）原样记，未知值只记长度。容器层按
+     * RFC 7230 拦截含裸 CRLF 的头，这里不再另做字符转义。
+     */
+    private static String loggableProtocolVersion(String protocolVersion) {
+        if (protocolVersion == null) {
+            return "-";
+        }
+        if (MODERN_PROTOCOL_VERSION.equals(protocolVersion)
+                || LEGACY_PROTOCOL_VERSION.equals(protocolVersion)
+                || "-".equals(protocolVersion)) {
+            return protocolVersion;
+        }
+        return "unknown(len=" + protocolVersion.length() + ")";
     }
 
     private static String versionOrDash(String... candidates) {
