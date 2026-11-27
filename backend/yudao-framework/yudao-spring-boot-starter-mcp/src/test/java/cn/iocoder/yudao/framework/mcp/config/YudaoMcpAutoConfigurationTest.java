@@ -44,6 +44,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
+import static cn.iocoder.yudao.framework.mcp.McpTestFixtures.cachedJsonRequest;
+import static cn.iocoder.yudao.framework.mcp.McpTestFixtures.dispatch;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
@@ -287,30 +289,6 @@ class YudaoMcpAutoConfigurationTest {
                     assertThat(payload.path("error").path("message").asText())
                             .contains("Unsupported protocol version");
                 });
-    }
-
-    /**
-     * 直接调注册在 /mcp 上的分流器（GenericServlet 的 public service 重载，
-     * protected 的 HttpServlet 重载在 config 包调不到）。
-     */
-    private static MockHttpServletResponse dispatch(
-            org.springframework.context.ApplicationContext context,
-            jakarta.servlet.http.HttpServletRequest request) throws Exception {
-        McpProtocolDispatcherServlet dispatcher = (McpProtocolDispatcherServlet) context.getBean(
-                        YudaoMcpAutoConfiguration.MCP_SERVLET_NAME, ServletRegistrationBean.class)
-                .getServlet();
-        MockHttpServletResponse response = new MockHttpServletResponse();
-        dispatcher.service((ServletRequest) request, (ServletResponse) response);
-        return response;
-    }
-
-    private static jakarta.servlet.http.HttpServletRequest cachedJsonRequest(String json) {
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        request.setMethod("POST");
-        request.setRequestURI("/mcp");
-        request.setContentType("application/json");
-        request.setContent(json.getBytes(StandardCharsets.UTF_8));
-        return new CacheRequestBodyWrapper(request);
     }
 
     @Test

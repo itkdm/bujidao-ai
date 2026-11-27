@@ -6,7 +6,6 @@ import cn.iocoder.yudao.framework.acf.core.model.CapabilityDefinition;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityVisibilityService;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCall;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog;
-import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolDescriptor;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolExportService;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
@@ -42,11 +41,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.web.SecurityFilterChain;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import static cn.iocoder.yudao.framework.mcp.McpTestFixtures.descriptor;
+import static cn.iocoder.yudao.framework.mcp.McpTestFixtures.toolNames;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -382,12 +382,6 @@ class McpDualProtocolIntegrationTest {
                 + "\",\"params\":" + params + "}";
     }
 
-    private static List<String> toolNames(JsonNode payload) {
-        List<String> names = new ArrayList<>();
-        payload.path("result").path("tools").forEach(tool -> names.add(tool.path("name").asText()));
-        return names;
-    }
-
     /**
      * 老客户端的请求头：只有 Content-Type 与 Accept，没有任何 modern 头
      *（无 Mcp-Method、无 MCP-Protocol-Version）。Accept 必须同时含
@@ -414,18 +408,6 @@ class McpDualProtocolIntegrationTest {
             headers.set("Mcp-Name", name);
         }
         return headers;
-    }
-
-    static CapabilityToolDescriptor descriptor(String name, boolean confirmationRequired) {
-        CapabilityToolDescriptor descriptor = mock(CapabilityToolDescriptor.class);
-        when(descriptor.getCapabilityName()).thenReturn(name);
-        when(descriptor.getTitle()).thenReturn(name);
-        when(descriptor.getDescription()).thenReturn("ERP capability " + name);
-        when(descriptor.getInputSchema()).thenReturn(Map.of("type", "object", "properties",
-                Map.of("message", Map.of("type", "string"))));
-        when(descriptor.getOutputSchema()).thenReturn(Map.of("type", "string"));
-        when(descriptor.isConfirmationRequired()).thenReturn(confirmationRequired);
-        return descriptor;
     }
 
     private static CapabilityConfirmationChallenge confirmationChallenge() {

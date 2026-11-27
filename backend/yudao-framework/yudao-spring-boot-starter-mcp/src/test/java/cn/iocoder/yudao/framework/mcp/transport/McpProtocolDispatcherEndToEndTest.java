@@ -2,7 +2,6 @@ package cn.iocoder.yudao.framework.mcp.transport;
 
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCall;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog;
-import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolDescriptor;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import cn.iocoder.yudao.framework.common.biz.system.oauth2.OAuth2TokenCommonApi;
@@ -18,26 +17,24 @@ import cn.iocoder.yudao.framework.web.core.filter.CacheRequestBodyWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.modern.server.transport.HttpServletMcpTransport;
-import jakarta.servlet.ServletRequest;
-import jakarta.servlet.ServletResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.jackson.JacksonAutoConfiguration;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
-import org.springframework.boot.web.servlet.ServletRegistrationBean;
-import org.springframework.context.ApplicationContext;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.SecurityFilterChain;
 
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import static cn.iocoder.yudao.framework.mcp.McpTestFixtures.descriptor;
+import static cn.iocoder.yudao.framework.mcp.McpTestFixtures.dispatch;
+import static cn.iocoder.yudao.framework.mcp.McpTestFixtures.toolNames;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -150,20 +147,6 @@ class McpProtocolDispatcherEndToEndTest {
     }
 
     /**
-     * 直接调注册在 /mcp 上的分流器（GenericServlet 的 public service 重载，
-     * protected 的 HttpServlet 重载在 transport 包调不到）。
-     */
-    private static MockHttpServletResponse dispatch(
-            ApplicationContext context, HttpServletRequest request) throws Exception {
-        McpProtocolDispatcherServlet dispatcher = (McpProtocolDispatcherServlet) context.getBean(
-                        YudaoMcpAutoConfiguration.MCP_SERVLET_NAME, ServletRegistrationBean.class)
-                .getServlet();
-        MockHttpServletResponse response = new MockHttpServletResponse();
-        dispatcher.service((ServletRequest) request, (ServletResponse) response);
-        return response;
-    }
-
-    /**
      * 老客户端的请求：无 modern 头，Accept 必须同时含 application/json 与
      * text/event-stream（legacy transport 的 doPost 要求），requestURI 必须是
      * /mcp（legacy transport 的 doPost 按 URI 末尾匹配端点）。
@@ -176,23 +159,6 @@ class McpProtocolDispatcherEndToEndTest {
         request.addHeader("Accept", "application/json, text/event-stream");
         request.setContent(json.getBytes(StandardCharsets.UTF_8));
         return new CacheRequestBodyWrapper(request);
-    }
-
-    private static List<String> toolNames(JsonNode payload) {
-        List<String> names = new ArrayList<>();
-        payload.path("result").path("tools").forEach(tool -> names.add(tool.path("name").asText()));
-        return names;
-    }
-
-    private static CapabilityToolDescriptor descriptor(String name) {
-        CapabilityToolDescriptor descriptor = mock(CapabilityToolDescriptor.class);
-        when(descriptor.getCapabilityName()).thenReturn(name);
-        when(descriptor.getTitle()).thenReturn(name);
-        when(descriptor.getDescription()).thenReturn("ERP capability " + name);
-        when(descriptor.getInputSchema()).thenReturn(Map.of("type", "object", "properties",
-                Map.of("message", Map.of("type", "string"))));
-        when(descriptor.getOutputSchema()).thenReturn(Map.of("type", "string"));
-        return descriptor;
     }
 
     private static WebProperties createWebProperties() {

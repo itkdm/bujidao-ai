@@ -14,6 +14,7 @@ import org.springframework.mock.web.MockHttpServletResponse;
 
 import java.nio.charset.StandardCharsets;
 
+import static cn.iocoder.yudao.framework.mcp.McpTestFixtures.cachedJsonRequest;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
@@ -384,14 +385,6 @@ class McpProtocolDispatcherServletTest {
 
         verify(legacyTransport).service(any(ServletRequest.class), any(ServletResponse.class));
         verifyNoInteractions(modernTransport);
-    }
-
-    private static HttpServletRequest cachedJsonRequest(String json) {
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        request.setMethod("POST");
-        request.setContentType("application/json");
-        request.setContent(json.getBytes(StandardCharsets.UTF_8));
-        return new CacheRequestBodyWrapper(request);
     }
 
 }
