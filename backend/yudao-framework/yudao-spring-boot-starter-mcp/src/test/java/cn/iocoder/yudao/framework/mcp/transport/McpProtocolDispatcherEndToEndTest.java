@@ -2,6 +2,7 @@ package cn.iocoder.yudao.framework.mcp.transport;
 
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCall;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog;
+import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolDescriptor;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import cn.iocoder.yudao.framework.common.biz.system.oauth2.OAuth2TokenCommonApi;
@@ -78,9 +79,10 @@ class McpProtocolDispatcherEndToEndTest {
     void shouldServeLegacyEndToEndWithoutTouchingModernTransport() throws Exception {
         HttpServletMcpTransport modernTransport = mock(HttpServletMcpTransport.class);
         CapabilityToolCatalog catalog = mock(CapabilityToolCatalog.class);
-        when(catalog.listDeclared()).thenReturn(ALL_TOOL_NAMES.stream()
+        List<CapabilityToolDescriptor> descriptors = ALL_TOOL_NAMES.stream()
                 .map(McpTestFixtures::descriptor)
-                .toList());
+                .toList();
+        when(catalog.listDeclared()).thenReturn(descriptors);
         CapabilityToolInvoker invoker = mock(CapabilityToolInvoker.class);
         when(invoker.invoke(any())).thenAnswer(invocation -> {
             CapabilityToolCall call = invocation.getArgument(0);

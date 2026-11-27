@@ -6,6 +6,7 @@ import cn.iocoder.yudao.framework.acf.core.model.CapabilityDefinition;
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityVisibilityService;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCall;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog;
+import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolDescriptor;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolExportService;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
@@ -472,9 +473,10 @@ class McpDualProtocolIntegrationTest {
         @Bean
         CapabilityToolCatalog capabilityToolCatalog() {
             CapabilityToolCatalog catalog = mock(CapabilityToolCatalog.class);
-            when(catalog.listDeclared()).thenReturn(ALL_TOOL_NAMES.stream()
+            List<CapabilityToolDescriptor> descriptors = ALL_TOOL_NAMES.stream()
                     .map(name -> descriptor(name, GATED_TOOL.equals(name)))
-                    .toList());
+                    .toList();
+            when(catalog.listDeclared()).thenReturn(descriptors);
             return catalog;
         }
 
@@ -501,10 +503,11 @@ class McpDualProtocolIntegrationTest {
             // 此前 modern 侧没有这个 bean，仓库退回声明目录返回全量 17 个，那是
             // mock 配出来的假象，不是设计差异——生产上有 ACF 自动配置提供该 bean。
             CapabilityToolExportService exportService = mock(CapabilityToolExportService.class);
-            when(exportService.export(any())).thenReturn(ALL_TOOL_NAMES.stream()
+            List<CapabilityToolDescriptor> descriptors = ALL_TOOL_NAMES.stream()
                     .filter(name -> !HIDDEN_TOOL.equals(name))
                     .map(name -> descriptor(name, GATED_TOOL.equals(name)))
-                    .toList());
+                    .toList();
+            when(exportService.export(any())).thenReturn(descriptors);
             return exportService;
         }
 

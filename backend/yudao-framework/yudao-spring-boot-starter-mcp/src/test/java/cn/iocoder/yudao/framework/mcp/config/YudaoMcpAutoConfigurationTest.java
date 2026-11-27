@@ -2,6 +2,7 @@ package cn.iocoder.yudao.framework.mcp.config;
 
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog;
+import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolDescriptor;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import cn.iocoder.yudao.framework.common.biz.system.oauth2.OAuth2TokenCommonApi;
 import cn.iocoder.yudao.framework.mcp.McpTestFixtures;
@@ -298,8 +299,10 @@ class YudaoMcpAutoConfigurationTest {
         contextRunner.withPropertyValues("yudao.mcp.server.enabled=true",
                         "yudao.mcp.server.legacy.enabled=false")
                 .run(context -> {
+                    List<CapabilityToolDescriptor> descriptors =
+                            List.of(McpTestFixtures.descriptor("demo.echo"));
                     when(context.getBean(CapabilityToolCatalog.class).listDeclared())
-                            .thenReturn(List.of(McpTestFixtures.descriptor("demo.echo")));
+                            .thenReturn(descriptors);
                     LoginUser loginUser = new LoginUser();
                     loginUser.setId(10L);
                     loginUser.setTenantId(20L);
@@ -324,8 +327,10 @@ class YudaoMcpAutoConfigurationTest {
         contextRunner.withPropertyValues("yudao.mcp.server.enabled=true",
                         "yudao.mcp.server.legacy.enabled=false")
                 .run(context -> {
+                    List<CapabilityToolDescriptor> descriptors =
+                            List.of(McpTestFixtures.descriptor("demo.echo"));
                     when(context.getBean(CapabilityToolCatalog.class).listDeclared())
-                            .thenReturn(List.of(McpTestFixtures.descriptor("demo.echo")));
+                            .thenReturn(descriptors);
                     when(context.getBean(CapabilityToolInvoker.class).invoke(any()))
                             .thenReturn(CapabilityResult.success("demo.echo", (Object) "hello")
                                     .withTraceId("trace-modern-disabled"));
