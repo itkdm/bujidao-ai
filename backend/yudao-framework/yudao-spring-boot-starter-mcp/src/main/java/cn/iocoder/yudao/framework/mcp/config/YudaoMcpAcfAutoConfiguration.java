@@ -1,10 +1,12 @@
 package cn.iocoder.yudao.framework.mcp.config;
 
 import cn.iocoder.yudao.framework.acf.core.service.CapabilityConfirmationService;
+import cn.iocoder.yudao.framework.acf.core.service.CapabilityVisibilityService;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolContractSupport;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolExportService;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
+import cn.iocoder.yudao.framework.mcp.acf.AcfMcpLegacyToolsListFilter;
 import cn.iocoder.yudao.framework.mcp.acf.AcfMcpToolCallHandler;
 import cn.iocoder.yudao.framework.mcp.acf.AcfMcpToolMapper;
 import cn.iocoder.yudao.framework.mcp.acf.AcfMcpToolRepository;
@@ -88,6 +90,18 @@ public class YudaoMcpAcfAutoConfiguration {
         // 只产出 legacy（2025-11-25）规格列表，不建服务端：legacy 服务端与 transport
         // 已由 YudaoMcpAutoConfiguration 建好（D2），路由/分流由后续块（D3）接线。
         return new AcfMcpToolSpecificationProvider(capabilityToolCatalog, toolMapper, toolCallHandler);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public AcfMcpLegacyToolsListFilter acfMcpLegacyToolsListFilter(
+            ObjectProvider<CapabilityVisibilityService> visibilityService) {
+        // Legacy 腿 tools/list 的按用户过滤（D3 选方案 b）：SDK 自带的
+        // StatelessSyncSpecification.addToolFilter 机制，只决定工具是否出现在
+        // tools/list 里；tools/call 仍由 handleLegacy 的 ACF 执行链二次校验。
+        // visibilityService 用 ObjectProvider 取：缺失时过滤器放行全部（与 modern
+        // 仓库缺可见性服务时退回声明目录一致），而不是让整个 ACF 自动配置启动失败。
+        return new AcfMcpLegacyToolsListFilter(visibilityService.getIfAvailable());
     }
 
 }

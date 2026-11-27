@@ -7,6 +7,7 @@ import cn.iocoder.yudao.framework.mcp.oauth2.McpOAuthMetadataController;
 import cn.iocoder.yudao.framework.security.config.SecurityProperties;
 import cn.iocoder.yudao.framework.security.core.filter.TokenAuthenticationFilter;
 import cn.iocoder.yudao.framework.mcp.security.McpStrictAccessTokenFilter;
+import cn.iocoder.yudao.framework.mcp.transport.McpProtocolDispatcherServlet;
 import cn.iocoder.yudao.framework.web.config.WebProperties;
 import cn.iocoder.yudao.framework.mcp.security.McpScopeAuthorizationFilter;
 import cn.iocoder.yudao.framework.mcp.security.McpTenantContextFilter;
@@ -66,20 +67,19 @@ class YudaoMcpAutoConfigurationTest {
                     assertThat(context).hasSingleBean(McpServer.class);
                     assertThat(context).hasSingleBean(HttpServletMcpTransport.class);
                     assertThat(context).hasSingleBean(RequestStateCodec.class);
-                    // D2：legacy（2025-11-25）服务端与 transport 只建 bean，不接线。
                     assertThat(context).hasSingleBean(McpStatelessSyncServer.class);
                     assertThat(context.getBean("mcpStatelessSyncServer"))
                             .isInstanceOf(McpStatelessSyncServer.class);
                     assertThat(context).hasSingleBean(HttpServletStatelessServerTransport.class);
-                    // legacy transport 不对外暴露：disabled 注册占住它，Spring Boot
-                    // 不会给它生成默认映射；/mcp 仍只挂 modern transport。
+                    // D3：/mcp 改挂分流器（注册名与映射不变），分流器再转发给两条腿；
+                    // legacy transport 仍只有 disabled 注册，不对外暴露。
                     ServletRegistrationBean<?> legacyRegistration = context.getBean(
                             YudaoMcpAutoConfiguration.MCP_LEGACY_SERVLET_REGISTRATION_NAME,
                             ServletRegistrationBean.class);
                     assertThat(legacyRegistration.isEnabled()).isFalse();
                     assertThat(context.getBean(YudaoMcpAutoConfiguration.MCP_SERVLET_NAME,
                             ServletRegistrationBean.class).getServlet())
-                            .isInstanceOf(HttpServletMcpTransport.class);
+                            .isInstanceOf(McpProtocolDispatcherServlet.class);
                     assertThat(context.getBean(RequestStateCodec.class))
                             .isInstanceOf(HmacRequestStateCodec.class);
                     assertThat(context).hasSingleBean(ServerHttpHeaderValidator.class);

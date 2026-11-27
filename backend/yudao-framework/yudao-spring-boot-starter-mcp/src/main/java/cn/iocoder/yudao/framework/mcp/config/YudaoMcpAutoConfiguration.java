@@ -13,6 +13,7 @@ import cn.iocoder.yudao.framework.mcp.security.McpTenantContextFilter;
 import cn.iocoder.yudao.framework.mcp.security.McpTransportContextKeys;
 import cn.iocoder.yudao.framework.common.biz.system.oauth2.OAuth2TokenCommonApi;
 import cn.iocoder.yudao.framework.mcp.tool.McpToolSpecificationProvider;
+import cn.iocoder.yudao.framework.mcp.transport.McpProtocolDispatcherServlet;
 import cn.iocoder.yudao.framework.mcp.transport.McpRequestBodyCharsetFilter;
 import cn.iocoder.yudao.framework.mcp.transport.McpRequestSizeLimitFilter;
 import cn.iocoder.yudao.framework.security.config.SecurityProperties;
@@ -32,6 +33,7 @@ import io.modelcontextprotocol.modern.server.feature.ToolsFeature;
 import io.modelcontextprotocol.modern.server.transport.HttpServletMcpTransport;
 import io.modelcontextprotocol.server.McpStatelessServerFeatures;
 import io.modelcontextprotocol.server.McpStatelessSyncServer;
+import io.modelcontextprotocol.server.McpSyncListFilter;
 import io.modelcontextprotocol.server.McpTransportContextExtractor;
 import io.modelcontextprotocol.server.transport.DefaultServerTransportSecurityValidator;
 import io.modelcontextprotocol.server.transport.HttpServletStatelessServerTransport;
@@ -242,10 +244,18 @@ public class YudaoMcpAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean(name = MCP_SERVLET_NAME)
-    public ServletRegistrationBean<HttpServletMcpTransport> mcpServletRegistration(
-            HttpServletMcpTransport transport, YudaoMcpServerProperties properties) {
-        ServletRegistrationBean<HttpServletMcpTransport> registration =
-                new ServletRegistrationBean<>(transport, properties.getEndpoint());
+    public ServletRegistrationBean<McpProtocolDispatcherServlet> mcpServletRegistration(
+            HttpServletMcpTransport modernTransport,
+            HttpServletStatelessServerTransport legacyTransport,
+            YudaoMcpServerProperties properties, ObjectMapper objectMapper) {
+        // D3：/mcp 不再直挂 modern transport，改挂分流器；注册名与 URL 映射不变，
+        // 分流器按协议版本把请求转发给 modern 或 legacy transport。legacy 的
+        // disabled 注册（bujidaoMcpLegacyServletRegistration）不动，legacy
+        // transport 仍不产生 URL 映射。
+        ServletRegistrationBean<McpProtocolDispatcherServlet> registration =
+                new ServletRegistrationBean<>(
+                        new McpProtocolDispatcherServlet(modernTransport, legacyTransport, objectMapper),
+                        properties.getEndpoint());
         registration.setName(MCP_SERVLET_NAME);
         registration.setLoadOnStartup(1);
         registration.setAsyncSupported(true);
@@ -253,8 +263,8 @@ public class YudaoMcpAutoConfiguration {
     }
 
     // ---- Legacy MCP 2025-11-25（stateless）----
-    // D2 只建 bean，不接线：legacy transport 不注册到 /mcp 上（modern 的
-    // HttpServletMcpTransport 仍独占 /mcp），分流与注册是 D3 的事。
+    // D2 只建 bean，不接线；D3 由 McpProtocolDispatcherServlet 分流：legacy transport
+    // 仍不注册到 /mcp 上（下面的 disabled 注册占住它），分流器直接调它的 service()。
 
     @Bean
     @ConditionalOnMissingBean(HttpServletStatelessServerTransport.class)
@@ -300,7 +310,8 @@ public class YudaoMcpAutoConfiguration {
             HttpServletStatelessServerTransport transport,
             McpJsonMapper jsonMapper,
             YudaoMcpServerProperties properties,
-            ObjectProvider<McpToolSpecificationProvider> toolProviders) {
+            ObjectProvider<McpToolSpecificationProvider> toolProviders,
+            ObjectProvider<McpSyncListFilter<McpSchema.Tool>> toolFilters) {
         // 与 main 的 legacy wiring 一致：serverInfo / instructions 取同一份配置
         // （modern 腿同值）；capabilities 只开 tools（listChanged 不通知）、
         // resources 空列表、prompts 不配；工具由 D1 的 McpToolSpecificationProvider
@@ -312,20 +323,25 @@ public class YudaoMcpAutoConfiguration {
         // io.modelcontextprotocol.server.McpServer.sync(transport) 工厂
         // （与 modern 的 io.modelcontextprotocol.modern.server.McpServer 同名，
         // 这里用全限定名避免 import 冲突）。
+        // tools/list 可见性：D3 用 SDK 自带的 addToolFilter 挂
+        // AcfMcpLegacyToolsListFilter（ACF 自动配置提供；无可见性服务时过滤器放行
+        // 全部，与 modern 仓库缺可见性服务时退回声明目录一致）。
         McpSchema.ServerCapabilities capabilities = McpSchema.ServerCapabilities.builder()
                 .tools(false)
                 .resources(false, false)
                 .build();
-        return io.modelcontextprotocol.server.McpServer.sync(transport)
-                .jsonMapper(jsonMapper)
-                .serverInfo(properties.getName(), properties.getVersion())
-                .instructions(properties.getInstructions())
-                .requestTimeout(Duration.ofSeconds(30))
-                .capabilities(capabilities)
-                .tools(createLegacyToolSpecifications(toolProviders))
-                .resources(List.of())
-                .resourceTemplates(List.of())
-                .build();
+        io.modelcontextprotocol.server.McpServer.StatelessSyncSpecification specification =
+                io.modelcontextprotocol.server.McpServer.sync(transport)
+                        .jsonMapper(jsonMapper)
+                        .serverInfo(properties.getName(), properties.getVersion())
+                        .instructions(properties.getInstructions())
+                        .requestTimeout(Duration.ofSeconds(30))
+                        .capabilities(capabilities)
+                        .tools(createLegacyToolSpecifications(toolProviders))
+                        .resources(List.of())
+                        .resourceTemplates(List.of());
+        toolFilters.orderedStream().forEach(specification::addToolFilter);
+        return specification.build();
     }
 
     private List<McpStatelessServerFeatures.SyncToolSpecification> createLegacyToolSpecifications(
