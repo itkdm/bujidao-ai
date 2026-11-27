@@ -46,6 +46,8 @@ class McpOAuthMetadataControllerTest {
         assertThat(metadata.get("token_endpoint_auth_methods_supported"))
                 .isEqualTo(List.of("none"));
         assertThat(metadata.get("code_challenge_methods_supported")).isEqualTo(List.of("S256"));
+        // CIMD 是唯一的客户端注册方式（DCR 已移除），元数据必须声明支持。
+        assertThat(metadata.get("client_id_metadata_document_supported")).isEqualTo(Boolean.TRUE);
     }
 
     @Test

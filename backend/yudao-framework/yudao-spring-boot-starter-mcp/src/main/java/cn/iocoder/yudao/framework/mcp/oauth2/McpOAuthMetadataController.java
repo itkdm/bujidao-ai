@@ -59,6 +59,10 @@ public class McpOAuthMetadataController {
         }
         metadata.put("response_types_supported", List.of("code"));
         metadata.put("grant_types_supported", List.of("authorization_code", "refresh_token"));
+        // CIMD 是本服务端唯一的客户端注册方式（DCR 已移除）：必须声明支持，
+        // 否则按规范实现的客户端（如 WorkBuddy / MCP TS SDK）在元数据里既找不到
+        // registration_endpoint、又看不到本标志时，会直接判定授权服务器不兼容而中止。
+        metadata.put("client_id_metadata_document_supported", Boolean.TRUE);
         metadata.put("code_challenge_methods_supported", List.of("S256"));
         metadata.put("token_endpoint_auth_methods_supported", List.of("none"));
         metadata.put("scopes_supported", properties.getRequiredScopes());
