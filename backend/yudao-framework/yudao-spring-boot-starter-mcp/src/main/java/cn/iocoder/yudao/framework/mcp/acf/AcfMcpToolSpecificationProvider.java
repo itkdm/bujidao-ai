@@ -18,14 +18,19 @@ import java.util.List;
  * 共用同一条 ACF 执行链（权限、幂等、审计），两边行为一致。本类不维护第二份工具清单，
  * 不复制工具定义。</p>
  *
- * <p>等价边界（tools/list）：两腿的“等价”只在当前无覆盖定义的策略集下成立——
- * modern 腿的 {@code export()} 用治理层返回的替换后 definition，legacy 腿的静态
- * 规格永远用 catalog 原始 descriptor；当前已装的两个 policy
+ * <p>等价边界（tools/list）：仅 _meta（risk/idempotency/confirmation）与
+ * readOnly/idempotent hints 可能分叉——名/描述/schema 受
+ * {@code CapabilityPolicyChain.validateOverlay} 的 {@code requireUnchanged}
+ * 校验保证同源（name、version、title、description、category、argumentType、
+ * returnType、outputType、permissions、permissionMode、inputSchema、
+ * outputSchema 一律不得改；riskLevel 只许调高不许调低，sideEffect /
+ * confirmationRequired 只许开启不许关闭，timeoutMs 须大于 0）。modern 腿的
+ * {@code export()} 用治理层返回的替换后 definition，legacy 腿的静态规格永远用
+ * catalog 原始 descriptor；当前已装的两个 policy
  * （{@code CapabilityPermissionPolicy}、
  * {@code AcfCapabilityRuntimeStatusPolicy}）的 {@code allow()} 都传 null 覆盖
- * （不替换 definition），所以目前两边定义一致，一旦有 policy 开始返回替换
- * definition，两腿的 tools/list 定义就会分叉（调用仍共用同一条 ACF 执行链，
- * 不受影响）。顺序已对齐：legacy 规格构建时按名升序，与 modern 仓库一致；
+ * （不替换 definition），所以目前两边定义一致。调用仍共用同一条 ACF 执行链，
+ * 不受影响。顺序已对齐：legacy 规格构建时按名升序，与 modern 仓库一致；
  * cursor 语义仍不同（modern 遇非空 cursor 以 -32602 拒绝，legacy 忽略 cursor
  * 返回全量），见采用指南“双协议分流”。</p>
  *
