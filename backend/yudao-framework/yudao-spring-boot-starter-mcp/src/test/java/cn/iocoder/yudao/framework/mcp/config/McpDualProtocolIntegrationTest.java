@@ -20,6 +20,7 @@ import io.modelcontextprotocol.common.McpTransportContext;
 import io.modelcontextprotocol.server.McpTransportContextExtractor;
 import jakarta.servlet.ServletContext;
 import jakarta.servlet.http.HttpServletRequest;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringBootConfiguration;
@@ -51,6 +52,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -108,6 +110,19 @@ class McpDualProtocolIntegrationTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @BeforeEach
+    void clearMockInvocations() {
+        // 同一个 @SpringBootTest 上下文在方法间复用，手工 mock 的 bean 不像
+        // @MockBean 那样在方法间自动重置：invoker / visibilityService 的调用
+        // 计数会跨方法累积，后跑的 verify(times(n)) 会数到前面方法的调用。
+        // 只清调用记录、不清桩（Mockito.reset 会连 @Bean 方法里设好的桩一起
+        // 抹掉，invoker 之后就返回 null；@DirtiesContext(methodMode =
+        // BEFORE_METHOD) 则每个方法都重启整个随机端口容器，太重）。桩保留、
+        // 计数归零，各方法的 times(n) 只数本方法内的调用。
+        clearInvocations(applicationContext.getBean(CapabilityToolInvoker.class),
+                applicationContext.getBean(CapabilityVisibilityService.class));
+    }
 
     @Test
     void shouldCompleteLegacyHandshakeListAndCallOverRawHttp() throws Exception {
