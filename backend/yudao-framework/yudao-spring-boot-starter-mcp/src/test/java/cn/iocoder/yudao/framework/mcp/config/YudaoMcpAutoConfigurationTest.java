@@ -1,8 +1,10 @@
 package cn.iocoder.yudao.framework.mcp.config;
 
+import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import cn.iocoder.yudao.framework.common.biz.system.oauth2.OAuth2TokenCommonApi;
+import cn.iocoder.yudao.framework.mcp.McpTestFixtures;
 import cn.iocoder.yudao.framework.mcp.oauth2.McpOAuthMetadataController;
 import cn.iocoder.yudao.framework.security.core.LoginUser;
 import cn.iocoder.yudao.framework.security.core.util.SecurityFrameworkUtils;
@@ -46,10 +48,13 @@ import java.util.Map;
 
 import static cn.iocoder.yudao.framework.mcp.McpTestFixtures.cachedJsonRequest;
 import static cn.iocoder.yudao.framework.mcp.McpTestFixtures.dispatch;
+import static cn.iocoder.yudao.framework.mcp.McpTestFixtures.modernRequest;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 class YudaoMcpAutoConfigurationTest {
 
@@ -139,6 +144,27 @@ class YudaoMcpAutoConfigurationTest {
                 });
     }
 
+    @Test
+    void shouldCloseLegacyTransportAndServerGracefullyOnShutdown() {
+        // S1：legacy transport 的 closeGracefully() 返回 Mono，Spring 调了不
+        // 订阅等于空操作，destroyMethod 改为 destroy（GenericServlet.destroy()
+        // 内正是 closeGracefully().block()）；legacy server 由 close 改为
+        // closeGracefully（public void，内部等在途操作完成）。
+        contextRunner.withPropertyValues("yudao.mcp.server.enabled=true")
+                .run(context -> {
+                    assertThat(context.getBeanFactory().getBeanDefinition(
+                            "mcpLegacyStatelessServerTransport").getDestroyMethodName())
+                            .isEqualTo("destroy");
+                    assertThat(context.getBeanFactory().getBeanDefinition(
+                            "mcpStatelessSyncServer").getDestroyMethodName())
+                            .isEqualTo("closeGracefully");
+                    // 对照：modern transport 本来就是 public void closeGracefully。
+                    assertThat(context.getBeanFactory().getBeanDefinition(
+                            "mcpServerTransport").getDestroyMethodName())
+                            .isEqualTo("closeGracefully");
+                });
+    }
+
     @AfterEach
     void clearSecurityContext() {
         SecurityContextHolder.clearContext();
@@ -168,7 +194,9 @@ class YudaoMcpAutoConfigurationTest {
                     MockHttpServletResponse response = dispatch(
                             context, cachedJsonRequest(json));
                     assertThat(response.getStatus()).isEqualTo(400);
+                    assertThat(response.getContentType()).contains("application/json");
                     JsonNode payload = new ObjectMapper().readTree(response.getContentAsString());
+                    assertThat(payload.path("jsonrpc").asText()).isEqualTo("2.0");
                     assertThat(payload.path("id").asInt()).isEqualTo(1);
                     assertThat(payload.path("error").path("code").asInt()).isEqualTo(-32022);
                     assertThat(payload.path("error").path("message").asText()).contains("disabled");
@@ -188,7 +216,9 @@ class YudaoMcpAutoConfigurationTest {
                     MockHttpServletResponse response = dispatch(
                             context, cachedJsonRequest(json));
                     assertThat(response.getStatus()).isEqualTo(400);
+                    assertThat(response.getContentType()).contains("application/json");
                     JsonNode payload = new ObjectMapper().readTree(response.getContentAsString());
+                    assertThat(payload.path("jsonrpc").asText()).isEqualTo("2.0");
                     assertThat(payload.path("id").asInt()).isEqualTo(7);
                     assertThat(payload.path("error").path("code").asInt()).isEqualTo(-32022);
                     assertThat(payload.path("error").path("message").asText()).contains("disabled");
@@ -210,7 +240,9 @@ class YudaoMcpAutoConfigurationTest {
                     MockHttpServletResponse response = dispatch(
                             context, cachedJsonRequest(json));
                     assertThat(response.getStatus()).isEqualTo(400);
+                    assertThat(response.getContentType()).contains("application/json");
                     JsonNode payload = new ObjectMapper().readTree(response.getContentAsString());
+                    assertThat(payload.path("jsonrpc").asText()).isEqualTo("2.0");
                     assertThat(payload.path("id").asInt()).isEqualTo(9);
                     assertThat(payload.path("error").path("code").asInt()).isEqualTo(-32022);
                     assertThat(payload.path("error").path("message").asText()).contains("disabled");
@@ -251,8 +283,62 @@ class YudaoMcpAutoConfigurationTest {
                     JsonNode payload = new ObjectMapper().readTree(response.getContentAsString());
                     assertThat(payload.path("result").path("resultType").asText())
                             .isEqualTo("complete");
-                    assertThat(payload.path("result").path("supportedVersions").toString())
-                            .isEqualTo("[\"2026-07-28\"]");
+                    assertThat(payload.path("result").path("supportedVersions"))
+                            .isEqualTo(new ObjectMapper().readTree("[\"2026-07-28\"]"));
+                });
+    }
+
+    @Test
+    void shouldStillServeModernToolsListWhenLegacyDisabled() throws Exception {
+        // 开关只关 legacy POST：modern tools/list 不受影响。
+        String json = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{\"_meta\":{"
+                + "\"io.modelcontextprotocol/protocolVersion\":\"2026-07-28\","
+                + "\"io.modelcontextprotocol/clientCapabilities\":{}}}}";
+        contextRunner.withPropertyValues("yudao.mcp.server.enabled=true",
+                        "yudao.mcp.server.legacy.enabled=false")
+                .run(context -> {
+                    when(context.getBean(CapabilityToolCatalog.class).listDeclared())
+                            .thenReturn(List.of(McpTestFixtures.descriptor("demo.echo")));
+                    LoginUser loginUser = new LoginUser();
+                    loginUser.setId(10L);
+                    loginUser.setTenantId(20L);
+                    SecurityFrameworkUtils.setLoginUser(loginUser, new MockHttpServletRequest());
+                    MockHttpServletResponse response = dispatch(
+                            context, modernRequest(json, "tools/list"));
+                    assertThat(response.getStatus()).isEqualTo(200);
+                    JsonNode payload = new ObjectMapper().readTree(response.getContentAsString());
+                    assertThat(payload.path("result").path("tools").get(0).path("name").asText())
+                            .isEqualTo("demo.echo");
+                });
+    }
+
+    @Test
+    void shouldStillServeModernToolsCallWhenLegacyDisabled() throws Exception {
+        // 开关只关 legacy POST：modern tools/call 同样不受影响（与 discover /
+        // tools/list 走同一条 modern 路由，不进 legacy 拒绝分支）。
+        String json = "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":"
+                + "{\"name\":\"demo.echo\",\"arguments\":{\"message\":\"hello\"},"
+                + "\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"2026-07-28\","
+                + "\"io.modelcontextprotocol/clientCapabilities\":{}}}}";
+        contextRunner.withPropertyValues("yudao.mcp.server.enabled=true",
+                        "yudao.mcp.server.legacy.enabled=false")
+                .run(context -> {
+                    when(context.getBean(CapabilityToolCatalog.class).listDeclared())
+                            .thenReturn(List.of(McpTestFixtures.descriptor("demo.echo")));
+                    when(context.getBean(CapabilityToolInvoker.class).invoke(any()))
+                            .thenReturn(CapabilityResult.success("demo.echo", (Object) "hello")
+                                    .withTraceId("trace-modern-disabled"));
+                    LoginUser loginUser = new LoginUser();
+                    loginUser.setId(10L);
+                    loginUser.setTenantId(20L);
+                    SecurityFrameworkUtils.setLoginUser(loginUser, new MockHttpServletRequest());
+                    MockHttpServletResponse response = dispatch(
+                            context, modernRequest(json, "tools/call", "demo.echo"));
+                    assertThat(response.getStatus()).isEqualTo(200);
+                    JsonNode payload = new ObjectMapper().readTree(response.getContentAsString());
+                    assertThat(payload.path("result").path("isError").asBoolean()).isFalse();
+                    assertThat(payload.path("result").path("structuredContent")
+                            .path("result").asText()).isEqualTo("hello");
                 });
     }
 
