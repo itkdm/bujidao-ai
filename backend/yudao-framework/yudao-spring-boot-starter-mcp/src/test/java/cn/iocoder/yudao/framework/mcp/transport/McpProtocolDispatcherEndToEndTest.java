@@ -159,6 +159,7 @@ class McpProtocolDispatcherEndToEndTest {
         request.setRequestURI("/mcp");
         request.setContentType("application/json");
         request.addHeader("Accept", "application/json, text/event-stream");
+        request.addHeader("Host", "localhost");
         request.setContent(json.getBytes(StandardCharsets.UTF_8));
         return new CacheRequestBodyWrapper(request);
     }

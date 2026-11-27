@@ -60,6 +60,10 @@ public final class McpTestFixtures {
         request.setMethod("POST");
         request.setRequestURI("/mcp");
         request.setContentType("application/json");
+        // Host 必带：legacy 腿同样注入 DefaultServerTransportSecurityValidator，
+        // allowedHosts 非空时缺 Host 即 421；当前调用点虽多为 mock / kill-switch，
+        // 共享 fixture 仍须保持真实 HTTP 客户端形态（原因见 modernRequest）。
+        request.addHeader("Host", "localhost");
         request.setContent(json.getBytes(StandardCharsets.UTF_8));
         return new CacheRequestBodyWrapper(request);
     }
