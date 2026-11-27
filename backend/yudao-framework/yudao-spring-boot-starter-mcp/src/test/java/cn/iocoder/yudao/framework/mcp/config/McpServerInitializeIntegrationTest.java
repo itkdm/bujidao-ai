@@ -105,7 +105,7 @@ class McpServerInitializeIntegrationTest {
     }
 
     @Test
-    void shouldRejectLegacyInitializeThroughRealServletContainer() throws Exception {
+    void shouldAcceptLegacyInitializeThroughRealServletContainer() throws Exception {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setAccept(java.util.List.of(MediaType.APPLICATION_JSON, MediaType.TEXT_EVENT_STREAM));
@@ -126,16 +126,16 @@ class McpServerInitializeIntegrationTest {
                 "http://127.0.0.1:" + port + "/mcp",
                 new HttpEntity<>(request, headers), String.class);
 
-        // 旧版握手没有 _meta 版本声明：服务端以 -32022 拒绝，并告知支持的版本。
-        assertThat(response.getStatusCode().value()).isEqualTo(400);
+        // D3 起 /mcp 分流：无 modern 头的 legacy 握手走 legacy 腿，不再由 modern
+        // 以 -32022 拒绝；legacy stateless 服务端对支持的版本直接回握手（SDK：
+        // 不支持的版本也只回退到最高支持版，不报错）。完整 legacy 流程见
+        // McpDualProtocolIntegrationTest，这里只锁定这个行为翻转点。
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
         JsonNode payload = objectMapper.readTree(response.getBody());
-        assertThat(payload.path("error").path("code").asInt()).isEqualTo(-32022);
-        assertThat(payload.path("error").path("message").asText())
-                .contains("does not support the initialize handshake");
-        assertThat(payload.path("error").path("data").path("supported").toString())
-                .isEqualTo("[\"2026-07-28\"]");
-        assertThat(payload.path("error").path("data").path("requested").asText())
+        assertThat(payload.path("result").path("protocolVersion").asText())
                 .isEqualTo("2025-11-25");
+        assertThat(payload.path("result").path("serverInfo").path("name").asText())
+                .isEqualTo("bujidao-mcp-server");
     }
 
     @Test

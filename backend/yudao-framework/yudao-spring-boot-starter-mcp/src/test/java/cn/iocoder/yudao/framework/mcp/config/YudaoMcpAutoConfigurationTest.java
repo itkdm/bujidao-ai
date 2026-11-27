@@ -180,6 +180,24 @@ class YudaoMcpAutoConfigurationTest {
     }
 
     @Test
+    void shouldRejectLegacyToolsCallWhenLegacyDisabled() throws Exception {
+        // D5 补齐：开关关闭时 legacy tools/call 同样在分流器里被拒绝，不进 ACF 执行链。
+        String json = "{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"tools/call\",\"params\":"
+                + "{\"name\":\"demo.echo\",\"arguments\":{}}}";
+        contextRunner.withPropertyValues("yudao.mcp.server.enabled=true",
+                        "yudao.mcp.server.legacy.enabled=false")
+                .run(context -> {
+                    MockHttpServletResponse response = dispatch(
+                            context, cachedJsonRequest(json));
+                    assertThat(response.getStatus()).isEqualTo(400);
+                    JsonNode payload = new ObjectMapper().readTree(response.getContentAsString());
+                    assertThat(payload.path("id").asInt()).isEqualTo(9);
+                    assertThat(payload.path("error").path("code").asInt()).isEqualTo(-32022);
+                    assertThat(payload.path("error").path("message").asText()).contains("disabled");
+                });
+    }
+
+    @Test
     void shouldStillServeModernDiscoverWhenLegacyDisabled() throws Exception {
         // Modern 不受 legacy 开关影响：server/discover 走真实 modern transport，
         // 需先按 McpAuthenticatedTransportContextExtractor 的要求放一个 LoginUser。
