@@ -36,6 +36,7 @@ import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 
@@ -86,6 +87,30 @@ class McpEndpointSecurityIntegrationTest {
         ResponseEntity<String> response = postDiscover(new HttpHeaders());
 
         assertThat(response.getStatusCode().value()).isEqualTo(401);
+    }
+
+    @Test
+    void shouldRejectAnonymousGetThroughRealSecurityFilterChain() {
+        // P1-7：GET 也要先过认证。真实链上未认证 GET /mcp → 401，而不是分流
+        // 到 legacy 后才答 405。
+        ResponseEntity<String> response = restTemplate.exchange(endpoint(), HttpMethod.GET,
+                new HttpEntity<>(new HttpHeaders()), String.class);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(401);
+    }
+
+    @Test
+    void shouldAnswerAuthenticatedGetWith405ThroughRealSecurityFilterChain() {
+        // P1-7：带有效 token 的 GET 能通过认证，再由 legacy 腿的 doGet 答 405
+        //（legacy stateless 没有 GET SSE 流）。这与 mock 链的 GET 测试不同：
+        // 那个测试的链是空实现，只能证明路由，不能证明“GET 走 legacy 也要认证”。
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth("valid-token");
+
+        ResponseEntity<String> response = restTemplate.exchange(endpoint(), HttpMethod.GET,
+                new HttpEntity<>(headers), String.class);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(405);
     }
 
     @Test

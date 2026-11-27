@@ -324,6 +324,9 @@ class McpDualProtocolIntegrationTest {
         // 已纠正的验收标准：legacy stateless 没有 GET SSE 流，doGet 直接答 405，
         // 与 modern 相同、与 main 的行为一致；WorkBuddy 连 main 成功靠的是 POST
         // initialize，不是 GET。
+        // 注意：本类的 mcpSecurityFilterChain 是空实现的 mock，本用例只覆盖
+        // “GET 分流到 legacy 并答 405”这一路由行为，不覆盖认证；“GET 走 legacy
+        // 也要认证”由 McpEndpointSecurityIntegrationTest 的真实链用例锁定。
         ResponseEntity<String> response = restTemplate.getForEntity(
                 "http://127.0.0.1:" + port + "/mcp", String.class);
 
