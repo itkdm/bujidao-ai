@@ -33,6 +33,7 @@ class McpOAuthRateLimiterTest {
         config.setEnabled(false);
         config.setTokenPerIpPerMinute(1);
         config.setAuthorizePerIpPerMinute(1);
+        config.setRegisterPerIpPerMinute(1);
         config.setCimdPerHostPerMinute(1);
         config.setCimdGlobalPerMinute(1);
         config.setCimdMaxConcurrentFetches(1);
@@ -42,6 +43,7 @@ class McpOAuthRateLimiterTest {
         for (int i = 0; i < 3; i++) {
             assertThat(limiter.tryAcquireToken("1.2.3.4")).isTrue();
             assertThat(limiter.tryAcquireAuthorize("1.2.3.4")).isTrue();
+            assertThat(limiter.tryAcquireRegister("1.2.3.4")).isTrue();
             assertThat(limiter.tryAcquireCimdFetch("client.example.com")).isTrue();
             // 关闭时不占并发槽：连续拿也不拒绝，释放也是空操作
             assertThat(limiter.tryAcquireCimdSlot()).isTrue();
@@ -148,6 +150,31 @@ class McpOAuthRateLimiterTest {
     }
 
     @Test
+    void shouldRejectRegisterRequestsOverPerIpLimitAndRecoverAfterWindow() {
+        McpOAuthProperties.RateLimit config = new McpOAuthProperties.RateLimit();
+        config.setRegisterPerIpPerMinute(2);
+        // token 限额同样设为 2：若 register 与 token 共用窗口 key，token 调用会被拒，
+        // 该断言失败；key 独立时才通过。只把 register 限额设低、token 保持默认 60 时，
+        // 共用 key 也测不出来（空断言）。
+        config.setTokenPerIpPerMinute(2);
+        MutableClock clock = new MutableClock(START);
+        McpOAuthRateLimiter limiter = new McpOAuthRateLimiter(config, clock);
+
+        assertThat(limiter.tryAcquireRegister("1.2.3.4")).isTrue();
+        assertThat(limiter.tryAcquireRegister("1.2.3.4")).isTrue();
+        assertThat(limiter.tryAcquireRegister("1.2.3.4")).isFalse();
+        // 其它 IP 不受影响；注册与 token 共用进程但窗口 key 各自独立
+        assertThat(limiter.tryAcquireRegister("5.6.7.8")).isTrue();
+        assertThat(limiter.tryAcquireToken("1.2.3.4")).isTrue();
+
+        // 59 秒后旧记录仍在窗口内，继续拒绝；滑过 60 秒窗口恢复放行
+        clock.advance(Duration.ofSeconds(59));
+        assertThat(limiter.tryAcquireRegister("1.2.3.4")).isFalse();
+        clock.advance(Duration.ofSeconds(2));
+        assertThat(limiter.tryAcquireRegister("1.2.3.4")).isTrue();
+    }
+
+    @Test
     void shouldEnforceCimdPerHostAndGlobalLimits() {
         McpOAuthProperties.RateLimit config = new McpOAuthProperties.RateLimit();
         config.setCimdPerHostPerMinute(2);
@@ -185,6 +212,7 @@ class McpOAuthRateLimiterTest {
         McpOAuthProperties.RateLimit config = new McpOAuthProperties.RateLimit();
         config.setCimdPerHostPerMinute(1);
         config.setTokenPerIpPerMinute(1);
+        config.setRegisterPerIpPerMinute(1);
         McpOAuthRateLimiter limiter = new McpOAuthRateLimiter(config, new MutableClock(START));
 
         // null / 空白 host 共用 "unknown" key：第一次放行，第二次拒绝
@@ -194,6 +222,10 @@ class McpOAuthRateLimiterTest {
         // null / 空白 IP 同理
         assertThat(limiter.tryAcquireToken(null)).isTrue();
         assertThat(limiter.tryAcquireToken("")).isFalse();
+        // register 与 token 共用 ipKey：null / 空白 IP 同样归一为 "unknown"
+        assertThat(limiter.tryAcquireRegister(null)).isTrue();
+        assertThat(limiter.tryAcquireRegister("")).isFalse();
+        assertThat(limiter.tryAcquireRegister("  ")).isFalse();
         // host 大小写归一化：同一 host 不同大小写共用一个窗口
         assertThat(limiter.tryAcquireCimdFetch("Client.Example.COM")).isTrue();
         assertThat(limiter.tryAcquireCimdFetch("client.example.com")).isFalse();

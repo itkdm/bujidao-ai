@@ -76,7 +76,8 @@ class McpOAuthPropertiesBindingTest {
                         "yudao.mcp.oauth.rate-limit.cimd-global-per-minute=100",
                         "yudao.mcp.oauth.rate-limit.cimd-max-concurrent-fetches=5",
                         "yudao.mcp.oauth.rate-limit.authorize-per-ip-per-minute=30",
-                        "yudao.mcp.oauth.rate-limit.token-per-ip-per-minute=45")
+                        "yudao.mcp.oauth.rate-limit.token-per-ip-per-minute=45",
+                        "yudao.mcp.oauth.rate-limit.register-per-ip-per-minute=7")
                 .run(context -> {
                     assertThat(context).hasNotFailed();
                     assertThat(context).hasSingleBean(McpOAuthProperties.class);
@@ -88,6 +89,29 @@ class McpOAuthPropertiesBindingTest {
                     assertThat(rateLimit.getCimdMaxConcurrentFetches()).isEqualTo(5);
                     assertThat(rateLimit.getAuthorizePerIpPerMinute()).isEqualTo(30);
                     assertThat(rateLimit.getTokenPerIpPerMinute()).isEqualTo(45);
+                    assertThat(rateLimit.getRegisterPerIpPerMinute()).isEqualTo(7);
+                });
+    }
+
+    @Test
+    void shouldBindDcrProperties() {
+        propertiesOnlyContextRunner
+                .withPropertyValues(
+                        "yudao.mcp.oauth.dynamic-client-registration-enabled=false",
+                        "yudao.mcp.oauth.client-id-prefix=mcp-test-",
+                        "yudao.mcp.oauth.allow-private-use-uri-scheme-redirects=false",
+                        "yudao.mcp.oauth.allowed-redirect-uri-prefixes=https://app.example.com/callback",
+                        "yudao.mcp.oauth.default-client-name=Test Client")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(McpOAuthProperties.class);
+                    McpOAuthProperties properties = context.getBean(McpOAuthProperties.class);
+                    assertThat(properties.isDynamicClientRegistrationEnabled()).isFalse();
+                    assertThat(properties.getClientIdPrefix()).isEqualTo("mcp-test-");
+                    assertThat(properties.isAllowPrivateUseUriSchemeRedirects()).isFalse();
+                    assertThat(properties.getAllowedRedirectUriPrefixes())
+                            .containsExactly("https://app.example.com/callback");
+                    assertThat(properties.getDefaultClientName()).isEqualTo("Test Client");
                 });
     }
 
@@ -104,6 +128,7 @@ class McpOAuthPropertiesBindingTest {
             assertThat(rateLimit.getCimdMaxConcurrentFetches()).isEqualTo(20);
             assertThat(rateLimit.getAuthorizePerIpPerMinute()).isEqualTo(60);
             assertThat(rateLimit.getTokenPerIpPerMinute()).isEqualTo(60);
+            assertThat(rateLimit.getRegisterPerIpPerMinute()).isEqualTo(10);
         });
     }
 

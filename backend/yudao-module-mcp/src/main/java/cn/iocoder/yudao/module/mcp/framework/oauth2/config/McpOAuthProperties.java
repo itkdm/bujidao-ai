@@ -31,6 +31,24 @@ public class McpOAuthProperties {
     private boolean enabled = true;
 
     /**
+     * 是否开启 OAuth2 Dynamic Client Registration。
+     *
+     * <p>默认开启：恢复 DCR 后公开注册端点即对外开放。公网暴露部署时应评估是否关闭，
+     * 或结合 redirect_uri 策略与注册限流收紧。注意：Step 2 的元数据开关默认关闭
+     * 只能藏住入口、关不了端点本身，真正的开关是这里。
+     */
+    private boolean dynamicClientRegistrationEnabled = true;
+
+    /**
+     * 动态客户端编号前缀。
+     *
+     * <p>同意页用此前缀识别 DCR 注册的客户端并显示“未验证”标记；改动前缀须同步改
+     * 前端判断，否则标记失效（fail-open：不显示标记）。
+     */
+    @NotBlank
+    private String clientIdPrefix = "mcp-dcr-";
+
+    /**
      * 未申请 scope 时授予的默认 scope；申请 scope 时只允许该列表的子集。
      */
     @NotEmpty
@@ -41,6 +59,19 @@ public class McpOAuthProperties {
      */
     @NotEmpty
     private List<@NotBlank String> localRedirectHosts = List.of("localhost", "127.0.0.1");
+
+    /**
+     * 是否允许 native app 私有 URI scheme，例如 workbuddy://、vscode://。
+     *
+     * <p>默认开启：放行符合私有 scheme 形态的回调。公网暴露部署时如无桌面客户端
+     * 需求可关闭收紧，只放行回环与前缀白名单内的回调。
+     */
+    private boolean allowPrivateUseUriSchemeRedirects = true;
+
+    /**
+     * 额外允许的 redirect_uri 前缀，用于部署方显式开放 HTTPS 回调等场景。
+     */
+    private List<@NotBlank String> allowedRedirectUriPrefixes = List.of();
 
     /**
      * MCP OAuth 客户端 access token 有效期。
@@ -57,7 +88,13 @@ public class McpOAuthProperties {
     private Integer refreshTokenValiditySeconds = 2592000;
 
     /**
-     * OAuth2 Client 表要求 logo 非空，未提供 logo 时使用该占位图标。
+     * DCR 请求未提供 client_name 时使用的默认名称。
+     */
+    @NotBlank
+    private String defaultClientName = "MCP Client";
+
+    /**
+     * OAuth2 Client 表要求 logo 非空，DCR 请求未提供 logo 时使用该占位图标。
      */
     @NotBlank
     private String defaultLogo = "https://www.iocoder.cn/favicon.ico";
@@ -170,6 +207,10 @@ public class McpOAuthProperties {
      *     <li>授权同意是人点一次的操作，60 次 / 分钟 / IP 足够覆盖重试与多人共用出口 IP；
      *     token 兑换每次登录 / 刷新才调一次，60 次 / 分钟 / IP 同理，且授权码本身
      *     高熵、一次失效，60 次试错空间形不成有效爆破。</li>
+     *     <li>动态注册是更低频的操作：客户端按 issuer 持久化注册结果，正常只注册一次；
+     *     10 次 / 分钟 / IP 是单 IP 速率上限，防单点刷注册（client sprawl）；分布式 IP
+     *     与多实例部署不在覆盖内（限流器只约束单实例），需网关层再限；也不会误伤
+     *     多个桌面客户端共用出口 IP 的正常场景。</li>
      * </ul>
      */
     @Data
@@ -209,6 +250,12 @@ public class McpOAuthProperties {
          */
         @Min(1)
         private int tokenPerIpPerMinute = 60;
+
+        /**
+         * 单个调用方 IP 每分钟最多动态客户端注册（POST /mcp/oauth2/register）次数。
+         */
+        @Min(1)
+        private int registerPerIpPerMinute = 10;
 
     }
 

@@ -118,8 +118,17 @@ public class McpOAuthRateLimiter {
         return tryAcquire("token:ip:" + ipKey(clientIp), config.getTokenPerIpPerMinute());
     }
 
+    /** 动态客户端注册（POST /mcp/oauth2/register）：按调用方 IP 限流。 */
+    public boolean tryAcquireRegister(String clientIp) {
+        if (!config.isEnabled()) {
+            return true;
+        }
+        return tryAcquire("register:ip:" + ipKey(clientIp), config.getRegisterPerIpPerMinute());
+    }
+
     private static String ipKey(String clientIp) {
-        return StrUtil.isBlank(clientIp) ? "unknown" : clientIp.trim();
+        // IPv6 同一地址大小写不同是同一地址，归一小写避免分到两个窗口、限额翻倍。
+        return StrUtil.isBlank(clientIp) ? "unknown" : clientIp.trim().toLowerCase(Locale.ROOT);
     }
 
     private boolean tryAcquire(String key, int limit) {
