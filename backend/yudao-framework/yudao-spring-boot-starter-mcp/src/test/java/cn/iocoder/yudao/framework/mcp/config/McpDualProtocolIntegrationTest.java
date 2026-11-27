@@ -7,6 +7,7 @@ import cn.iocoder.yudao.framework.acf.core.service.CapabilityVisibilityService;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCall;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolDescriptor;
+import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolExportService;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import cn.iocoder.yudao.framework.acf.core.model.CapabilityResult;
 import cn.iocoder.yudao.framework.common.biz.system.oauth2.OAuth2TokenCommonApi;
@@ -58,11 +59,13 @@ import static org.mockito.Mockito.when;
  * <p>本文件在本机未跑过（Maven 无法运行），需在能跑 Maven 的环境重跑确认。</p>
  *
  * <p>目录是 17 个 ERP 能力（与生产 17 个 ERP 工具的规模一致）：其中
- * {@code erp.ledger.close} 只对 legacy tools/list 隐藏（仍可按名调用，过滤只作用
+ * {@code erp.ledger.close} 只对 tools/list 隐藏（仍可按名调用，过滤只作用
  * 于列表），{@code erp.payment.refund} 是需要确认的能力（legacy 腿调它必须以
- * CONFIRMATION_UNAVAILABLE 明确拒绝，不执行、不复活 acf.confirm）。Modern 腿
- * 的 tools/list 由仓库过滤，不受 legacy 的 addToolFilter 影响，因此同一目录在
- * modern 侧应始终是完整的 17 个。</p>
+ * CONFIRMATION_UNAVAILABLE 明确拒绝，不执行、不复活 acf.confirm）。两腿共用
+ * 同一份可见性判定：modern 腿经 {@code CapabilityToolExportService} 过滤，
+ * legacy 腿经 addToolFilter 过滤，同一用户下两腿的 tools/list 均为 16 个
+ *（隐藏同一工具）；过滤只作用于列表，find / tools/call 不过滤，两腿都能按名
+ * 调到被隐藏的工具。</p>
  */
 @SpringBootTest(classes = McpDualProtocolIntegrationTest.TestApplication.class,
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -189,9 +192,11 @@ class McpDualProtocolIntegrationTest {
                 """,
                 modernHeaders("tools/list"));
         assertThat(modernList.getStatusCode().is2xxSuccessful()).isTrue();
-        // Modern 腿不受 legacy addToolFilter 影响：被 legacy 隐藏的工具这里仍可见。
-        assertThat(toolNames(objectMapper.readTree(modernList.getBody()))).hasSize(17)
-                .contains(HIDDEN_TOOL, GATED_TOOL);
+        // 两腿共用同一份可见性判定：modern 经 export service 过滤，legacy 经
+        // addToolFilter 过滤，同一用户下隐藏同一工具，两腿均为 16 个。
+        assertThat(toolNames(objectMapper.readTree(modernList.getBody()))).hasSize(16)
+                .doesNotContain(HIDDEN_TOOL)
+                .contains(ORDER_CREATE_TOOL, GATED_TOOL);
 
         ResponseEntity<String> legacyList = post("/mcp", jsonRpc(13, "tools/list", "{}"),
                 legacyHeaders());
@@ -214,8 +219,24 @@ class McpDualProtocolIntegrationTest {
         assertThat(modernResult.path("isError").asBoolean()).isFalse();
         assertThat(modernResult.path("structuredContent").path("result").asText()).isEqualTo("hello");
 
+        // 被列表隐藏的工具在 modern 腿上同样可按名调用：仓库的 find 不做可见性
+        // 过滤，调用时由 ACF 执行链校验（与 legacy 腿的 hiddenCall 对照）。
+        ResponseEntity<String> modernHiddenCall = post("/mcp",
+                """
+                {"jsonrpc":"2.0","id":15,"method":"tools/call","params":{
+                  "name":"erp.ledger.close","arguments":{"message":"hello"},
+                  "_meta":{
+                    "io.modelcontextprotocol/protocolVersion":"2026-07-28",
+                    "io.modelcontextprotocol/clientCapabilities":{}}
+                }}
+                """,
+                modernHeaders("tools/call", HIDDEN_TOOL));
+        assertThat(modernHiddenCall.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(objectMapper.readTree(modernHiddenCall.getBody()).path("result")
+                .path("isError").asBoolean()).isFalse();
+
         ResponseEntity<String> legacyCall = post("/mcp",
-                jsonRpc(15, "tools/call", "{\"name\":\"" + ORDER_CREATE_TOOL
+                jsonRpc(16, "tools/call", "{\"name\":\"" + ORDER_CREATE_TOOL
                         + "\",\"arguments\":{\"message\":\"hello\"}}"),
                 legacyHeaders());
         assertThat(legacyCall.getStatusCode().is2xxSuccessful()).isTrue();
@@ -372,6 +393,21 @@ class McpDualProtocolIntegrationTest {
                         .withTraceId("trace-dual");
             });
             return invoker;
+        }
+
+        @Bean
+        CapabilityToolExportService capabilityToolExportService() {
+            // P1-1：modern 腿的可见性走 export service，与 legacy 的 addToolFilter
+            // 共用同一份 visibility 判定（visibilityService 的 getVisible 对
+            // HIDDEN_TOOL 返回空）；同一用户下两腿的 tools/list 均为 16 个。
+            // 此前 modern 侧没有这个 bean，仓库退回声明目录返回全量 17 个，那是
+            // mock 配出来的假象，不是设计差异——生产上有 ACF 自动配置提供该 bean。
+            CapabilityToolExportService exportService = mock(CapabilityToolExportService.class);
+            when(exportService.export(any())).thenReturn(ALL_TOOL_NAMES.stream()
+                    .filter(name -> !HIDDEN_TOOL.equals(name))
+                    .map(name -> descriptor(name, GATED_TOOL.equals(name)))
+                    .toList());
+            return exportService;
         }
 
         @Bean
