@@ -152,7 +152,7 @@ public class AcfMcpToolCallHandler {
             io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
         CallToolOutcome outcome = execute(transportContext, request.meta(), false, descriptor,
                 request.arguments(), null, null);
-        return AcfMcpLegacyToolAdapter.toLegacyResult(outcome, jsonMapper);
+        return AcfMcpLegacyToolAdapter.toLegacyResult(outcome);
     }
 
     /**

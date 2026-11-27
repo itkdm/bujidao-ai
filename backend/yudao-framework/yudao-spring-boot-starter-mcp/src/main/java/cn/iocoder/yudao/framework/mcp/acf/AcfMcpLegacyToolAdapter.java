@@ -1,11 +1,7 @@
 package cn.iocoder.yudao.framework.mcp.acf;
 
-import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.modern.McpSchema;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.util.List;
 
 /**
@@ -49,8 +45,6 @@ import java.util.List;
  */
 public final class AcfMcpLegacyToolAdapter {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(AcfMcpLegacyToolAdapter.class);
-
     private AcfMcpLegacyToolAdapter() {
     }
 
@@ -85,11 +79,9 @@ public final class AcfMcpLegacyToolAdapter {
      *
      * @param outcome modern handler 的返回值（{@code CallToolResult} 或
      *                {@code InputRequiredResult}）
-     * @param jsonMapper 只在 modern 结果里出现非文本 content 时用它序列化成文本；
-     *                   handler 只产文本 content，正常走不到这条路
      */
     public static io.modelcontextprotocol.spec.McpSchema.CallToolResult toLegacyResult(
-            McpSchema.CallToolOutcome outcome, McpJsonMapper jsonMapper) {
+            McpSchema.CallToolOutcome outcome) {
         if (outcome instanceof McpSchema.InputRequiredResult required) {
             return toLegacyConfirmationRequired(required);
         }
@@ -99,7 +91,7 @@ public final class AcfMcpLegacyToolAdapter {
         }
         io.modelcontextprotocol.spec.McpSchema.CallToolResult.Builder builder =
                 io.modelcontextprotocol.spec.McpSchema.CallToolResult.builder()
-                        .content(toLegacyContent(result.content(), jsonMapper))
+                        .content(toLegacyContent(result.content()))
                         .isError(Boolean.TRUE.equals(result.isError()));
         if (result.structuredContent() != null) {
             builder.structuredContent(result.structuredContent());
@@ -130,17 +122,17 @@ public final class AcfMcpLegacyToolAdapter {
     }
 
     private static List<io.modelcontextprotocol.spec.McpSchema.Content> toLegacyContent(
-            List<McpSchema.Content> content, McpJsonMapper jsonMapper) {
+            List<McpSchema.Content> content) {
         if (content == null) {
             return List.of();
         }
         return content.stream()
-                .map(item -> toLegacyContentItem(item, jsonMapper))
+                .map(AcfMcpLegacyToolAdapter::toLegacyContentItem)
                 .toList();
     }
 
     private static io.modelcontextprotocol.spec.McpSchema.Content toLegacyContentItem(
-            McpSchema.Content item, McpJsonMapper jsonMapper) {
+            McpSchema.Content item) {
         if (item instanceof McpSchema.TextContent textContent) {
             io.modelcontextprotocol.spec.McpSchema.TextContent.Builder builder =
                     io.modelcontextprotocol.spec.McpSchema.TextContent.builder(textContent.text());
@@ -152,16 +144,12 @@ public final class AcfMcpLegacyToolAdapter {
             }
             return builder.build();
         }
-        // handler 只产文本 content；其它类型（图片等）没有 legacy 对应物时退化成 JSON 文本，
-        // 不丢信息也不让转写炸掉整条调用。
-        try {
-            String serialized = jsonMapper.writeValueAsString(item);
-            LOGGER.warn("Non-text MCP content converted to JSON text for legacy result: contentType={}",
-                    item.getClass().getName());
-            return io.modelcontextprotocol.spec.McpSchema.TextContent.builder(serialized).build();
-        } catch (IOException exception) {
-            throw new IllegalStateException("Failed to serialize MCP content for legacy result", exception);
-        }
+        // handler 只产 TextContent，该分支今天走不到；非文本 content（图片、音频等）
+        // 没有保真转写时直接抛错，不静默序列化成 JSON 文本——将来真要支持图片/音频，
+        // 应补全各类型的转写，而不是把二进制内容 JSON 文本化后假装是文本结果。
+        // 与本文件未知 outcome 分支抛 IllegalArgumentException 的约定一致。
+        throw new IllegalArgumentException("Unsupported MCP content type for legacy result: "
+                + item.getClass().getName());
     }
 
     private static io.modelcontextprotocol.spec.McpSchema.ToolAnnotations toLegacyToolAnnotations(
