@@ -38,19 +38,27 @@ import java.util.Objects;
  * {@code service(ServletRequest, ServletResponse)}（需显式转型以命中该重载），
  * 它内部再分派到 protected 的 HttpServlet 重载，行为完全一致。</p>
  *
- * <p>判据顺序（先 HTTP 方法、再头、再体；命中即分流）：GET / DELETE 一律 legacy；
- * POST 带 {@code Mcp-Method} 头的一律 modern；{@code MCP-Protocol-Version} 为
- * 2026-07-28 的 modern、其它值 legacy（仅凭该头存在不能分流，2025-11-25 也要求
- * 该头，判的是值）；请求体 {@code _meta} 的协议版本为 2026-07-28 的 modern；
- * 方法为 {@code server/discover} 的 modern；方法为 {@code initialize}（且无
- * modern 信号）的 legacy；其余 POST 默认 legacy（老客户端兼容优先）。</p>
+ * <p>判据（按顺序命中即分流，claim 主规则）：GET / DELETE / 其它非 POST 一律 legacy；
+ * POST 先看 {@code MCP-Protocol-Version} 头——值精确等于 2026-07-28 的 modern，其它
+ * 有值一律 legacy（头优先：头体冲突时以头为准，进 modern 的冲突请求由 modern 腿的
+ * SDK {@code validateHeaders} 二次校验以 -32020 拒绝，不会静默执行）；头无值时看体
+ * {@code params._meta} 里有没有保留键
+ * {@code io.modelcontextprotocol/protocolVersion}——键存在（无论值是什么）即 modern，
+ * 不支持的版本由 modern 腿答 -32022；其余 POST 默认 legacy（老客户端兼容优先）。
+ * {@code Mcp-Method} 头不参与分类（它只是 modern 腿的校验对象，不是分类信号）、
+ * 方法名不参与分类（合规 modern 探针一定带 envelope claim，会由 claim 规则认出来；
+ * 无 claim 的 {@code server/discover} 与 modern 形态调用一样落默认 legacy）、
+ * 顶层 {@code params.protocolVersion} 不参与分类（那是 legacy {@code initialize}
+ * 的参数，带 2026-07-28 的 initialize 走 legacy 协商降级回 2025-11-25）。
+ * 路由与下游同为精确匹配：头值、体版本都不 trim，下游 SDK
+ * {@code protocolVersionFromMeta} 原样返回、{@code validateHeaders} 用 equals 比对、
+ * {@code supportedVersions.contains} 精确匹配。</p>
  *
  * <p>读体只走已有的 body 缓存：全局 {@code CacheRequestBodyFilter}（/*，JSON 请求）
  * 已把请求包成 {@code CacheRequestBodyWrapper}，其 {@code getInputStream()} 每次
  * 返回新的流，可反复读；分流器沿包装链找到它才读体，找不到（非 JSON、或 web starter
- * 未启用）时只按头判定、绝不消耗原始输入流——modern 客户端一定带
- * {@code Mcp-Method} 头，所以头判定已足够把 modern 流量认出来，体规则只是兜底。
- * 分流后把同一个（缓存过的）请求交给 transport，transport 还能再读到完整 body。</p>
+ * 未启用）时只按头判定、绝不消耗原始输入流。分流后把同一个（缓存过的）请求交给
+ * transport，transport 还能再读到完整 body。</p>
  *
  * <p>边界：未知 HTTP 方法、未知 JSON-RPC 方法、无头 POST、重复 initialize、
  * {@code Mcp-Session-Id} 头——前三者都落到默认 legacy（modern 腿不建 session，
@@ -58,8 +66,7 @@ import java.util.Objects;
  * 服务端按自己的无状态语义处理，分流器不拦截。已知限制：无头且无 {@code _meta}
  * 版本的 modern 形态调用（如 tools/* 且体里只有方法名）也会落到默认 legacy，
  * 有意不加启发式规则——WorkBuddy 等 legacy 客户端实际发的 {@code _meta} 未核实，
- * 凭体方法 + clientCapabilities 猜 modern 有误伤 legacy 客户端的风险；modern
- * 客户端一定带 {@code Mcp-Method} 头，不会落到这里。</p>
+ * 凭体方法 + clientCapabilities 猜 modern 有误伤 legacy 客户端的风险。</p>
  *
  * <p>Legacy 开关（{@code yudao.mcp.server.legacy.enabled}，默认 true）：关掉后
  * 分流到 legacy 的请求在这里被明确拒绝，不转发给任何一条 transport——既不静默
@@ -122,7 +129,7 @@ public class McpProtocolDispatcherServlet extends HttpServlet {
         if (body != null) {
             rpcMethod = text(body.get("method"));
         }
-        Decision decision = decide(request.getMethod(), request.getHeader(Headers.MCP_METHOD),
+        Decision decision = decide(request.getMethod(),
                 request.getHeader(Headers.MCP_PROTOCOL_VERSION), body);
         if (decision.leg() == Leg.LEGACY && !legacyEnabled) {
             // Legacy 腿已关：记一行 rule=legacy-disabled 的分流日志（流量统计口径
@@ -194,14 +201,18 @@ public class McpProtocolDispatcherServlet extends HttpServlet {
     /**
      * 纯函数分流判定（不碰 servlet 状态，可单测）。
      *
+     * <p>判据只有一条 claim 主规则加方法默认：非 POST 一律 legacy；POST 先看
+     * {@code MCP-Protocol-Version} 头（头优先，精确匹配，不 trim），再看体
+     * {@code params._meta} 有没有协议版本保留键（键存在即 modern，不看值、不 trim），
+     * 其余默认 legacy。{@code Mcp-Method} 头、方法名、顶层
+     * {@code params.protocolVersion} 都不参与分类（见类注释）。</p>
+     *
      * @param httpMethod            HTTP 方法
-     * @param mcpMethodHeader       {@code Mcp-Method} 头（可为空）
      * @param protocolVersionHeader {@code MCP-Protocol-Version} 头（可为空）
      * @param body                  已解析的 JSON-RPC 请求体（读不到或解析失败时为 null）
      * @return 分流结果
      */
-    static Decision decide(String httpMethod, String mcpMethodHeader,
-                           String protocolVersionHeader, JsonNode body) {
+    static Decision decide(String httpMethod, String protocolVersionHeader, JsonNode body) {
         if ("GET".equalsIgnoreCase(httpMethod)) {
             // Legacy stateless transport 的 doGet 直接答 405（modern 的 doGet 同样
             // 405）；GET 没有 body 可谈，legacy 是唯一有 legacy 语义的腿。
@@ -217,57 +228,36 @@ public class McpProtocolDispatcherServlet extends HttpServlet {
             // 未知输入一致），由目标 transport 的 HttpServlet 默认行为答复。
             return new Decision(Leg.LEGACY, versionOrDash(protocolVersionHeader), "default-legacy");
         }
-        if (mcpMethodHeader != null) {
-            // Mcp-Method 是 2026-07-28 的必备头：modern transport 缺了它就对
-            // 非 initialize 请求答 -32020（HEADER_MISMATCH，HTTP 400）。头在，
-            // 就是 modern 客户端；头值与体方法不符时由 modern transport 自己拒。
-            // 这里判的是“头存在”（非 null），不是“头非空”：空串 / 空白头是“头存在
-            // 但非法”，同样判 modern、交给 modern transport 以 -32020 拒，而不
-            // 是当成“无头”落到 legacy——legacy 客户端根本不发这个头，只有明确发
-            // 了空头的调用方才会走到这条分支。
-            return new Decision(Leg.MODERN,
-                    versionOrDash(protocolVersionHeader, metaProtocolVersion(body),
-                            paramsProtocolVersion(body)),
-                    "mcp-method-header");
+        if (MODERN_PROTOCOL_VERSION.equals(protocolVersionHeader)) {
+            // 头值精确等于 2026-07-28（不 trim）：modern。头体冲突时头优先——
+            // 体 claim 是其它版本时仍走 modern，由 modern 腿 validateHeaders
+            // 以 -32020 拒绝，不静默执行；无体 claim 时 modern 腿同样会因缺
+            // envelope 拒绝，最终效果与 TS SDK 一致。
+            return new Decision(Leg.MODERN, protocolVersionHeader, "protocol-version-2026-07-28");
         }
         if (hasText(protocolVersionHeader)) {
-            if (MODERN_PROTOCOL_VERSION.equals(protocolVersionHeader.trim())) {
-                return new Decision(Leg.MODERN, protocolVersionHeader.trim(),
-                        "protocol-version-2026-07-28");
-            }
-            // 其它值（2025-11-25 及更早、或未知版本）一律 legacy：legacy 是兼容
+            // 其它头值（2025-11-25 及更早、或未知版本）一律 legacy：legacy 是兼容
             // 默认；legacy 服务端从不拒版本，不支持的版本只记一条 warn，再按规
             // 范降级回它支持的最高版本 2025-11-25（HTTP 200），不是 -32022
             //（SDK McpStatelessAsyncServer.asyncInitializeRequestHandler）。
-            return new Decision(Leg.LEGACY, protocolVersionHeader.trim(), "protocol-version-legacy");
+            return new Decision(Leg.LEGACY, protocolVersionHeader, "protocol-version-legacy");
         }
         String metaVersion = metaProtocolVersion(body);
-        if (MODERN_PROTOCOL_VERSION.equals(metaVersion)) {
-            return new Decision(Leg.MODERN, metaVersion, "meta-protocol-version-2026-07-28");
+        if (metaVersion != null) {
+            // Claim 主规则：params._meta 里有协议版本保留键即 modern，不看值——
+            // 2026-07-28 之外的版本（未知版本、旧版本）同样进 modern，由 modern
+            // 腿答 -32022。非文本的 claim 值不算（SDK protocolVersionFromMeta
+            // 同样只认 String）。
+            return new Decision(Leg.MODERN, metaVersion, "meta-protocol-version-claim");
         }
-        String paramsVersion = paramsProtocolVersion(body);
-        if (MODERN_PROTOCOL_VERSION.equals(paramsVersion)) {
-            return new Decision(Leg.MODERN, paramsVersion, "params-protocol-version-2026-07-28");
-        }
-        String rpcMethod = body == null ? null : text(body.get("method"));
-        if (McpSchema.METHOD_SERVER_DISCOVER.equals(rpcMethod)) {
-            // server/discover 是 modern 协议的方法，legacy 服务端没有这个概念。
-            return new Decision(Leg.MODERN, versionOrDash(metaVersion, paramsVersion),
-                    "server-discover");
-        }
-        if (McpSchema.METHOD_INITIALIZE.equals(rpcMethod)) {
-            // 走到这里的 initialize 没有任何 modern 信号：legacy 握手。注意 modern
-            // transport 自己也有同样的豁免（initialize 且 _meta 无版本时不校验头，
-            // 交给 McpServer 答 -32022），但分流到 legacy 才是对的——legacy 客户
-            // 端期望的就是 legacy 握手。
-            return new Decision(Leg.LEGACY, versionOrDash(metaVersion, paramsVersion), "initialize");
-        }
-        // 其余 POST（无 modern 头、非 initialize/discover，如 tools/list、
+        // 其余 POST（无头、无 claim，如无 envelope 的 initialize、tools/list、
         // tools/call、notifications/*、未知方法、体解析失败）：默认 legacy，
-        // 老客户端兼容优先；modern 客户端一定带 Mcp-Method 头，不会落到这里。
+        // 老客户端兼容优先。无 claim 的 initialize 自然落在这里，不需要单独的
+        // initialize 分支；带 2026-07-28 的顶层 params.protocolVersion 同样
+        // 落在这里——那是 legacy initialize 的参数，走 legacy 协商降级。
         // 已知限制：无头、无 _meta 版本的 modern 形态调用也会落在这里（见类注释），
         // 有意不用体方法启发式分流。
-        return new Decision(Leg.LEGACY, versionOrDash(metaVersion, paramsVersion), "default-legacy");
+        return new Decision(Leg.LEGACY, versionOrDash(metaVersion), "default-legacy");
     }
 
     /**
@@ -309,9 +299,10 @@ public class McpProtocolDispatcherServlet extends HttpServlet {
     }
 
     /**
-     * {@code params._meta["io.modelcontextprotocol/protocolVersion"]}。
+     * {@code params._meta["io.modelcontextprotocol/protocolVersion"]}，原样返回，不 trim：
+     * 路由与下游同为精确匹配（见类注释），下游 SDK {@code protocolVersionFromMeta}
+     * 也是原样返回。非文本值返回 null（SDK 同样只认 String）。
      * 注意 key 本身含 "/"，不能用 JSON Pointer（"/" 是分隔符），必须逐级 get。
-     * 返回前 trim：体版本比较与头版本比较的宽容度一致，空白包围的版本号同样识别。
      */
     private static String metaProtocolVersion(JsonNode body) {
         if (body == null) {
@@ -325,24 +316,7 @@ public class McpProtocolDispatcherServlet extends HttpServlet {
         if (meta == null || !meta.isObject()) {
             return null;
         }
-        String version = text(meta.get(MetaKeys.PROTOCOL_VERSION));
-        return version == null ? null : version.trim();
-    }
-
-    /**
-     * Legacy 握手风格的顶层 {@code params.protocolVersion}。
-     * 返回前 trim，理由同 {@link #metaProtocolVersion(JsonNode)}。
-     */
-    private static String paramsProtocolVersion(JsonNode body) {
-        if (body == null) {
-            return null;
-        }
-        JsonNode params = body.get("params");
-        if (params == null || !params.isObject()) {
-            return null;
-        }
-        String version = text(params.get("protocolVersion"));
-        return version == null ? null : version.trim();
+        return text(meta.get(MetaKeys.PROTOCOL_VERSION));
     }
 
     /**
@@ -366,7 +340,8 @@ public class McpProtocolDispatcherServlet extends HttpServlet {
     private static String versionOrDash(String... candidates) {
         for (String candidate : candidates) {
             if (hasText(candidate)) {
-                return candidate.trim();
+                // 不 trim：路由精确匹配，下游同样精确校验（见类注释）。
+                return candidate;
             }
         }
         return "-";

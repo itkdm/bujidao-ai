@@ -255,14 +255,13 @@ yudao:
 
 ## 双协议分流（modern 2026-07-28 + legacy 2025-11-25）
 
-同一 `/mcp` 端点同时服务两个协议版本，分流器 `McpProtocolDispatcherServlet` 按请求特征路由（命中即分流，先后顺序如下）：
+同一 `/mcp` 端点同时服务两个协议版本，分流器 `McpProtocolDispatcherServlet` 按请求特征路由（命中即分流，先后顺序如下；判据只有一条 claim 主规则加方法默认）：
 
 1. GET / DELETE 一律 legacy（legacy 的 GET 答 405，modern 的 GET/DELETE 同样 405；两条腿都不建 session）。
-2. POST 带 `Mcp-Method` 头的一律 modern（这是 2026-07-28 的必备头）。
-3. `MCP-Protocol-Version` 为 `2026-07-28` 的 modern，其他值 legacy（仅凭该头存在不能分流，2025-11-25 也要求该头，判的是值）。
-4. 请求体 `_meta` 的协议版本（或顶层 `params.protocolVersion`）为 `2026-07-28` 的 modern；方法为 `server/discover` 的 modern。
-5. 方法为 `initialize`（且无 modern 信号）的 legacy；其余 POST 默认 legacy（老客户端兼容优先，modern 客户端一定带 `Mcp-Method` 头，不会落到这里）。
-6. 未知 HTTP 方法（PUT / OPTIONS / HEAD / PATCH / TRACE 等）同样落入 `default-legacy`，由目标 transport 的 `HttpServlet` 默认行为答复（405），分流器不另做处理。
+2. `MCP-Protocol-Version` 头精确等于 `2026-07-28` 的 modern，其他有值一律 legacy（头优先：头体冲突时以头为准，进 modern 的冲突请求由 modern 腿的 SDK `validateHeaders` 二次校验以 `-32020` 拒绝，不会静默执行；头值不 trim，路由与下游同为精确匹配）。
+3. 头无值时看体 `params._meta` 里有没有保留键 `io.modelcontextprotocol/protocolVersion`：键存在（无论值是什么）即 modern，不支持的版本由 modern 腿答 `-32022`。
+4. 其余 POST 默认 legacy（老客户端兼容优先）。`Mcp-Method` 头不参与分类（它只是 modern 腿的校验对象）、方法名不参与分类（无 claim 的 `server/discover` 也落默认 legacy）、顶层 `params.protocolVersion` 不参与分类（那是 legacy `initialize` 的参数，带 `2026-07-28` 的 `initialize` 走 legacy 协商降级回 `2025-11-25`）；无 claim 的 `initialize` 自然落默认 legacy，不需要单独分支。
+5. 未知 HTTP 方法（PUT / OPTIONS / HEAD / PATCH / TRACE 等）同样落入 `default-legacy`，由目标 transport 的 `HttpServlet` 默认行为答复（405），分流器不另做处理。
 
 两条腿的区别：
 
