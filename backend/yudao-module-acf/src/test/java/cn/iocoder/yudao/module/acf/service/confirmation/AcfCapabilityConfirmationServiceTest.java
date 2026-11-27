@@ -11,7 +11,11 @@ import cn.iocoder.yudao.framework.acf.core.standard.AcfCapabilityErrorCodes;
 import cn.iocoder.yudao.module.acf.dal.dataobject.confirmation.AcfConfirmationChallengeDO;
 import cn.iocoder.yudao.module.acf.dal.mysql.confirmation.AcfConfirmationChallengeMapper;
 import cn.iocoder.yudao.module.acf.enums.AcfConfirmationChallengeStatus;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -31,6 +35,14 @@ class AcfCapabilityConfirmationServiceTest {
 
     private final AcfConfirmationChallengeMapper mapper = mock(AcfConfirmationChallengeMapper.class);
     private final AcfCapabilityConfirmationService service = new AcfCapabilityConfirmationService(mapper);
+
+    @BeforeAll
+    static void initTableInfo() {
+        // 纯单测没有 MyBatis-Plus 容器初始化：getSqlSegment() 做 lambda 列解析时
+        // 需要该实体的 TableInfo 缓存，否则抛 "can not find lambda cache"。
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""),
+                AcfConfirmationChallengeDO.class);
+    }
 
     @Test
     void shouldReusePendingChallengeForSameRequest() {
@@ -194,7 +206,7 @@ class AcfCapabilityConfirmationServiceTest {
         assertThat(check.getErrorCode()).isEqualTo(AcfCapabilityErrorCodes.CONFIRM_TOKEN_INVALID);
         ArgumentCaptor<Wrapper> wrapperCaptor = ArgumentCaptor.forClass(Wrapper.class);
         verify(mapper).update(any(AcfConfirmationChallengeDO.class), wrapperCaptor.capture());
-        assertThat(wrapperCaptor.getValue().getSqlSegment()).contains("expires_at");
+        assertThat(wrapperCaptor.getValue().getSqlSegment()).contains("expires_at >");
     }
 
     @Test
