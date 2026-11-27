@@ -139,6 +139,38 @@ class McpServerInitializeIntegrationTest {
     }
 
     @Test
+    void shouldDowngradeUnknownVersionInitializeToHighestSupportedOnLegacyLeg() throws Exception {
+        // P1-5：legacy 握手从不拒版本：未知版本只记一条 warn，再按规范回它支持的
+        // 最高版本 2025-11-25（HTTP 200）；而已支持的旧版（如 2025-06-18）
+        // 原样回显。分流器注释曾误写为“legacy 对不支持的版本答 -32022”，已纠正。
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setAccept(java.util.List.of(MediaType.APPLICATION_JSON, MediaType.TEXT_EVENT_STREAM));
+
+        ResponseEntity<String> unknown = restTemplate.postForEntity(
+                "http://127.0.0.1:" + port + "/mcp",
+                new HttpEntity<>("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":"
+                        + "{\"protocolVersion\":\"2030-01-01\",\"capabilities\":{},"
+                        + "\"clientInfo\":{\"name\":\"integration-test\",\"version\":\"1.0.0\"}}}",
+                        headers),
+                String.class);
+        assertThat(unknown.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(objectMapper.readTree(unknown.getBody()).path("result")
+                .path("protocolVersion").asText()).isEqualTo("2025-11-25");
+
+        ResponseEntity<String> olderSupported = restTemplate.postForEntity(
+                "http://127.0.0.1:" + port + "/mcp",
+                new HttpEntity<>("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"initialize\",\"params\":"
+                        + "{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},"
+                        + "\"clientInfo\":{\"name\":\"integration-test\",\"version\":\"1.0.0\"}}}",
+                        headers),
+                String.class);
+        assertThat(olderSupported.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(objectMapper.readTree(olderSupported.getBody()).path("result")
+                .path("protocolVersion").asText()).isEqualTo("2025-06-18");
+    }
+
+    @Test
     void shouldRejectInitializeWithModernVersionClaimAsUnknownMethod() throws Exception {
         String request = """
                 {

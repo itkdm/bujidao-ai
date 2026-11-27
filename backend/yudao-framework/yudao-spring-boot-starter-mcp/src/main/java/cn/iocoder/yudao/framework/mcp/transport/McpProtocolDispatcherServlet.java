@@ -222,7 +222,9 @@ public class McpProtocolDispatcherServlet extends HttpServlet {
                         "protocol-version-2026-07-28");
             }
             // 其它值（2025-11-25 及更早、或未知版本）一律 legacy：legacy 是兼容
-            // 默认，legacy 服务端会在 initialize 里对自己不支持的版本答 -32022。
+            // 默认；legacy 服务端从不拒版本，不支持的版本只记一条 warn，再按规
+            // 范降级回它支持的最高版本 2025-11-25（HTTP 200），不是 -32022
+            //（SDK McpStatelessAsyncServer.asyncInitializeRequestHandler）。
             return new Decision(Leg.LEGACY, protocolVersionHeader.trim(), "protocol-version-legacy");
         }
         String metaVersion = metaProtocolVersion(body);
