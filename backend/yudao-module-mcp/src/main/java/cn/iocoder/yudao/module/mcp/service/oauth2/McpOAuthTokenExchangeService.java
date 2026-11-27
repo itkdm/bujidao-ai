@@ -58,7 +58,7 @@ public class McpOAuthTokenExchangeService {
                                                                  String codeVerifier, String resource,
                                                                  String expectedResource) {
         // 空白 resource 归一化为 null：matches() 用 isBlank（null/"" 等价），
-        // validateAuthorizationCode 用 equals（不等价），不归一化会让授权 ""、
+        // validateAuthorizationCodeBinding 用 equals（不等价），不归一化会让授权 ""、
         // 兑换不带这类组合在兑换步误判 invalid_grant。
         resource = StrUtil.blankToNull(resource);
         OAuth2ClientDO client = validatePublicClient(clientId,
@@ -71,12 +71,14 @@ public class McpOAuthTokenExchangeService {
         if (codeExtra == null) {
             throw McpOAuthException.invalidGrant("authorization code is invalid");
         }
-
+        // 先校验绑定、再消费授权码：校验失败时授权码不被消耗，客户端可修正请求后
+        // 重试同一 code（之前是先消费后校验，任意一次绑定失败都会烧掉授权码）。
+        validateAuthorizationCodeBinding(codeExtra, clientId, redirectUri, resource, codeVerifier);
         OAuth2CodeDO codeDO = oauth2CodeService.consumeAuthorizationCode(code);
         if (codeDO == null) {
             throw McpOAuthException.invalidGrant("authorization code is invalid");
         }
-        validateAuthorizationCode(codeDO, codeExtra, clientId, redirectUri, resource, codeVerifier);
+        assertAuthorizationCodeConsistent(codeDO, codeExtra);
         codeExtraRedisDAO.delete(code);
 
         OAuth2AccessTokenDO accessToken = TenantUtils.execute(codeExtra.getTenantId(),
@@ -207,20 +209,38 @@ public class McpOAuthTokenExchangeService {
         }
     }
 
-    private static void validateAuthorizationCode(OAuth2CodeDO codeDO, McpOAuthAuthorizationCodeExtraDO codeExtra,
-                                                  String clientId, String redirectUri, String resource,
-                                                  String codeVerifier) {
-        if (!StrUtil.equals(clientId, codeDO.getClientId()) || !StrUtil.equals(clientId, codeExtra.getClientId())) {
+    /**
+     * 消费前校验：授权码与本次兑换请求的四项绑定（clientId / redirect_uri / resource / PKCE），
+     * 只读 codeExtra（授权时与 codeDO 一同写入），不依赖 codeDO。校验失败时授权码尚未消费，
+     * 客户端可修正请求后重试同一 code。
+     */
+    private static void validateAuthorizationCodeBinding(McpOAuthAuthorizationCodeExtraDO codeExtra,
+                                                         String clientId, String redirectUri, String resource,
+                                                         String codeVerifier) {
+        if (!StrUtil.equals(clientId, codeExtra.getClientId())) {
             throw McpOAuthException.invalidGrant("client_id is invalid");
         }
-        if (!StrUtil.equals(redirectUri, codeDO.getRedirectUri())
-                || !StrUtil.equals(redirectUri, codeExtra.getRedirectUri())) {
+        if (!StrUtil.equals(redirectUri, codeExtra.getRedirectUri())) {
             throw McpOAuthException.invalidGrant("redirect_uri is invalid");
         }
         if (!StrUtil.equals(resource, codeExtra.getResource())) {
             throw McpOAuthException.invalidGrant("resource is invalid");
         }
         McpOAuthPkceVerifier.verify(codeExtra.getCodeChallenge(), codeVerifier);
+    }
+
+    /**
+     * 消费后一致性断言：codeDO 与 codeExtra 是授权时一同写入的两条记录，clientId 与
+     * redirect_uri 应当一致；不一致说明数据已损坏或被篡改，拒绝兑换。
+     */
+    private static void assertAuthorizationCodeConsistent(OAuth2CodeDO codeDO,
+                                                          McpOAuthAuthorizationCodeExtraDO codeExtra) {
+        if (!StrUtil.equals(codeDO.getClientId(), codeExtra.getClientId())) {
+            throw McpOAuthException.invalidGrant("client_id is invalid");
+        }
+        if (!StrUtil.equals(codeDO.getRedirectUri(), codeExtra.getRedirectUri())) {
+            throw McpOAuthException.invalidGrant("redirect_uri is invalid");
+        }
     }
 
     private static boolean isPublicClient(OAuth2ClientDO client) {

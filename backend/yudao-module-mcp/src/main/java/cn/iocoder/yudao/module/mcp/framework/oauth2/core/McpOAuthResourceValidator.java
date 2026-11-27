@@ -20,7 +20,7 @@ public class McpOAuthResourceValidator {
     /**
      * 校验请求带的 resource 是否与客户端注册 / 当前服务地址一致。
      * 未声明 resource（RFC 8707 里 resource 是可选参数）时本步不约束：
-     * 真正的绑定在兑换步——{@code validateAuthorizationCode} 要求兑换的
+     * 真正的绑定在兑换步——{@code validateAuthorizationCodeBinding} 要求兑换的
      * resource 与授权时存的 codeExtra.resource 逐值相等，授权带 R、兑换
      * 不带仍判 invalid_grant，授权不带、兑换带 R 同样判 invalid_grant，
      * 带与不带的 resource 混不过去。

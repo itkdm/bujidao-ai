@@ -202,13 +202,33 @@ class McpOAuthTokenExchangeServiceTest {
         when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
         when(clientResolver.resolve(CLIENT_ID_URL, null)).thenReturn(cimdClient());
         when(codeExtraRedisDAO.get("code-123")).thenReturn(codeExtra());
-        when(oauth2CodeService.consumeAuthorizationCode("code-123")).thenReturn(codeDO());
 
         assertThatThrownBy(() -> service.exchangeAuthorizationCode(
                 CLIENT_ID_URL, "code-123", REDIRECT_URI, "wrong-verifier", RESOURCE, RESOURCE))
                 .isInstanceOf(McpOAuthException.class)
                 .extracting("status", "error")
                 .containsExactly(HttpStatus.BAD_REQUEST, "invalid_grant");
+        // PKCE 校验在消费之前：授权码不被消耗，客户端可换正确的 verifier 重试同一 code。
+        verify(oauth2CodeService, never()).consumeAuthorizationCode(anyString());
+        verify(codeExtraRedisDAO, never()).delete(anyString());
+    }
+
+    @Test
+    void shouldNotConsumeCodeWhenClientIdMismatches() {
+        // 授权码绑定的 client_id 与本次兑换的 client_id 不一致：消费前校验即判
+        // invalid_grant，授权码不被消费，客户端修正后可重试同一 code。
+        when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
+        when(clientResolver.resolve(CLIENT_ID_URL, null)).thenReturn(cimdClient());
+        when(codeExtraRedisDAO.get("code-123"))
+                .thenReturn(codeExtra().setClientId("https://other.example.com/app"));
+
+        assertThatThrownBy(() -> service.exchangeAuthorizationCode(
+                CLIENT_ID_URL, "code-123", REDIRECT_URI, CODE_VERIFIER, RESOURCE, RESOURCE))
+                .isInstanceOf(McpOAuthException.class)
+                .extracting("status", "error")
+                .containsExactly(HttpStatus.BAD_REQUEST, "invalid_grant");
+        verify(oauth2CodeService, never()).consumeAuthorizationCode(anyString());
+        verify(codeExtraRedisDAO, never()).delete(anyString());
     }
 
     @Test
@@ -246,37 +266,35 @@ class McpOAuthTokenExchangeServiceTest {
     @Test
     void shouldRejectExchangeWhenResourceOmittedButAuthorizedWithResource() {
         // 授权带 R、兑换不带：兑换步 resource 比对（null != R）判 invalid_grant，
-        // 带与不带的 resource 混不过去。注意授权码已在校验前被消费（P1-2），
-        // 重试须重新授权；codeExtra 未删、随 Redis TTL 过期。
+        // 带与不带的 resource 混不过去。校验在消费之前，授权码未被消耗，客户端可
+        // 重试同一 code；codeExtra 未删、随 Redis TTL 过期。
         when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
         when(clientResolver.resolve(CLIENT_ID_URL, null)).thenReturn(cimdClient());
         when(codeExtraRedisDAO.get("code-123")).thenReturn(codeExtra());
-        when(oauth2CodeService.consumeAuthorizationCode("code-123")).thenReturn(codeDO());
 
         assertThatThrownBy(() -> service.exchangeAuthorizationCode(
                 CLIENT_ID_URL, "code-123", REDIRECT_URI, CODE_VERIFIER, null, null))
                 .isInstanceOf(McpOAuthException.class)
                 .extracting("status", "error")
                 .containsExactly(HttpStatus.BAD_REQUEST, "invalid_grant");
-        verify(oauth2CodeService).consumeAuthorizationCode("code-123");
+        verify(oauth2CodeService, never()).consumeAuthorizationCode(anyString());
         verify(codeExtraRedisDAO, never()).delete(anyString());
     }
 
     @Test
     void shouldRejectExchangeWhenResourceAddedButAuthorizedWithoutResource() {
         // 授权不带、兑换带 R：兑换步 matches() 先放行合规的 R（与注册/current 比对），
-        // 真正拦住它的是 validateAuthorizationCode（R != null）判 invalid_grant。
+        // 真正拦住它的是消费前绑定校验（R != null）判 invalid_grant；授权码未被消耗。
         when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
         when(clientResolver.resolve(CLIENT_ID_URL, null)).thenReturn(cimdClient());
         when(codeExtraRedisDAO.get("code-123")).thenReturn(codeExtra().setResource(null));
-        when(oauth2CodeService.consumeAuthorizationCode("code-123")).thenReturn(codeDO());
 
         assertThatThrownBy(() -> service.exchangeAuthorizationCode(
                 CLIENT_ID_URL, "code-123", REDIRECT_URI, CODE_VERIFIER, RESOURCE, RESOURCE))
                 .isInstanceOf(McpOAuthException.class)
                 .extracting("status", "error")
                 .containsExactly(HttpStatus.BAD_REQUEST, "invalid_grant");
-        verify(oauth2CodeService).consumeAuthorizationCode("code-123");
+        verify(oauth2CodeService, never()).consumeAuthorizationCode(anyString());
         verify(codeExtraRedisDAO, never()).delete(anyString());
     }
 

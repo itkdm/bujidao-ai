@@ -137,7 +137,7 @@ class McpOAuthAuthorizationServiceTest {
     @Test
     void shouldApproveCimdClientWithoutResource() {
         // resource 是可选参数（RFC 8707）：授权不带 resource 也应成功，
-        // codeExtra.resource 存空；绑定由兑换步 validateAuthorizationCode 兜底。
+        // codeExtra.resource 存空；绑定由兑换步 validateAuthorizationCodeBinding 兜底。
         when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
         when(clientResolver.resolve(CLIENT_ID_URL, REDIRECT_URI)).thenReturn(cimdClient());
         when(oauth2ApproveService.updateAfterApproval(isNull(), eq(2), eq(CLIENT_ID_URL), any()))
