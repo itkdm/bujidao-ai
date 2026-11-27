@@ -219,6 +219,7 @@ class YudaoMcpAutoConfigurationTest {
                     source.setMethod("POST");
                     source.setRequestURI("/mcp");
                     source.setContentType("application/json");
+                    source.addHeader("Accept", "application/json, text/event-stream");
                     source.setContent(json.getBytes(StandardCharsets.UTF_8));
                     source.addHeader("Mcp-Method", "server/discover");
                     source.addHeader("MCP-Protocol-Version", "2026-07-28");
