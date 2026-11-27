@@ -16,6 +16,8 @@
           <div>
             <h2>第三方授权</h2>
             <p>{{ client.name || queryParams.clientId }}</p>
+            <el-tag v-if="isDynamicClient" type="warning" class="unverified-tag">未验证的第三方应用</el-tag>
+            <p v-if="isDynamicClient" class="unverified-tip">该应用由客户端自行注册，名称未经核实，请确认是你本人发起的授权再同意。</p>
           </div>
         </div>
         <el-alert v-if="errorMessage" :title="errorMessage" type="error" :closable="false" />
@@ -89,6 +91,10 @@ const formData = reactive({
   scopes: [] as string[]
 })
 const availableScopes = ref<string[]>([])
+// DCR 注册的客户端：client_id 由服务端签发，前缀见后端 McpOAuthProperties.clientIdPrefix
+// 默认值 "mcp-dcr-"。前缀改动须同步改这里，否则“未验证”标记失效（fail-open：不显示标记）。
+// 注意：页面不渲染客户端自称的 logo，只显示名称 + 该标记。
+const isDynamicClient = computed(() => queryParams.clientId.startsWith('mcp-dcr-'))
 const formLoading = ref(false)
 const initializing = ref(false)
 const errorMessage = ref('')
@@ -295,6 +301,17 @@ onMounted(init)
   color: #64748b;
   font-size: 15px;
   word-break: break-all;
+}
+
+.authorize-header .unverified-tag {
+  margin-top: 10px;
+}
+
+.authorize-header p.unverified-tip {
+  margin: 8px 0 0;
+  color: #b45309;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .authorize-content {
