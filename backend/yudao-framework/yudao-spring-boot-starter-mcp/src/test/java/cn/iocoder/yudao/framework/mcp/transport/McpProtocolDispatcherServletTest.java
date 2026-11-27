@@ -425,7 +425,7 @@ class McpProtocolDispatcherServletTest {
 
     @ParameterizedTest
     @MethodSource("nonPostMethods")
-    void shouldForwardNonPostMethodWhenLegacyDisabled(String httpMethod, String ignoredRule) {
+    void shouldForwardNonPostMethodWhenLegacyDisabled(String httpMethod, String ignoredRule) throws Exception {
         // Kill-switch 只对 POST 生效：GET / DELETE / 未知方法绕过开关，直接
         // 转发给 legacy transport 由它答 405，不再是 400 + legacy-disabled。
         // mock 的 legacy transport 不写响应，这里只断言转发本身；真实 405
