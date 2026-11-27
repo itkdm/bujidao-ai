@@ -12,6 +12,7 @@ import cn.iocoder.yudao.framework.mcp.security.McpStrictAccessTokenFilter;
 import cn.iocoder.yudao.framework.mcp.security.McpTenantContextFilter;
 import cn.iocoder.yudao.framework.mcp.security.McpTransportContextKeys;
 import cn.iocoder.yudao.framework.common.biz.system.oauth2.OAuth2TokenCommonApi;
+import cn.iocoder.yudao.framework.mcp.tool.McpToolSpecificationProvider;
 import cn.iocoder.yudao.framework.mcp.transport.McpRequestBodyCharsetFilter;
 import cn.iocoder.yudao.framework.mcp.transport.McpRequestSizeLimitFilter;
 import cn.iocoder.yudao.framework.security.config.SecurityProperties;
@@ -29,9 +30,13 @@ import io.modelcontextprotocol.modern.server.RequestStateCodec;
 import io.modelcontextprotocol.modern.server.feature.McpSyncToolRepository;
 import io.modelcontextprotocol.modern.server.feature.ToolsFeature;
 import io.modelcontextprotocol.modern.server.transport.HttpServletMcpTransport;
+import io.modelcontextprotocol.server.McpStatelessServerFeatures;
+import io.modelcontextprotocol.server.McpStatelessSyncServer;
 import io.modelcontextprotocol.server.McpTransportContextExtractor;
 import io.modelcontextprotocol.server.transport.DefaultServerTransportSecurityValidator;
+import io.modelcontextprotocol.server.transport.HttpServletStatelessServerTransport;
 import io.modelcontextprotocol.server.transport.ServerHttpHeaderValidator;
+import io.modelcontextprotocol.spec.McpSchema;
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.ObjectProvider;
@@ -53,6 +58,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
+import java.time.Duration;
 import java.util.Base64;
 import java.util.List;
 
@@ -78,6 +84,8 @@ public class YudaoMcpAutoConfiguration {
             "bujidaoMcpScopeAuthorizationFilterRegistration";
     public static final String MCP_TENANT_CONTEXT_FILTER_REGISTRATION_NAME =
             "bujidaoMcpTenantContextFilterRegistration";
+    public static final String MCP_LEGACY_SERVLET_REGISTRATION_NAME =
+            "bujidaoMcpLegacyServletRegistration";
 
     @Bean
     @ConditionalOnMissingBean(McpJsonMapper.class)
@@ -242,6 +250,89 @@ public class YudaoMcpAutoConfiguration {
         registration.setLoadOnStartup(1);
         registration.setAsyncSupported(true);
         return registration;
+    }
+
+    // ---- Legacy MCP 2025-11-25（stateless）----
+    // D2 只建 bean，不接线：legacy transport 不注册到 /mcp 上（modern 的
+    // HttpServletMcpTransport 仍独占 /mcp），分流与注册是 D3 的事。
+
+    @Bean
+    @ConditionalOnMissingBean(HttpServletStatelessServerTransport.class)
+    public HttpServletStatelessServerTransport mcpLegacyStatelessServerTransport(
+            McpJsonMapper jsonMapper, YudaoMcpServerProperties properties,
+            McpTransportContextExtractor<HttpServletRequest> contextExtractor,
+            ServerHttpHeaderValidator httpHeaderValidator) {
+        // 2.2.0 里 Builder.securityValidator(...) 仍存在但已 @Deprecated，内部转调
+        // ServerTransportSecurityValidator.toHttpHeaderValidator(...)；直接用
+        // httpHeaderValidator(...)：DefaultServerTransportSecurityValidator 同时
+        // 实现 ServerTransportSecurityValidator 与 ServerHttpHeaderValidator，
+        // 这里注入的是 modern 腿已建的同一个 bean（mcpServerHttpHeaderValidator），
+        // 两腿 Origin / Host 规则一致。messageEndpoint 用配置端点（默认 /mcp），
+        // 与 modern 一致。maxRequestSize 不设，沿用 main 的做法（SDK 默认 16 MiB；
+        // /mcp 前面的 McpRequestSizeLimitFilter 已按配置限流）。
+        return HttpServletStatelessServerTransport.builder()
+                .jsonMapper(jsonMapper)
+                .messageEndpoint(properties.getEndpoint())
+                .contextExtractor(contextExtractor)
+                .httpHeaderValidator(httpHeaderValidator)
+                .build();
+    }
+
+    @Bean(name = MCP_LEGACY_SERVLET_REGISTRATION_NAME)
+    @ConditionalOnMissingBean(name = MCP_LEGACY_SERVLET_REGISTRATION_NAME)
+    public ServletRegistrationBean<HttpServletStatelessServerTransport> mcpLegacyServletRegistration(
+            HttpServletStatelessServerTransport transport) {
+        // 关键边界：legacy transport 只以内部 bean 存在，不对外暴露。
+        // HttpServletStatelessServerTransport 是 HttpServlet，Spring Boot 会自动
+        // 注册容器里任何裸 Servlet bean；这里用一个 disabled 的注册占住它，避免
+        // Boot 给它生成默认映射去抢 /mcp（或其它路径）。D3 的分流器直接调用该
+        // transport bean，/mcp 的注册归 D3 管，本块不动 modern 的注册。
+        ServletRegistrationBean<HttpServletStatelessServerTransport> registration =
+                new ServletRegistrationBean<>(transport);
+        registration.setName(MCP_LEGACY_SERVLET_REGISTRATION_NAME);
+        registration.setEnabled(false);
+        return registration;
+    }
+
+    @Bean(name = "mcpStatelessSyncServer", destroyMethod = "close")
+    @ConditionalOnMissingBean(McpStatelessSyncServer.class)
+    public McpStatelessSyncServer mcpStatelessSyncServer(
+            HttpServletStatelessServerTransport transport,
+            McpJsonMapper jsonMapper,
+            YudaoMcpServerProperties properties,
+            ObjectProvider<McpToolSpecificationProvider> toolProviders) {
+        // 与 main 的 legacy wiring 一致：serverInfo / instructions 取同一份配置
+        // （modern 腿同值）；capabilities 只开 tools（listChanged 不通知）、
+        // resources 空列表、prompts 不配；工具由 D1 的 McpToolSpecificationProvider
+        // 喂入（目前只有 acfMcpToolSpecificationProvider）。
+        // requestTimeout：main 默认 30 秒（properties 字段已随 2.2.0 迁移删除，
+        // modern 腿也没有超时）；legacy 腿按 main 保留 30 秒写死在这里，而不是
+        // 用 SDK 默认 10 秒。
+        // 入口：McpStatelessSyncServer 构造器是包私有的，只能走
+        // io.modelcontextprotocol.server.McpServer.sync(transport) 工厂
+        // （与 modern 的 io.modelcontextprotocol.modern.server.McpServer 同名，
+        // 这里用全限定名避免 import 冲突）。
+        McpSchema.ServerCapabilities capabilities = McpSchema.ServerCapabilities.builder()
+                .tools(false)
+                .resources(false, false)
+                .build();
+        return io.modelcontextprotocol.server.McpServer.sync(transport)
+                .jsonMapper(jsonMapper)
+                .serverInfo(properties.getName(), properties.getVersion())
+                .instructions(properties.getInstructions())
+                .requestTimeout(Duration.ofSeconds(30))
+                .capabilities(capabilities)
+                .tools(createLegacyToolSpecifications(toolProviders))
+                .resources(List.of())
+                .resourceTemplates(List.of())
+                .build();
+    }
+
+    private List<McpStatelessServerFeatures.SyncToolSpecification> createLegacyToolSpecifications(
+            ObjectProvider<McpToolSpecificationProvider> toolProviders) {
+        return toolProviders.orderedStream()
+                .flatMap(provider -> provider.createToolSpecifications().stream())
+                .toList();
     }
 
     @Bean

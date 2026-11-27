@@ -85,8 +85,8 @@ public class YudaoMcpAcfAutoConfiguration {
     public AcfMcpToolSpecificationProvider acfMcpToolSpecificationProvider(
             CapabilityToolCatalog capabilityToolCatalog, AcfMcpToolMapper toolMapper,
             AcfMcpToolCallHandler toolCallHandler) {
-        // 只产出 legacy（2025-11-25）规格列表，不建服务端：legacy 服务端与传输路由
-        // 由后续块接线，这里先把桥接交给 Spring 管理，供其注入。
+        // 只产出 legacy（2025-11-25）规格列表，不建服务端：legacy 服务端与 transport
+        // 已由 YudaoMcpAutoConfiguration 建好（D2），路由/分流由后续块（D3）接线。
         return new AcfMcpToolSpecificationProvider(capabilityToolCatalog, toolMapper, toolCallHandler);
     }
 

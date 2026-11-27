@@ -14,9 +14,11 @@ import io.modelcontextprotocol.modern.server.HmacRequestStateCodec;
 import io.modelcontextprotocol.modern.server.McpServer;
 import io.modelcontextprotocol.modern.server.RequestStateCodec;
 import io.modelcontextprotocol.modern.server.transport.HttpServletMcpTransport;
+import io.modelcontextprotocol.server.McpStatelessSyncServer;
 import io.modelcontextprotocol.server.McpTransportContextExtractor;
 import io.modelcontextprotocol.server.transport.DefaultServerTransportSecurityValidator;
 import io.modelcontextprotocol.server.transport.HeaderAccessor;
+import io.modelcontextprotocol.server.transport.HttpServletStatelessServerTransport;
 import io.modelcontextprotocol.server.transport.ServerHttpHeaderValidator;
 import io.modelcontextprotocol.server.transport.ServerTransportSecurityException;
 import org.junit.jupiter.api.Test;
@@ -52,6 +54,8 @@ class YudaoMcpAutoConfigurationTest {
         contextRunner.run(context -> {
             assertThat(context).doesNotHaveBean(McpServer.class);
             assertThat(context).doesNotHaveBean(HttpServletMcpTransport.class);
+            assertThat(context).doesNotHaveBean(McpStatelessSyncServer.class);
+            assertThat(context).doesNotHaveBean(HttpServletStatelessServerTransport.class);
         });
     }
 
@@ -62,6 +66,20 @@ class YudaoMcpAutoConfigurationTest {
                     assertThat(context).hasSingleBean(McpServer.class);
                     assertThat(context).hasSingleBean(HttpServletMcpTransport.class);
                     assertThat(context).hasSingleBean(RequestStateCodec.class);
+                    // D2：legacy（2025-11-25）服务端与 transport 只建 bean，不接线。
+                    assertThat(context).hasSingleBean(McpStatelessSyncServer.class);
+                    assertThat(context.getBean("mcpStatelessSyncServer"))
+                            .isInstanceOf(McpStatelessSyncServer.class);
+                    assertThat(context).hasSingleBean(HttpServletStatelessServerTransport.class);
+                    // legacy transport 不对外暴露：disabled 注册占住它，Spring Boot
+                    // 不会给它生成默认映射；/mcp 仍只挂 modern transport。
+                    ServletRegistrationBean<?> legacyRegistration = context.getBean(
+                            YudaoMcpAutoConfiguration.MCP_LEGACY_SERVLET_REGISTRATION_NAME,
+                            ServletRegistrationBean.class);
+                    assertThat(legacyRegistration.isEnabled()).isFalse();
+                    assertThat(context.getBean(YudaoMcpAutoConfiguration.MCP_SERVLET_NAME,
+                            ServletRegistrationBean.class).getServlet())
+                            .isInstanceOf(HttpServletMcpTransport.class);
                     assertThat(context.getBean(RequestStateCodec.class))
                             .isInstanceOf(HmacRequestStateCodec.class);
                     assertThat(context).hasSingleBean(ServerHttpHeaderValidator.class);
