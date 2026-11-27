@@ -20,6 +20,8 @@ import io.modelcontextprotocol.modern.client.transport.HttpClientMcpTransport;
 import io.modelcontextprotocol.server.McpTransportContextExtractor;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
@@ -40,6 +42,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import java.util.Map;
 import java.time.Duration;
 
+import static cn.iocoder.yudao.framework.mcp.McpTestFixtures.modernHeaders;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -57,8 +60,6 @@ import static org.mockito.Mockito.when;
         properties = {"yudao.mcp.server.enabled=true",
                 "yudao.web.admin-ui.url=http://localhost"})
 class McpServerInitializeIntegrationTest {
-
-    private static final String PROTOCOL_VERSION = "2026-07-28";
 
     @LocalServerPort
     private int port;
@@ -87,13 +88,14 @@ class McpServerInitializeIntegrationTest {
 
         ResponseEntity<String> response = restTemplate.postForEntity(
                 "http://127.0.0.1:" + port + "/mcp",
-                new HttpEntity<>(request, mcpHeaders("server/discover")), String.class);
+                new HttpEntity<>(request, modernHeaders("server/discover")), String.class);
 
         assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
         JsonNode payload = objectMapper.readTree(response.getBody());
         JsonNode result = payload.path("result");
         assertThat(result.path("resultType").asText()).isEqualTo("complete");
-        assertThat(result.path("supportedVersions").toString()).isEqualTo("[\"2026-07-28\"]");
+        assertThat(result.path("supportedVersions"))
+                .isEqualTo(objectMapper.readTree("[\"2026-07-28\"]"));
         assertThat(result.path("capabilities").path("tools").isObject()).isTrue();
         // 未注册 Resources / Prompts feature：discover 不宣告，对应方法返回 METHOD_NOT_FOUND。
         assertThat(result.path("capabilities").path("resources").isMissingNode()).isTrue();
@@ -171,6 +173,38 @@ class McpServerInitializeIntegrationTest {
     }
 
     @Test
+    void shouldDowngradeModernVersionInitializeOnLegacyLeg() throws Exception {
+        // 顶层 params.protocolVersion 不参与分流：带 2026-07-28 的 initialize
+        // 无头、无 claim，走默认 legacy；legacy 服务端从不拒版本，按规范降级回
+        // 它支持的最高版本 2025-11-25（HTTP 200）。缺 protocolVersion 同样降级。
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setAccept(java.util.List.of(MediaType.APPLICATION_JSON, MediaType.TEXT_EVENT_STREAM));
+
+        ResponseEntity<String> modernVersion = restTemplate.postForEntity(
+                "http://127.0.0.1:" + port + "/mcp",
+                new HttpEntity<>("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":"
+                        + "{\"protocolVersion\":\"2026-07-28\",\"capabilities\":{},"
+                        + "\"clientInfo\":{\"name\":\"integration-test\",\"version\":\"1.0.0\"}}}",
+                        headers),
+                String.class);
+        assertThat(modernVersion.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(objectMapper.readTree(modernVersion.getBody()).path("result")
+                .path("protocolVersion").asText()).isEqualTo("2025-11-25");
+
+        ResponseEntity<String> missingVersion = restTemplate.postForEntity(
+                "http://127.0.0.1:" + port + "/mcp",
+                new HttpEntity<>("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"initialize\",\"params\":"
+                        + "{\"capabilities\":{},"
+                        + "\"clientInfo\":{\"name\":\"integration-test\",\"version\":\"1.0.0\"}}}",
+                        headers),
+                String.class);
+        assertThat(missingVersion.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(objectMapper.readTree(missingVersion.getBody()).path("result")
+                .path("protocolVersion").asText()).isEqualTo("2025-11-25");
+    }
+
+    @Test
     void shouldRejectInitializeWithModernVersionClaimAsUnknownMethod() throws Exception {
         String request = """
                 {
@@ -188,7 +222,7 @@ class McpServerInitializeIntegrationTest {
 
         ResponseEntity<String> response = restTemplate.postForEntity(
                 "http://127.0.0.1:" + port + "/mcp",
-                new HttpEntity<>(request, mcpHeaders("initialize")), String.class);
+                new HttpEntity<>(request, modernHeaders("initialize")), String.class);
 
         // 带 modern 版本声明的 initialize 不再走 legacy 拒绝分支：服务端根本没有
         // 这个方法，以 METHOD_NOT_FOUND 回答。
@@ -236,7 +270,7 @@ class McpServerInitializeIntegrationTest {
 
         ResponseEntity<String> response = restTemplate.postForEntity(
                 "http://127.0.0.1:" + port + "/mcp",
-                new HttpEntity<>(request, mcpHeaders("tools/list")), String.class);
+                new HttpEntity<>(request, modernHeaders("tools/list")), String.class);
 
         assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
         JsonNode tool = objectMapper.readTree(response.getBody()).path("result").path("tools").get(0);
@@ -248,42 +282,45 @@ class McpServerInitializeIntegrationTest {
     }
 
     @Test
-    void shouldRejectResourcesListWhenNoResourcesFeature() throws Exception {
+    void shouldRejectNonEmptyCursorOnModernToolsList() throws Exception {
+        // Cursor 语义差异的另一半：modern 仓库不支持分页，非空 cursor 以
+        // -32602（HTTP 400）拒绝；legacy 忽略 cursor 返回全量（见
+        // McpDualProtocolIntegrationTest）。
         String request = """
-                {"jsonrpc":"2.0","id":4,"method":"resources/list","params":{"_meta":{
+                {"jsonrpc":"2.0","id":6,"method":"tools/list","params":{"cursor":"page-2","_meta":{
                   "io.modelcontextprotocol/protocolVersion":"2026-07-28",
                   "io.modelcontextprotocol/clientCapabilities":{}}}}
                 """;
 
         ResponseEntity<String> response = restTemplate.postForEntity(
                 "http://127.0.0.1:" + port + "/mcp",
-                new HttpEntity<>(request, mcpHeaders("resources/list")), String.class);
+                new HttpEntity<>(request, modernHeaders("tools/list")), String.class);
 
-        // 未注册 Resources feature：不再返回空列表做兼容，直接 METHOD_NOT_FOUND。
-        assertThat(response.getStatusCode().value()).isEqualTo(404);
+        assertThat(response.getStatusCode().value()).isEqualTo(400);
         JsonNode payload = objectMapper.readTree(response.getBody());
-        assertThat(payload.path("error").path("code").asInt()).isEqualTo(-32601);
-        assertThat(payload.path("error").path("message").asText())
-                .contains("Method not found: resources/list");
+        assertThat(payload.path("error").path("code").asInt()).isEqualTo(-32602);
+        assertThat(payload.path("error").path("message").asText()).contains("Unknown cursor: page-2");
     }
 
-    @Test
-    void shouldRejectResourceTemplatesListWhenNoResourcesFeature() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"resources/list", "resources/templates/list", "prompts/list"})
+    void shouldRejectUnregisteredListMethodOnModernLeg(String method) throws Exception {
         String request = """
-                {"jsonrpc":"2.0","id":5,"method":"resources/templates/list","params":{"_meta":{
+                {"jsonrpc":"2.0","id":4,"method":"%s","params":{"_meta":{
                   "io.modelcontextprotocol/protocolVersion":"2026-07-28",
                   "io.modelcontextprotocol/clientCapabilities":{}}}}
-                """;
+                """.formatted(method);
 
         ResponseEntity<String> response = restTemplate.postForEntity(
                 "http://127.0.0.1:" + port + "/mcp",
-                new HttpEntity<>(request, mcpHeaders("resources/templates/list")), String.class);
+                new HttpEntity<>(request, modernHeaders(method)), String.class);
 
+        // 未注册对应 feature：不再返回空列表做兼容，直接 METHOD_NOT_FOUND。
         assertThat(response.getStatusCode().value()).isEqualTo(404);
         JsonNode payload = objectMapper.readTree(response.getBody());
         assertThat(payload.path("error").path("code").asInt()).isEqualTo(-32601);
         assertThat(payload.path("error").path("message").asText())
-                .contains("Method not found: resources/templates/list");
+                .contains("Method not found: " + method);
     }
 
     @Test
@@ -299,7 +336,7 @@ class McpServerInitializeIntegrationTest {
 
         ResponseEntity<String> response = restTemplate.postForEntity(
                 "http://127.0.0.1:" + port + "/mcp",
-                new HttpEntity<>(request, mcpHeaders("tools/call", "demo.echo")), String.class);
+                new HttpEntity<>(request, modernHeaders("tools/call", "demo.echo")), String.class);
 
         assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
         JsonNode result = objectMapper.readTree(response.getBody()).path("result");
@@ -340,22 +377,6 @@ class McpServerInitializeIntegrationTest {
         assertThat(callResult.structuredContent())
                 .isEqualTo(Map.of(McpSchemaAdapter.OUTPUT_RESULT_PROPERTY, "hello"));
         assertThat(callResult.meta()).containsEntry(AcfMcpToolProtocolMetadata.TRACE_ID, "trace-integration");
-    }
-
-    private static HttpHeaders mcpHeaders(String method) {
-        return mcpHeaders(method, null);
-    }
-
-    private static HttpHeaders mcpHeaders(String method, String name) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.setAccept(java.util.List.of(MediaType.APPLICATION_JSON, MediaType.TEXT_EVENT_STREAM));
-        headers.set("Mcp-Method", method);
-        headers.set("MCP-Protocol-Version", PROTOCOL_VERSION);
-        if (name != null) {
-            headers.set("Mcp-Name", name);
-        }
-        return headers;
     }
 
     @SpringBootConfiguration
