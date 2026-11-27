@@ -252,6 +252,132 @@ class McpProtocolDispatcherServletTest {
         assertThat(bodySeenByTransport[0]).isEqualTo(json.getBytes(StandardCharsets.UTF_8));
     }
 
+    // ---- service()：legacy 开关关闭 ----
+
+    @Test
+    void shouldRejectLegacyInitializeWhenLegacyDisabled() throws Exception {
+        String json = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":"
+                + "{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},"
+                + "\"clientInfo\":{\"name\":\"workbuddy\",\"version\":\"1.0\"}}}";
+        HttpServletMcpTransport modernTransport = mock(HttpServletMcpTransport.class);
+        HttpServletStatelessServerTransport legacyTransport =
+                mock(HttpServletStatelessServerTransport.class);
+        McpProtocolDispatcherServlet dispatcher = new McpProtocolDispatcherServlet(
+                modernTransport, legacyTransport, OBJECT_MAPPER, false);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        dispatcher.service(cachedJsonRequest(json), response);
+
+        verifyNoInteractions(modernTransport);
+        verifyNoInteractions(legacyTransport);
+        assertThat(response.getStatus()).isEqualTo(400);
+        assertThat(response.getContentType()).contains("application/json");
+        JsonNode payload = OBJECT_MAPPER.readTree(response.getContentAsString());
+        assertThat(payload.path("jsonrpc").asText()).isEqualTo("2.0");
+        assertThat(payload.path("id").asInt()).isEqualTo(1);
+        assertThat(payload.path("error").path("code").asInt()).isEqualTo(-32022);
+        assertThat(payload.path("error").path("message").asText()).contains("disabled");
+        assertThat(payload.path("error").path("data").path("legacyEnabled").asBoolean()).isFalse();
+        assertThat(payload.path("error").path("data").path("supportedProtocolVersion").asText())
+                .isEqualTo("2026-07-28");
+    }
+
+    @Test
+    void shouldRejectLegacyToolsListWhenLegacyDisabled() throws Exception {
+        String json = "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/list\",\"params\":{}}";
+        HttpServletMcpTransport modernTransport = mock(HttpServletMcpTransport.class);
+        HttpServletStatelessServerTransport legacyTransport =
+                mock(HttpServletStatelessServerTransport.class);
+        McpProtocolDispatcherServlet dispatcher = new McpProtocolDispatcherServlet(
+                modernTransport, legacyTransport, OBJECT_MAPPER, false);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        dispatcher.service(cachedJsonRequest(json), response);
+
+        verifyNoInteractions(modernTransport);
+        verifyNoInteractions(legacyTransport);
+        assertThat(response.getStatus()).isEqualTo(400);
+        JsonNode payload = OBJECT_MAPPER.readTree(response.getContentAsString());
+        assertThat(payload.path("id").asInt()).isEqualTo(7);
+        assertThat(payload.path("error").path("code").asInt()).isEqualTo(-32022);
+    }
+
+    @Test
+    void shouldRejectLegacyGetWhenLegacyDisabled() throws Exception {
+        HttpServletMcpTransport modernTransport = mock(HttpServletMcpTransport.class);
+        HttpServletStatelessServerTransport legacyTransport =
+                mock(HttpServletStatelessServerTransport.class);
+        McpProtocolDispatcherServlet dispatcher = new McpProtocolDispatcherServlet(
+                modernTransport, legacyTransport, OBJECT_MAPPER, false);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setMethod("GET");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        dispatcher.service(request, response);
+
+        verifyNoInteractions(modernTransport);
+        verifyNoInteractions(legacyTransport);
+        assertThat(response.getStatus()).isEqualTo(400);
+        JsonNode payload = OBJECT_MAPPER.readTree(response.getContentAsString());
+        assertThat(payload.path("id").isNull()).isTrue();
+        assertThat(payload.path("error").path("code").asInt()).isEqualTo(-32022);
+    }
+
+    @Test
+    void shouldAnswerLegacyNotificationWith202WhenLegacyDisabled() throws Exception {
+        // 通知无 id、按 JSON-RPC 语义无响应通道：答 202 空体，不转发。
+        String json = "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\",\"params\":{}}";
+        HttpServletMcpTransport modernTransport = mock(HttpServletMcpTransport.class);
+        HttpServletStatelessServerTransport legacyTransport =
+                mock(HttpServletStatelessServerTransport.class);
+        McpProtocolDispatcherServlet dispatcher = new McpProtocolDispatcherServlet(
+                modernTransport, legacyTransport, OBJECT_MAPPER, false);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        dispatcher.service(cachedJsonRequest(json), response);
+
+        verifyNoInteractions(modernTransport);
+        verifyNoInteractions(legacyTransport);
+        assertThat(response.getStatus()).isEqualTo(202);
+        assertThat(response.getContentAsString()).isEmpty();
+    }
+
+    @Test
+    void shouldStillRouteModernWhenLegacyDisabled() throws Exception {
+        HttpServletMcpTransport modernTransport = mock(HttpServletMcpTransport.class);
+        HttpServletStatelessServerTransport legacyTransport =
+                mock(HttpServletStatelessServerTransport.class);
+        McpProtocolDispatcherServlet dispatcher = new McpProtocolDispatcherServlet(
+                modernTransport, legacyTransport, OBJECT_MAPPER, false);
+        MockHttpServletRequest source = new MockHttpServletRequest();
+        source.setMethod("POST");
+        source.setContentType("application/json");
+        source.setContent("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"server/discover\",\"params\":{}}"
+                .getBytes(StandardCharsets.UTF_8));
+        source.addHeader("Mcp-Method", "server/discover");
+        HttpServletRequest request = new CacheRequestBodyWrapper(source);
+
+        dispatcher.service(request, new MockHttpServletResponse());
+
+        verify(modernTransport).service(any(ServletRequest.class), any(ServletResponse.class));
+        verifyNoInteractions(legacyTransport);
+    }
+
+    @Test
+    void shouldRouteLegacyWhenLegacyExplicitlyEnabled() throws Exception {
+        String json = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{}}";
+        HttpServletMcpTransport modernTransport = mock(HttpServletMcpTransport.class);
+        HttpServletStatelessServerTransport legacyTransport =
+                mock(HttpServletStatelessServerTransport.class);
+        McpProtocolDispatcherServlet dispatcher = new McpProtocolDispatcherServlet(
+                modernTransport, legacyTransport, OBJECT_MAPPER, true);
+
+        dispatcher.service(cachedJsonRequest(json), new MockHttpServletResponse());
+
+        verify(legacyTransport).service(any(ServletRequest.class), any(ServletResponse.class));
+        verifyNoInteractions(modernTransport);
+    }
+
     private static HttpServletRequest cachedJsonRequest(String json) {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setMethod("POST");

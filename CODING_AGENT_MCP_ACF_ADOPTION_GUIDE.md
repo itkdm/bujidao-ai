@@ -9,7 +9,7 @@
 目标项目完成后应具备：
 
 1. 后端存在 ACF 能力声明、注册、执行、权限校验、幂等控制、确认 challenge、调用日志能力。
-2. 后端存在 Remote MCP Server（MCP Java SDK 2.2.0，modern API，新规范 2026-07-28），支持 `server/discover`、`tools/list`、`tools/call`。没有 `initialize` 握手：客户端先调 `server/discover` 拿协议版本与能力声明，再直接调工具；`resources/list`、`resources/templates/list`、`prompts/*` 未注册（新规范下可选，未注册的方法返回 METHOD_NOT_FOUND）。
+2. 后端存在 Remote MCP Server（MCP Java SDK 2.2.0），同一 `/mcp` 端点同时服务两个协议版本：modern（新规范 2026-07-28，`server/discover`、`tools/list`、`tools/call`，没有 `initialize` 握手，客户端先调 `server/discover` 拿协议版本与能力声明，再直接调工具）与 legacy（2025-11-25 stateless，有 `initialize` 握手，`tools/list`、`tools/call`；无 session、无 GET SSE 流）。`resources/list`、`resources/templates/list`、`prompts/*` 未注册（modern 腿未注册的方法返回 METHOD_NOT_FOUND；legacy 腿的 `resources/list` 返回空列表，`prompts/*` 同样未注册）。两个版本的分流规则见下面“双协议分流”一节。
 3. MCP 认证复用 ruoyi-vue-pro 上游已有 OAuth2、用户、租户、权限体系，不要求目标公司二开 `yudao-module-system` OAuth 基础代码。
 4. 前端存在 MCP 授权页和 ACF 管理页。若目标前端不是 Vue3 版本，则按同等接口和页面语义在目标前端栈中实现。
 5. 数据库只执行公开仓库 `sql/` 目录声明的正式增量 SQL。
@@ -201,6 +201,11 @@ yudao:
       # 绝不要把真实值写进配置文件；轮换后旧 state 立即失效（进行中的确认需重调一次工具）。
       # request-state:
       #   shared-key: ${MCP_REQUEST_STATE_SHARED_KEY}
+      # Legacy MCP 2025-11-25 兼容开关：默认开启（不配即 true），同一 /mcp 端点
+      # 同时服务新旧两个协议版本；改成 false 后旧客户端的 legacy 请求一律被拒绝
+      # （HTTP 400 + JSON-RPC -32022），modern 客户端不受影响。见“双协议分流”一节。
+      # legacy:
+      #   enabled: true
       # 如果后端在反向代理后无法正确推导外部地址，显式配置下面几项
       public-resource-uri: https://${YOUR_API_DOMAIN}/mcp
       authorization-server-issuer: https://${YOUR_API_DOMAIN}
@@ -247,6 +252,32 @@ yudao:
 - `allowed-origins`
 - `cimd.allow-private-addresses`（仅本地开发 / 测试临时开启，生产保持 false）
 - redirect URI 的 https 要求（CIMD 客户端不放行自定义 scheme；http 仅放行 localhost / 127.0.0.1 回调）
+
+## 双协议分流（modern 2026-07-28 + legacy 2025-11-25）
+
+同一 `/mcp` 端点同时服务两个协议版本，分流器 `McpProtocolDispatcherServlet` 按请求特征路由（命中即分流，先后顺序如下）：
+
+1. GET / DELETE 一律 legacy（legacy 的 GET 答 405，modern 的 GET/DELETE 同样 405；两条腿都不建 session）。
+2. POST 带 `Mcp-Method` 头的一律 modern（这是 2026-07-28 的必备头）。
+3. `MCP-Protocol-Version` 为 `2026-07-28` 的 modern，其他值 legacy（仅凭该头存在不能分流，2025-11-25 也要求该头，判的是值）。
+4. 请求体 `_meta` 的协议版本（或顶层 `params.protocolVersion`）为 `2026-07-28` 的 modern；方法为 `server/discover` 的 modern。
+5. 方法为 `initialize`（且无 modern 信号）的 legacy；其余 POST 默认 legacy（老客户端兼容优先，modern 客户端一定带 `Mcp-Method` 头，不会落到这里）。
+
+两条腿的区别：
+
+- modern（2026-07-28）：无 `initialize` 握手，先调 `server/discover`，再直接调工具；确认走 MRTR elicitation（见下）。
+- legacy（2025-11-25）：stateless，有 `initialize` 握手；无 session、无 GET SSE 流（legacy 的 GET 直接 405）；`tools/list` 按当前用户权限过滤（与 modern 同一份可见性规则），`tools/call` 再做一次权限校验。
+
+客户端走哪条腿：
+
+- 新客户端（支持 2026-07-28，如 Codex）走 modern。
+- 旧客户端（只支持 2025-11-25，如 WorkBuddy）走 legacy：发 `initialize` 握手，不带 `Mcp-Method` 头。
+
+认证与元数据两条腿共用同一套：OAuth（CIMD / PKCE / Bearer token + `mcp:access` scope）、租户、限流、安全过滤器都在分流之前跑完；OAuth 元数据端点（`/.well-known/oauth-protected-resource/mcp`、`/.well-known/oauth-authorization-server`）不区分协议版本，不用为 legacy 另做说明或另配——它们描述的是 OAuth 资源与授权服务器，不是 MCP 协议版本。
+
+Legacy 开关：`yudao.mcp.server.legacy.enabled`，默认 `true`（不配即开启）。改成 `false` 后，分流到 legacy 的请求在分流器里被明确拒绝，不会静默落到 modern，也不会 500：JSON-RPC 请求答 HTTP 400 + JSON-RPC 错误信封（`code -32022`，`id` 原样回显，`message` 说明 legacy 已关闭、请用 modern 客户端）；通知（无 `id`）按 JSON-RPC 语义无响应，答 HTTP 202；modern 请求完全不受影响。关掉开关只是关分流入口，legacy transport 与 stateless server 的 bean 仍会建出来（不产生 URL 映射、不被调用）。
+
+何时下掉 legacy：每个请求分流器记一行日志（`MCP dispatch leg={} protocolVersion={} ... rule={}`），以后按该日志统计 modern 与 legacy 的流量：legacy 流量归零一段时间后再考虑关开关、最终下掉 legacy 代码；开关关闭后的拒绝也记为 `rule=legacy-disabled`，便于统计还有多少旧客户端在撞墙。
 
 ## OAuth 复用边界
 
@@ -347,7 +378,7 @@ mvn package -DskipTests -pl yudao-server -am
 3. `/.well-known/oauth-authorization-server` 或 MCP metadata 中的 endpoint 指向正确域名。
 4. `/mcp` 未带 token 返回 401，并带 `WWW-Authenticate` metadata。
 5. 带无 scope token 返回 403。
-6. 带 `mcp:access` token 可以调 `server/discover` 并看到工具列表（新规范无 initialize 握手，不要再测 initialize）。
+6. 带 `mcp:access` token 可以调 `server/discover` 并看到工具列表（modern 腿，无 initialize 握手）；旧客户端也可以调 `initialize` 走 legacy 腿握手（见“双协议分流”一节）。
 
 ### 前端验证
 
@@ -375,7 +406,9 @@ mvn package -DskipTests -pl yudao-server -am
 6. 写工具在缺少幂等键时应给出明确提示；客户端支持后应带幂等键调用。
 7. ACF 调用日志能记录成功和失败。
 
-需要确认的能力走 MRTR 标准确认（新规范 2026-07-28），不再有独立的确认工具：首轮调用返回 `input_required`，用表单 elicitation 请用户确认；用户接受后客户端带 `inputResponses` 重试，服务端换 token 再执行；拒绝后 challenge 作废，需重新调用。客户端必须声明 elicitation（form）能力才能完成确认，不支持的客户端会收到 `CONFIRMATION_UNAVAILABLE`；确认总开关默认关闭，未开启时能力直接执行或按旧逻辑返回确认错误。
+需要确认的能力走 MRTR 标准确认，**只在 modern 腿（新规范 2026-07-28）可用**，不再有独立的确认工具：首轮调用返回 `input_required`，用表单 elicitation 请用户确认；用户接受后客户端带 `inputResponses` 重试，服务端换 token 再执行；拒绝后 challenge 作废，需重新调用。客户端必须声明 elicitation（form）能力才能完成确认，不支持的客户端会收到 `CONFIRMATION_UNAVAILABLE`；确认总开关默认关闭，未开启时能力直接执行或按旧逻辑返回确认错误。**生产目前没有任何确认启用的能力**，以上只是防御性说明。
+
+Legacy 客户端（2025-11-25，如 WorkBuddy）调需要确认的能力时，收到的不是确认表单、也不是静默执行，而是明确的错误：`CONFIRMATION_UNAVAILABLE` 错误结果（`isError=true`，正文说明 legacy 腿无法完成确认、请用 modern 客户端确认后重试）。不要在 legacy 侧找确认工具——`acf.confirm` 工具已删除，不会在 legacy 的 `tools/list` 里出现；legacy 腿的 `InputRequiredResult` 也会被转成同样的 `isError` 错误结果，能力本身不会执行。
 
 ## 部署提醒
 

@@ -252,9 +252,14 @@ public class YudaoMcpAutoConfiguration {
         // 分流器按协议版本把请求转发给 modern 或 legacy transport。legacy 的
         // disabled 注册（bujidaoMcpLegacyServletRegistration）不动，legacy
         // transport 仍不产生 URL 映射。
+        // D4：legacy 开关（yudao.mcp.server.legacy.enabled，默认 true）只传进分
+        // 流器做入口门禁，不拆 legacy bean：开关关闭时分流到 legacy 的请求在分流
+        // 器里直接被拒绝（HTTP 400 + -32022），modern 不受影响；legacy bean 仍
+        // 建出来只是不被调用，不存在 bean 缺失的 NPE 分支。
         ServletRegistrationBean<McpProtocolDispatcherServlet> registration =
                 new ServletRegistrationBean<>(
-                        new McpProtocolDispatcherServlet(modernTransport, legacyTransport, objectMapper),
+                        new McpProtocolDispatcherServlet(modernTransport, legacyTransport, objectMapper,
+                                properties.getLegacy().isEnabled()),
                         properties.getEndpoint());
         registration.setName(MCP_SERVLET_NAME);
         registration.setLoadOnStartup(1);

@@ -97,6 +97,35 @@ public class YudaoMcpServerProperties {
     private final RequestState requestState = new RequestState();
 
     /**
+     * Legacy MCP 2025-11-25 兼容腿的开关。
+     */
+    private final Legacy legacy = new Legacy();
+
+    /**
+     * Legacy MCP 2025-11-25 兼容腿的开关。
+     *
+     * <p>默认开启：同一 endpoint（{@link #endpoint}）同时服务 modern（2026-07-28）
+     * 与 legacy（2025-11-25 stateless）两条腿，老客户端（如 WorkBuddy）走 legacy
+     * 腿。改成 {@code false} 后分流到 legacy 的请求一律被分流器明确拒绝
+     * （HTTP 400 + JSON-RPC {@code -32022}），不会静默落到 modern 腿；
+     * modern 请求完全不受影响。</p>
+     *
+     * <p>开关只关分流入口，不拆 legacy bean：legacy transport 与 stateless server
+     * 仍会建出来（开销很小，且 legacy transport 本来就没有 URL 映射），分流器是
+     * 唯一的路由决策点，关掉它就等于关掉整条 legacy 腿，不存在 bean 缺失导致
+     * NPE 的分支。</p>
+     */
+    @Data
+    public static class Legacy {
+
+        /**
+         * 是否开启 legacy MCP 2025-11-25 兼容，默认 true。
+         */
+        private boolean enabled = true;
+
+    }
+
+    /**
      * MRTR {@code requestState} 的签名配置。
      *
      * <p>服务端把 challengeId 放进 {@code requestState} 随 InputRequiredResult 返回，

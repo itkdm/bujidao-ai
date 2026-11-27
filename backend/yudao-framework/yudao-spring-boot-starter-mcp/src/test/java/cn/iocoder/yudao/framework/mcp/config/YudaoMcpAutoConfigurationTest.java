@@ -4,11 +4,18 @@ import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolInvoker;
 import cn.iocoder.yudao.framework.common.biz.system.oauth2.OAuth2TokenCommonApi;
 import cn.iocoder.yudao.framework.mcp.oauth2.McpOAuthMetadataController;
+import cn.iocoder.yudao.framework.security.core.LoginUser;
+import cn.iocoder.yudao.framework.security.core.util.SecurityFrameworkUtils;
 import cn.iocoder.yudao.framework.security.config.SecurityProperties;
 import cn.iocoder.yudao.framework.security.core.filter.TokenAuthenticationFilter;
 import cn.iocoder.yudao.framework.mcp.security.McpStrictAccessTokenFilter;
 import cn.iocoder.yudao.framework.mcp.transport.McpProtocolDispatcherServlet;
 import cn.iocoder.yudao.framework.web.config.WebProperties;
+import cn.iocoder.yudao.framework.web.core.filter.CacheRequestBodyWrapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.ServletRequest;
+import jakarta.servlet.ServletResponse;
 import cn.iocoder.yudao.framework.mcp.security.McpScopeAuthorizationFilter;
 import cn.iocoder.yudao.framework.mcp.security.McpTenantContextFilter;
 import io.modelcontextprotocol.modern.server.HmacRequestStateCodec;
@@ -22,13 +29,18 @@ import io.modelcontextprotocol.server.transport.HeaderAccessor;
 import io.modelcontextprotocol.server.transport.HttpServletStatelessServerTransport;
 import io.modelcontextprotocol.server.transport.ServerHttpHeaderValidator;
 import io.modelcontextprotocol.server.transport.ServerTransportSecurityException;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.jackson.JacksonAutoConfiguration;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.SecurityFilterChain;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
@@ -114,6 +126,113 @@ class YudaoMcpAutoConfigurationTest {
                     assertThat(scopeAuthorizationFilterRegistration.isEnabled()).isFalse();
                     assertThat(tenantContextFilterRegistration.isEnabled()).isFalse();
                 });
+    }
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    void shouldEnableLegacyByDefault() {
+        contextRunner.withPropertyValues("yudao.mcp.server.enabled=true")
+                .run(context -> assertThat(context.getBean(YudaoMcpServerProperties.class)
+                        .getLegacy().isEnabled()).isTrue());
+    }
+
+    @Test
+    void shouldRejectLegacyInitializeWhenLegacyDisabled() throws Exception {
+        // D4：开关只关分流入口、不拆 bean——legacy transport 与 stateless server
+        // 仍在容器里，只是分流器不再把请求交给它们。
+        String json = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":"
+                + "{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},"
+                + "\"clientInfo\":{\"name\":\"workbuddy\",\"version\":\"1.0\"}}}";
+        contextRunner.withPropertyValues("yudao.mcp.server.enabled=true",
+                        "yudao.mcp.server.legacy.enabled=false")
+                .run(context -> {
+                    assertThat(context.getBean(YudaoMcpServerProperties.class)
+                            .getLegacy().isEnabled()).isFalse();
+                    assertThat(context).hasSingleBean(HttpServletStatelessServerTransport.class);
+                    assertThat(context).hasSingleBean(McpStatelessSyncServer.class);
+                    MockHttpServletResponse response = dispatch(
+                            context, cachedJsonRequest(json));
+                    assertThat(response.getStatus()).isEqualTo(400);
+                    JsonNode payload = new ObjectMapper().readTree(response.getContentAsString());
+                    assertThat(payload.path("id").asInt()).isEqualTo(1);
+                    assertThat(payload.path("error").path("code").asInt()).isEqualTo(-32022);
+                    assertThat(payload.path("error").path("message").asText()).contains("disabled");
+                });
+    }
+
+    @Test
+    void shouldRejectLegacyToolsListWhenLegacyDisabled() throws Exception {
+        String json = "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/list\",\"params\":{}}";
+        contextRunner.withPropertyValues("yudao.mcp.server.enabled=true",
+                        "yudao.mcp.server.legacy.enabled=false")
+                .run(context -> {
+                    MockHttpServletResponse response = dispatch(
+                            context, cachedJsonRequest(json));
+                    assertThat(response.getStatus()).isEqualTo(400);
+                    JsonNode payload = new ObjectMapper().readTree(response.getContentAsString());
+                    assertThat(payload.path("id").asInt()).isEqualTo(7);
+                    assertThat(payload.path("error").path("code").asInt()).isEqualTo(-32022);
+                });
+    }
+
+    @Test
+    void shouldStillServeModernDiscoverWhenLegacyDisabled() throws Exception {
+        // Modern 不受 legacy 开关影响：server/discover 走真实 modern transport，
+        // 需先按 McpAuthenticatedTransportContextExtractor 的要求放一个 LoginUser。
+        String json = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"server/discover\",\"params\":"
+                + "{\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"2026-07-28\","
+                + "\"io.modelcontextprotocol/clientCapabilities\":{}}}}";
+        contextRunner.withPropertyValues("yudao.mcp.server.enabled=true",
+                        "yudao.mcp.server.legacy.enabled=false")
+                .run(context -> {
+                    MockHttpServletRequest source = new MockHttpServletRequest();
+                    source.setMethod("POST");
+                    source.setRequestURI("/mcp");
+                    source.setContentType("application/json");
+                    source.setContent(json.getBytes(StandardCharsets.UTF_8));
+                    source.addHeader("Mcp-Method", "server/discover");
+                    source.addHeader("MCP-Protocol-Version", "2026-07-28");
+                    LoginUser loginUser = new LoginUser();
+                    loginUser.setId(10L);
+                    loginUser.setTenantId(20L);
+                    SecurityFrameworkUtils.setLoginUser(loginUser, source);
+                    MockHttpServletResponse response = dispatch(
+                            context, new CacheRequestBodyWrapper(source));
+                    assertThat(response.getStatus()).isEqualTo(200);
+                    JsonNode payload = new ObjectMapper().readTree(response.getContentAsString());
+                    assertThat(payload.path("result").path("resultType").asText())
+                            .isEqualTo("complete");
+                    assertThat(payload.path("result").path("supportedVersions").toString())
+                            .isEqualTo("[\"2026-07-28\"]");
+                });
+    }
+
+    /**
+     * 直接调注册在 /mcp 上的分流器（GenericServlet 的 public service 重载，
+     * protected 的 HttpServlet 重载在 config 包调不到）。
+     */
+    private static MockHttpServletResponse dispatch(
+            org.springframework.context.ApplicationContext context,
+            jakarta.servlet.http.HttpServletRequest request) throws Exception {
+        McpProtocolDispatcherServlet dispatcher = (McpProtocolDispatcherServlet) context.getBean(
+                        YudaoMcpAutoConfiguration.MCP_SERVLET_NAME, ServletRegistrationBean.class)
+                .getServlet();
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        dispatcher.service((ServletRequest) request, (ServletResponse) response);
+        return response;
+    }
+
+    private static jakarta.servlet.http.HttpServletRequest cachedJsonRequest(String json) {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setMethod("POST");
+        request.setRequestURI("/mcp");
+        request.setContentType("application/json");
+        request.setContent(json.getBytes(StandardCharsets.UTF_8));
+        return new CacheRequestBodyWrapper(request);
     }
 
     @Test

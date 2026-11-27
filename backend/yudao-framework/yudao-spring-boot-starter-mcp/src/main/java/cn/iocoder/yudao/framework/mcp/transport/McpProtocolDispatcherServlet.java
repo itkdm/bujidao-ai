@@ -3,6 +3,7 @@ package cn.iocoder.yudao.framework.mcp.transport;
 import cn.iocoder.yudao.framework.web.core.filter.CacheRequestBodyWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.modelcontextprotocol.modern.McpHttp.Headers;
 import io.modelcontextprotocol.modern.McpSchema;
 import io.modelcontextprotocol.modern.McpSchema.MetaKeys;
@@ -56,6 +57,17 @@ import java.util.Objects;
  * session 头不是分流信号，目标服务端自己决定怎么答）；重复 initialize 由目标
  * 服务端按自己的无状态语义处理，分流器不拦截。</p>
  *
+ * <p>Legacy 开关（{@code yudao.mcp.server.legacy.enabled}，默认 true）：关掉后
+ * 分流到 legacy 的请求在这里被明确拒绝，不转发给任何一条 transport——既不静默
+ * 落到 modern，也不产生 500。拒绝形态：JSON-RPC 请求（带 {@code id}）答
+ * HTTP 400 + JSON-RPC 错误信封（{@code code -32022}，与 modern transport 对不
+ * 支持协议版本的回答一致，见 SDK v2.2.0
+ * {@code HttpServletMcpTransport.DEFAULT_ERROR_STATUSES}）；通知（无 {@code id}）
+ * 按 JSON-RPC 语义无响应，答 HTTP 202；无 body 的请求（GET / DELETE 等）答
+ * HTTP 400 + {@code id: null} 的错误信封。Modern 请求不受开关影响。
+ * 拒绝的那一行分流日志记为 {@code rule=legacy-disabled}，便于以后按流量决定何时
+ * 下掉 legacy。</p>
+ *
  * @author bujidao
  */
 public class McpProtocolDispatcherServlet extends HttpServlet {
@@ -78,13 +90,21 @@ public class McpProtocolDispatcherServlet extends HttpServlet {
     private final HttpServletMcpTransport modernTransport;
     private final HttpServletStatelessServerTransport legacyTransport;
     private final ObjectMapper objectMapper;
+    private final boolean legacyEnabled;
 
     public McpProtocolDispatcherServlet(HttpServletMcpTransport modernTransport,
                                         HttpServletStatelessServerTransport legacyTransport,
                                         ObjectMapper objectMapper) {
+        this(modernTransport, legacyTransport, objectMapper, true);
+    }
+
+    public McpProtocolDispatcherServlet(HttpServletMcpTransport modernTransport,
+                                        HttpServletStatelessServerTransport legacyTransport,
+                                        ObjectMapper objectMapper, boolean legacyEnabled) {
         this.modernTransport = Objects.requireNonNull(modernTransport, "modernTransport must not be null");
         this.legacyTransport = Objects.requireNonNull(legacyTransport, "legacyTransport must not be null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
+        this.legacyEnabled = legacyEnabled;
     }
 
     @Override
@@ -97,7 +117,17 @@ public class McpProtocolDispatcherServlet extends HttpServlet {
         }
         Decision decision = decide(request.getMethod(), request.getHeader(Headers.MCP_METHOD),
                 request.getHeader(Headers.MCP_PROTOCOL_VERSION), body);
-        // 每个请求记一行：leg + 协商到的协议版本，便于以后按流量决定何时下掉 legacy。
+        if (decision.leg() == Leg.LEGACY && !legacyEnabled) {
+            // Legacy 腿已关：记一行 rule=legacy-disabled 的分流日志（流量统计口径
+            // 与正常分流一致），再明确拒绝，不转发给任何一条 transport。
+            Decision rejected = new Decision(Leg.LEGACY, decision.protocolVersion(), "legacy-disabled");
+            logger.info("MCP dispatch leg={} protocolVersion={} httpMethod={} rpcMethod={} rule={}",
+                    rejected.leg(), rejected.protocolVersion(), request.getMethod(),
+                    rpcMethod == null ? "-" : rpcMethod, rejected.rule());
+            rejectLegacyDisabled(response, body);
+            return;
+        }
+        // 每个请求记一行：leg + 协商到的协议版本，便于以后按流量决定何时下掉 legacy.
         logger.info("MCP dispatch leg={} protocolVersion={} httpMethod={} rpcMethod={} rule={}",
                 decision.leg(), decision.protocolVersion(), request.getMethod(),
                 rpcMethod == null ? "-" : rpcMethod, decision.rule());
@@ -107,6 +137,48 @@ public class McpProtocolDispatcherServlet extends HttpServlet {
         } else {
             legacyTransport.service((ServletRequest) request, (ServletResponse) response);
         }
+    }
+
+    /**
+     * Legacy 腿已关闭时的明确拒绝：不转发、不落到 modern、不 500。
+     *
+     * <p>JSON-RPC 请求（带 {@code id}）答 HTTP 400 + JSON-RPC 错误信封，
+     * {@code id} 原样回显；通知（无 {@code id}）按 JSON-RPC 语义无响应，答
+     * HTTP 202 空体；无 body 的请求答 HTTP 400 + {@code id: null} 的错误信封。
+     * 错误码用 modern {@code McpSchema.ErrorCodes.UNSUPPORTED_PROTOCOL_VERSION}
+     * （{@code -32022}，SDK v2.2.0 tag 源码；legacy {@code McpSchema.ErrorCodes}
+     * 里没有这个常量，但 -32022 本就是 JSON-RPC 服务端错误段的取值，modern
+     * transport 对不支持版本也是 HTTP 400 + -32022，老客户端按版本不支持处理）。</p>
+     */
+    private void rejectLegacyDisabled(HttpServletResponse response, JsonNode body) throws IOException {
+        JsonNode id = body == null ? null : body.get("id");
+        if (body != null && id == null) {
+            // 通知：JSON-RPC 规定不回响应，只答 202 表示已接收（实际是拒绝执行，
+            // 但通知本来就没有响应通道，调用方无从得知，只能记日志——上面已记）。
+            response.setStatus(HttpServletResponse.SC_ACCEPTED);
+            return;
+        }
+        response.setContentType("application/json");
+        response.setCharacterEncoding("UTF-8");
+        response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+        ObjectNode errorEnvelope = objectMapper.createObjectNode();
+        errorEnvelope.put("jsonrpc", "2.0");
+        if (id != null) {
+            errorEnvelope.set("id", id);
+        } else {
+            errorEnvelope.putNull("id");
+        }
+        ObjectNode error = errorEnvelope.putObject("error");
+        error.put("code", McpSchema.ErrorCodes.UNSUPPORTED_PROTOCOL_VERSION);
+        error.put("message", "Legacy MCP protocol (2025-11-25) is disabled on this server "
+                + "(yudao.mcp.server.legacy.enabled=false). "
+                + "Use a modern MCP client (2026-07-28) instead.");
+        ObjectNode data = error.putObject("data");
+        data.put("legacyEnabled", false);
+        data.put("legacyProtocolVersion", "2025-11-25");
+        data.put("supportedProtocolVersion", MODERN_PROTOCOL_VERSION);
+        response.getWriter().write(objectMapper.writeValueAsString(errorEnvelope));
+        response.getWriter().flush();
     }
 
     /**

@@ -315,6 +315,11 @@ yudao:
       # 密钥只能来自环境变量或密钥管理服务，绝不要把真实值写进配置文件。
       # request-state:
       #   shared-key: ${MCP_REQUEST_STATE_SHARED_KEY}
+      # Legacy MCP 2025-11-25 兼容开关：默认开启（不配即 true），同一 /mcp 端点
+      # 同时服务新旧两个协议版本；改成 false 后旧客户端的 legacy 请求（initialize /
+      # tools/list 等）一律被拒绝（HTTP 400 + JSON-RPC -32022），modern 客户端不受影响。
+      # legacy:
+      #   enabled: true
     acf:
       enabled: true # ACF 能力由代码声明，MCP tools/list 按当前用户权限动态过滤
     # oauth: # MCP OAuth 适配（McpOAuthProperties，前缀 yudao.mcp.oauth），默认即可用；
