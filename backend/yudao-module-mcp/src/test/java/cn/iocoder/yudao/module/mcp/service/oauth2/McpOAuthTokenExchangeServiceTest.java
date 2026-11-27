@@ -9,7 +9,9 @@ import cn.iocoder.yudao.module.system.dal.dataobject.oauth2.OAuth2AccessTokenDO;
 import cn.iocoder.yudao.module.system.dal.dataobject.oauth2.OAuth2ClientDO;
 import cn.iocoder.yudao.module.system.dal.dataobject.oauth2.OAuth2CodeDO;
 import cn.iocoder.yudao.module.system.dal.dataobject.oauth2.OAuth2RefreshTokenDO;
+import cn.iocoder.yudao.module.system.dal.mysql.oauth2.OAuth2AccessTokenMapper;
 import cn.iocoder.yudao.module.system.dal.mysql.oauth2.OAuth2RefreshTokenMapper;
+import cn.iocoder.yudao.module.system.dal.redis.oauth2.OAuth2AccessTokenRedisDAO;
 import cn.iocoder.yudao.module.system.service.oauth2.OAuth2ClientService;
 import cn.iocoder.yudao.module.system.service.oauth2.OAuth2CodeService;
 import cn.iocoder.yudao.module.system.service.oauth2.OAuth2TokenService;
@@ -25,6 +27,7 @@ import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -54,6 +57,10 @@ class McpOAuthTokenExchangeServiceTest {
     @Mock
     private OAuth2RefreshTokenMapper oauth2RefreshTokenMapper;
     @Mock
+    private OAuth2AccessTokenMapper oauth2AccessTokenMapper;
+    @Mock
+    private OAuth2AccessTokenRedisDAO oauth2AccessTokenRedisDAO;
+    @Mock
     private McpOAuthAuthorizationCodeExtraRedisDAO codeExtraRedisDAO;
     @Mock
     private McpOAuthClientResolver clientResolver;
@@ -63,7 +70,8 @@ class McpOAuthTokenExchangeServiceTest {
     @BeforeEach
     void setUp() {
         service = new McpOAuthTokenExchangeService(oauth2ClientService, oauth2CodeService,
-                oauth2TokenService, oauth2RefreshTokenMapper, codeExtraRedisDAO, clientResolver,
+                oauth2TokenService, oauth2RefreshTokenMapper, oauth2AccessTokenMapper,
+                oauth2AccessTokenRedisDAO, codeExtraRedisDAO, clientResolver,
                 new McpOAuthProperties());
     }
 
@@ -425,6 +433,146 @@ class McpOAuthTokenExchangeServiceTest {
         verify(oauth2ClientService).validOAuthClientFromCache("mcp-dcr-abc", null, null, null, null);
         verify(clientResolver, never()).resolve(anyString(), any());
         verify(oauth2TokenService).removeAccessToken("access-token-1");
+    }
+
+    @Test
+    void shouldRevokeRefreshToken() {
+        // refresh token 值：getAccessToken 的回退把它拼成 access token DO（N1），
+        // clientId 能对上；但 removeAccessToken 按 access 表查不到，返回 null，
+        // 此时必须走 refresh 分支：删 refresh 行 + 同 grant 全部 access token。
+        when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
+        when(oauth2TokenService.getAccessToken("refresh-token-1"))
+                .thenReturn(new OAuth2AccessTokenDO().setAccessToken("refresh-token-1")
+                        .setClientId(CLIENT_ID_URL));
+        when(oauth2TokenService.removeAccessToken("refresh-token-1")).thenReturn(null);
+        OAuth2RefreshTokenDO refreshTokenDO = new OAuth2RefreshTokenDO().setRefreshToken("refresh-token-1")
+                .setClientId(CLIENT_ID_URL);
+        refreshTokenDO.setTenantId(1L);
+        when(oauth2RefreshTokenMapper.selectByRefreshToken("refresh-token-1"))
+                .thenReturn(refreshTokenDO);
+        OAuth2AccessTokenDO accessTokenDO = new OAuth2AccessTokenDO().setAccessToken("access-token-1")
+                .setClientId(CLIENT_ID_URL).setRefreshToken("refresh-token-1");
+        accessTokenDO.setId(1L);
+        when(oauth2AccessTokenMapper.selectListByRefreshToken("refresh-token-1"))
+                .thenReturn(List.of(accessTokenDO));
+
+        assertThat(service.revokeToken(CLIENT_ID_URL, "refresh-token-1")).isTrue();
+
+        verify(oauth2AccessTokenMapper).deleteById(1L);
+        verify(oauth2AccessTokenRedisDAO).deleteList(Set.of("access-token-1"));
+        verify(oauth2RefreshTokenMapper).deleteByRefreshToken("refresh-token-1");
+        verify(oauth2AccessTokenRedisDAO).delete("refresh-token-1");
+    }
+
+    @Test
+    void shouldRevokeRefreshTokenWithoutAccessTokens() {
+        // 同 grant 已无 access token 行：仍要删 refresh 行 + Redis 缓存键，
+        // 否则 getAccessToken 回退缓存的已转换 access token 还能继续用。
+        when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
+        when(oauth2TokenService.getAccessToken("refresh-token-1"))
+                .thenReturn(new OAuth2AccessTokenDO().setAccessToken("refresh-token-1")
+                        .setClientId(CLIENT_ID_URL));
+        when(oauth2TokenService.removeAccessToken("refresh-token-1")).thenReturn(null);
+        OAuth2RefreshTokenDO refreshTokenDO = new OAuth2RefreshTokenDO().setRefreshToken("refresh-token-1")
+                .setClientId(CLIENT_ID_URL);
+        refreshTokenDO.setTenantId(1L);
+        when(oauth2RefreshTokenMapper.selectByRefreshToken("refresh-token-1"))
+                .thenReturn(refreshTokenDO);
+        when(oauth2AccessTokenMapper.selectListByRefreshToken("refresh-token-1"))
+                .thenReturn(List.of());
+
+        assertThat(service.revokeToken(CLIENT_ID_URL, "refresh-token-1")).isTrue();
+
+        verify(oauth2AccessTokenMapper, never()).deleteById(any());
+        verify(oauth2AccessTokenRedisDAO, never()).deleteList(any());
+        verify(oauth2RefreshTokenMapper).deleteByRefreshToken("refresh-token-1");
+        verify(oauth2AccessTokenRedisDAO).delete("refresh-token-1");
+    }
+
+    @Test
+    void shouldNotRevokeRefreshTokenForOtherClient() {
+        when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
+        when(oauth2TokenService.getAccessToken("refresh-token-1"))
+                .thenReturn(new OAuth2AccessTokenDO().setAccessToken("refresh-token-1")
+                        .setClientId(CLIENT_ID_URL));
+        when(oauth2TokenService.removeAccessToken("refresh-token-1")).thenReturn(null);
+        OAuth2RefreshTokenDO refreshTokenDO = new OAuth2RefreshTokenDO().setRefreshToken("refresh-token-1")
+                .setClientId("mcp-dcr-other");
+        refreshTokenDO.setTenantId(1L);
+        when(oauth2RefreshTokenMapper.selectByRefreshToken("refresh-token-1"))
+                .thenReturn(refreshTokenDO);
+
+        assertThat(service.revokeToken(CLIENT_ID_URL, "refresh-token-1")).isFalse();
+
+        verify(oauth2AccessTokenMapper, never()).selectListByRefreshToken(anyString());
+        verify(oauth2RefreshTokenMapper, never()).deleteByRefreshToken(anyString());
+        verify(oauth2AccessTokenRedisDAO, never()).delete(anyString());
+    }
+
+    @Test
+    void shouldReturnFalseWhenRevokingUnknownRefreshToken() {
+        // access 表与 refresh 表都查不到：返回 false（控制器仍回 200，不透露令牌是否存在）。
+        when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
+        when(oauth2TokenService.getAccessToken("refresh-token-1"))
+                .thenReturn(new OAuth2AccessTokenDO().setAccessToken("refresh-token-1")
+                        .setClientId(CLIENT_ID_URL));
+        when(oauth2TokenService.removeAccessToken("refresh-token-1")).thenReturn(null);
+        when(oauth2RefreshTokenMapper.selectByRefreshToken("refresh-token-1")).thenReturn(null);
+
+        assertThat(service.revokeToken(CLIENT_ID_URL, "refresh-token-1")).isFalse();
+
+        verify(oauth2RefreshTokenMapper, never()).deleteByRefreshToken(anyString());
+        verify(oauth2AccessTokenRedisDAO, never()).delete(anyString());
+    }
+
+    @Test
+    void shouldRevokeExpiredRefreshToken() {
+        // 过期 refresh：getAccessToken 返回 null（上游拒过期值），仍落到 refresh 分支，
+        // 把残留行删掉；过期值本身已不可用，删行只是不留残留。
+        when(clientResolver.isCimdClientId(CLIENT_ID_URL)).thenReturn(true);
+        when(oauth2TokenService.getAccessToken("refresh-token-1")).thenReturn(null);
+        OAuth2RefreshTokenDO refreshTokenDO = new OAuth2RefreshTokenDO().setRefreshToken("refresh-token-1")
+                .setClientId(CLIENT_ID_URL);
+        refreshTokenDO.setTenantId(1L);
+        when(oauth2RefreshTokenMapper.selectByRefreshToken("refresh-token-1"))
+                .thenReturn(refreshTokenDO);
+        when(oauth2AccessTokenMapper.selectListByRefreshToken("refresh-token-1"))
+                .thenReturn(List.of());
+
+        assertThat(service.revokeToken(CLIENT_ID_URL, "refresh-token-1")).isTrue();
+
+        verify(oauth2RefreshTokenMapper).deleteByRefreshToken("refresh-token-1");
+        verify(oauth2AccessTokenRedisDAO).delete("refresh-token-1");
+    }
+
+    @Test
+    void shouldRevokeRefreshTokenForDbClient() {
+        // DB 客户端的 refresh 吊销：先走 validatePublicClient 校验客户端，再进 refresh 分支。
+        when(clientResolver.isCimdClientId("mcp-dcr-abc")).thenReturn(false);
+        when(oauth2ClientService.validOAuthClientFromCache("mcp-dcr-abc", null, null, null, null))
+                .thenReturn(dbClient());
+        when(oauth2TokenService.getAccessToken("refresh-token-1"))
+                .thenReturn(new OAuth2AccessTokenDO().setAccessToken("refresh-token-1")
+                        .setClientId("mcp-dcr-abc"));
+        when(oauth2TokenService.removeAccessToken("refresh-token-1")).thenReturn(null);
+        OAuth2RefreshTokenDO refreshTokenDO = new OAuth2RefreshTokenDO().setRefreshToken("refresh-token-1")
+                .setClientId("mcp-dcr-abc");
+        refreshTokenDO.setTenantId(1L);
+        when(oauth2RefreshTokenMapper.selectByRefreshToken("refresh-token-1"))
+                .thenReturn(refreshTokenDO);
+        OAuth2AccessTokenDO accessTokenDO = new OAuth2AccessTokenDO().setAccessToken("access-token-1")
+                .setClientId("mcp-dcr-abc").setRefreshToken("refresh-token-1");
+        accessTokenDO.setId(1L);
+        when(oauth2AccessTokenMapper.selectListByRefreshToken("refresh-token-1"))
+                .thenReturn(List.of(accessTokenDO));
+
+        assertThat(service.revokeToken("mcp-dcr-abc", "refresh-token-1")).isTrue();
+
+        verify(oauth2ClientService).validOAuthClientFromCache("mcp-dcr-abc", null, null, null, null);
+        verify(oauth2AccessTokenMapper).deleteById(1L);
+        verify(oauth2AccessTokenRedisDAO).deleteList(Set.of("access-token-1"));
+        verify(oauth2RefreshTokenMapper).deleteByRefreshToken("refresh-token-1");
+        verify(oauth2AccessTokenRedisDAO).delete("refresh-token-1");
     }
 
     private static OAuth2ClientDO cimdClient() {

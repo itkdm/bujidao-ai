@@ -1,5 +1,6 @@
 package cn.iocoder.yudao.module.mcp.service.oauth2;
 
+import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.ObjectUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.iocoder.yudao.framework.tenant.core.util.TenantUtils;
@@ -16,7 +17,9 @@ import cn.iocoder.yudao.module.system.dal.dataobject.oauth2.OAuth2AccessTokenDO;
 import cn.iocoder.yudao.module.system.dal.dataobject.oauth2.OAuth2ClientDO;
 import cn.iocoder.yudao.module.system.dal.dataobject.oauth2.OAuth2CodeDO;
 import cn.iocoder.yudao.module.system.dal.dataobject.oauth2.OAuth2RefreshTokenDO;
+import cn.iocoder.yudao.module.system.dal.mysql.oauth2.OAuth2AccessTokenMapper;
 import cn.iocoder.yudao.module.system.dal.mysql.oauth2.OAuth2RefreshTokenMapper;
+import cn.iocoder.yudao.module.system.dal.redis.oauth2.OAuth2AccessTokenRedisDAO;
 import cn.iocoder.yudao.module.system.enums.oauth2.OAuth2GrantTypeEnum;
 import cn.iocoder.yudao.module.system.service.oauth2.OAuth2ClientService;
 import cn.iocoder.yudao.module.system.service.oauth2.OAuth2CodeService;
@@ -24,9 +27,12 @@ import cn.iocoder.yudao.module.system.service.oauth2.OAuth2TokenService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.net.URI;
 import java.util.Collection;
+import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * MCP OAuth token endpoint Service。
@@ -42,6 +48,8 @@ public class McpOAuthTokenExchangeService {
     private final OAuth2CodeService oauth2CodeService;
     private final OAuth2TokenService oauth2TokenService;
     private final OAuth2RefreshTokenMapper oauth2RefreshTokenMapper;
+    private final OAuth2AccessTokenMapper oauth2AccessTokenMapper;
+    private final OAuth2AccessTokenRedisDAO oauth2AccessTokenRedisDAO;
     private final McpOAuthAuthorizationCodeExtraRedisDAO codeExtraRedisDAO;
     private final McpOAuthClientResolver clientResolver;
     private final McpOAuthProperties properties;
@@ -100,6 +108,19 @@ public class McpOAuthTokenExchangeService {
         return OAuth2OpenConvert.INSTANCE.convert(accessToken);
     }
 
+    /**
+     * 吊销令牌（RFC 7009）：access token 与 refresh token 都必须能吊销。
+     * 先按 access token 表查，查不到再按 refresh token 表查（不新增
+     * {@code token_type_hint} 参数：两表查找已足够区分，调用方不传 hint 也能吊销）。
+     * 注意：传入 refresh token 时 {@code getAccessToken} 的回退会把它拼成 access
+     * token DO（N1），故上一步的 clientId 校验能通过；但上游
+     * {@code removeAccessToken} 只按 access 表删，返回 null，此时必须走下面的
+     * refresh 分支，否则 refresh 在 30 天内仍可换新 access token。
+     * 令牌不存在时返回 false，控制器仍回 HTTP 200（RFC 7009 §2.2.1：不向调用方
+     * 透露令牌是否存在）。注意 {@code getAccessToken} 对过期 refresh 返回 null，
+     * 此时也落到 refresh 分支：过期行已不可用，但顺手删掉、不留残留。
+     */
+    @Transactional(rollbackFor = Exception.class)
     public boolean revokeToken(String clientId, String accessToken) {
         if (StrUtil.isBlank(clientId)) {
             throw McpOAuthException.invalidClient("client_id is required");
@@ -110,10 +131,41 @@ public class McpOAuthTokenExchangeService {
         }
         // CIMD 分支只做形态判定，不拉取文档：元数据 host 挂了，已发令牌仍要能吊销。
         OAuth2AccessTokenDO accessTokenDO = oauth2TokenService.getAccessToken(accessToken);
-        if (accessTokenDO == null || ObjectUtil.notEqual(clientId, accessTokenDO.getClientId())) {
+        if (accessTokenDO == null) {
+            // 查不到 access token：可能是 refresh token，也可能是过期 refresh；
+            // refresh 分支内二次校验 clientId，未知令牌仍返回 false。
+            return revokeRefreshToken(clientId, accessToken);
+        }
+        if (ObjectUtil.notEqual(clientId, accessTokenDO.getClientId())) {
             return false;
         }
-        return oauth2TokenService.removeAccessToken(accessToken) != null;
+        if (oauth2TokenService.removeAccessToken(accessToken) != null) {
+            return true;
+        }
+        return revokeRefreshToken(clientId, accessToken);
+    }
+
+    /**
+     * 按 refresh token 吊销：删同 grant 全部 access token + refresh 行 + Redis 缓存。
+     * 删除顺序与上游 {@code OAuth2TokenServiceImpl.removeAccessToken} 的级联一致
+     * （先删 access 行、再删 refresh 行；Redis 键与 DB 行同删，避免 getAccessToken
+     * 回退缓存的已转换 access token 继续生效）。
+     */
+    private boolean revokeRefreshToken(String clientId, String refreshToken) {
+        OAuth2RefreshTokenDO refreshTokenDO = oauth2RefreshTokenMapper.selectByRefreshToken(refreshToken);
+        if (refreshTokenDO == null || ObjectUtil.notEqual(clientId, refreshTokenDO.getClientId())) {
+            return false;
+        }
+        List<OAuth2AccessTokenDO> accessTokens = oauth2AccessTokenMapper.selectListByRefreshToken(refreshToken);
+        if (CollUtil.isNotEmpty(accessTokens)) {
+            accessTokens.stream().map(OAuth2AccessTokenDO::getId).sorted()
+                    .forEach(oauth2AccessTokenMapper::deleteById);
+            oauth2AccessTokenRedisDAO.deleteList(accessTokens.stream()
+                    .map(OAuth2AccessTokenDO::getAccessToken).collect(Collectors.toSet()));
+        }
+        oauth2RefreshTokenMapper.deleteByRefreshToken(refreshToken);
+        oauth2AccessTokenRedisDAO.delete(refreshToken);
+        return true;
     }
 
     private OAuth2ClientDO validatePublicClient(String clientId, String grantType, Collection<String> scopes) {
