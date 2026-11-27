@@ -262,7 +262,13 @@ public class YudaoMcpAutoConfiguration {
         return registration;
     }
 
-    @Bean
+    // P0-2：bean 名必须与 MCP_SERVLET_NAME（"bujidaoMcpServlet"）一致——测试与
+    // 外部引用都按这个名取注册；只写 registration.setName() 改的是 servlet
+    // 注册名，不是 Spring bean 名。补上 @Bean(name = ...) 后，
+    // @ConditionalOnMissingBean(name = MCP_SERVLET_NAME) 也不再是死条件：
+    // 此前同名 bean 永不存在、条件永真；现在用户自备同名注册 bean 时本方法
+    // 才会被跳过（与 legacy 注册的写法对称）。
+    @Bean(name = MCP_SERVLET_NAME)
     @ConditionalOnMissingBean(name = MCP_SERVLET_NAME)
     public ServletRegistrationBean<McpProtocolDispatcherServlet> mcpServletRegistration(
             HttpServletMcpTransport modernTransport,
