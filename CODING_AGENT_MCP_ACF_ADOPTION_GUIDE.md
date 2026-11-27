@@ -118,7 +118,7 @@
 
 SQL 菜单插入不使用固定 ID，会根据 `/acf` 和权限标识动态查找或创建菜单。
 
-正式 MCP OAuth 默认使用 CIMD（Client ID Metadata Document）。接入时不需要预置固定 OAuth client，也不向服务端注册客户端；Agent 客户端以 client_id URL 发布一份元数据文档，服务端拉取并校验后合成临时客户端（不写入上游已有 `system_oauth2_client` 表）。
+正式 MCP OAuth 同时支持 DCR（Dynamic Client Registration）与 CIMD（Client ID Metadata Document），CIMD 优先。不支持 CIMD 的客户端（如 WorkBuddy）走 DCR：向 `POST /mcp/oauth2/register` 注册，服务端签发 `mcp-dcr-` 前缀的 client_id 并写入 `system_oauth2_client` 表；支持 CIMD 的客户端不需要预置固定 OAuth client，也不向服务端注册客户端；Agent 客户端以 client_id URL 发布一份元数据文档，服务端拉取并校验后合成临时客户端（不写入上游已有 `system_oauth2_client` 表）。
 
 最小元数据文档示例（由客户端托管在 client_id URL 上，须为 HTTPS；`allowPrivateAddresses=true` 时放行 http 的 client_id URL，仅本地开发 / 测试用，生产保持 false；文档内 `client_id` 必须与托管 URL 逐字节一致）：
 
@@ -238,6 +238,7 @@ yudao:
         cimd-max-concurrent-fetches: 20
         authorize-per-ip-per-minute: 60
         token-per-ip-per-minute: 60
+        register-per-ip-per-minute: 10
 ```
 
 限流阈值口径：以上阈值均按 60 秒滑动窗口计，进程内计数，多实例部署下各实例各自限流、非全局共享；超限返回 429（OAuth 错误响应为 `temporarily_unavailable`，带 `Retry-After: 60`）。
