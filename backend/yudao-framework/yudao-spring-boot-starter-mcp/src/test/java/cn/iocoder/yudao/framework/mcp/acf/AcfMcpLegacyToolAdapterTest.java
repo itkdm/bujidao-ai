@@ -1,7 +1,7 @@
 package cn.iocoder.yudao.framework.mcp.acf;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.modern.McpSchema;
 import org.junit.jupiter.api.Test;
 
@@ -70,7 +70,7 @@ class AcfMcpLegacyToolAdapterTest {
                 .build();
 
         io.modelcontextprotocol.spec.McpSchema.CallToolResult legacy =
-                AcfMcpLegacyToolAdapter.toLegacyResult(modern, jsonMapper());
+                AcfMcpLegacyToolAdapter.toLegacyResult(modern);
 
         assertThat(legacy.isError()).isFalse();
         assertThat(legacy.content()).hasSize(1);
@@ -92,7 +92,7 @@ class AcfMcpLegacyToolAdapterTest {
                 .build();
 
         io.modelcontextprotocol.spec.McpSchema.CallToolResult legacy =
-                AcfMcpLegacyToolAdapter.toLegacyResult(modern, jsonMapper());
+                AcfMcpLegacyToolAdapter.toLegacyResult(modern);
 
         assertThat(legacy.isError()).isTrue();
         assertThat(legacy.meta()).containsEntry(AcfMcpToolProtocolMetadata.ERROR_CODE, "PERMISSION_DENIED");
@@ -113,7 +113,7 @@ class AcfMcpLegacyToolAdapterTest {
                 .build();
 
         io.modelcontextprotocol.spec.McpSchema.CallToolResult legacy =
-                AcfMcpLegacyToolAdapter.toLegacyResult(modern, jsonMapper());
+                AcfMcpLegacyToolAdapter.toLegacyResult(modern);
 
         assertThat(legacy.isError()).isTrue();
         assertThat(legacy.meta()).containsEntry(AcfMcpToolProtocolMetadata.STATUS, "CONFIRM_REQUIRED");
@@ -151,7 +151,7 @@ class AcfMcpLegacyToolAdapterTest {
         // 又非 InputRequiredResult 的实现，必须以 IllegalArgumentException 拒绝。
         McpSchema.CallToolOutcome unknown = mock(McpSchema.CallToolOutcome.class);
 
-        assertThatThrownBy(() -> AcfMcpLegacyToolAdapter.toLegacyResult(unknown, jsonMapper()))
+        assertThatThrownBy(() -> AcfMcpLegacyToolAdapter.toLegacyResult(unknown))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Unsupported modern CallToolOutcome");
     }
@@ -171,7 +171,7 @@ class AcfMcpLegacyToolAdapterTest {
                 .build();
 
         io.modelcontextprotocol.spec.McpSchema.CallToolResult legacy =
-                AcfMcpLegacyToolAdapter.toLegacyResult(modern, jsonMapper());
+                AcfMcpLegacyToolAdapter.toLegacyResult(modern);
 
         assertThat(legacy.content()).hasSize(1);
         assertThat(legacy.content().get(0))
@@ -187,25 +187,25 @@ class AcfMcpLegacyToolAdapterTest {
     }
 
     @Test
-    void shouldSerializeNonTextContentToJsonTextForLegacyResult() {
+    void shouldRejectNonTextContentForLegacyResult() throws Exception {
+        // 非文本 content 不再静默序列化成 JSON 文本：没有保真转写时直接抛错。
+        // 位置构造的顺序用序列化后的 key-value 对锁定：data 是 base64、mimeType
+        // 是 image/png——两个参数读反了这里就会失败，而不是静默地把 mimeType
+        // 当成数据去抛错（record 字段顺序是 (annotations, data, mimeType, meta)）。
+        McpSchema.ImageContent image = new McpSchema.ImageContent(null, "aGVsbG8=", "image/png", null);
+        JsonNode serialized = new ObjectMapper().readTree(
+                new ObjectMapper().writeValueAsString(image));
+        assertThat(serialized.path("data").asText()).isEqualTo("aGVsbG8=");
+        assertThat(serialized.path("mimeType").asText()).isEqualTo("image/png");
+
         McpSchema.CallToolResult modern = McpSchema.CallToolResult.builder()
-                .addContent(new McpSchema.ImageContent(null, "aGVsbG8=", "image/png", null))
+                .addContent(image)
                 .isError(false)
                 .build();
 
-        io.modelcontextprotocol.spec.McpSchema.CallToolResult legacy =
-                AcfMcpLegacyToolAdapter.toLegacyResult(modern, jsonMapper());
-
-        assertThat(legacy.isError()).isFalse();
-        assertThat(legacy.content()).hasSize(1);
-        assertThat(legacy.content().get(0))
-                .isInstanceOf(io.modelcontextprotocol.spec.McpSchema.TextContent.class);
-        assertThat(((io.modelcontextprotocol.spec.McpSchema.TextContent) legacy.content().get(0)).text())
-                .contains("image/png");
-    }
-
-    private static JacksonMcpJsonMapper jsonMapper() {
-        return new JacksonMcpJsonMapper(new ObjectMapper());
+        assertThatThrownBy(() -> AcfMcpLegacyToolAdapter.toLegacyResult(modern))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Unsupported MCP content type for legacy result");
     }
 
 }
