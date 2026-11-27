@@ -27,8 +27,9 @@ import java.util.Set;
  * /mcp 的双协议分流入口：同一 endpoint 同时服务 MCP 2026-07-28（modern）与
  * 2025-11-25（legacy stateless）。
  *
- * <p>只做分流，不复制认证逻辑、不碰安全链：认证、scope、租户、限流、字符集等过滤器
- * 都在分流器之前跑完，两条腿共用同一套。分流器拿到请求后直接调目标 transport 的
+ * <p>只做分流，不复制认证逻辑、不碰安全链：认证、scope、租户、字符集等过滤器
+ * 都在分流器之前跑完，两条腿共用同一套。/mcp 路径上没有 QPS 限流（限流阈值只属于
+ * OAuth 端点），不要把体大小限制说成限流。分流器拿到请求后直接调目标 transport 的
  * {@code service(req, resp)} 转发——两个 transport 都是 {@code HttpServlet}
  *（SDK v2.2.0 tag 源码：{@code HttpServletMcpTransport} 与
  * {@code HttpServletStatelessServerTransport} 均 extends HttpServlet，且都不重写

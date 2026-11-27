@@ -121,7 +121,7 @@ public class YudaoMcpAutoConfiguration {
         // 容器里唯一的裸 Servlet bean（单 bean 时映射为 "/"，抢走 DispatcherServlet，
         // 整个 Spring MVC 全部 404；多于一个裸 Servlet bean 时它会落在
         // /mcpServerTransport/，绕过 mcpSecurityFilterChain 与 query-token /
-        // 限流过滤器）。用一个 disabled 的注册占住它，与 legacy 的
+        // 体大小限制过滤器）。用一个 disabled 的注册占住它，与 legacy 的
         // mcpLegacyServletRegistration 完全对称；/mcp 的注册仍归分流器
         // （mcpServletRegistration）管，分流器直接调这个 transport bean。
         ServletRegistrationBean<HttpServletMcpTransport> registration =
@@ -310,7 +310,7 @@ public class YudaoMcpAutoConfiguration {
         // 这里注入的是 modern 腿已建的同一个 bean（mcpServerHttpHeaderValidator），
         // 两腿 Origin / Host 规则一致。messageEndpoint 用配置端点（默认 /mcp），
         // 与 modern 一致。maxRequestSize 不设，沿用 main 的做法（SDK 默认 16 MiB；
-        // /mcp 前面的 McpRequestSizeLimitFilter 已按配置限流）。
+        // /mcp 前面的 McpRequestSizeLimitFilter 已按配置限制请求体大小）。
         return HttpServletStatelessServerTransport.builder()
                 .jsonMapper(jsonMapper)
                 .messageEndpoint(properties.getEndpoint())
