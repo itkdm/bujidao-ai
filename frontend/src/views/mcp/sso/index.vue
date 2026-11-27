@@ -16,8 +16,8 @@
           <div>
             <h2>第三方授权</h2>
             <p>{{ client.name || queryParams.clientId }}</p>
-            <el-tag v-if="isDynamicClient" type="warning" class="unverified-tag">未验证的第三方应用</el-tag>
-            <p v-if="isDynamicClient" class="unverified-tip">该应用由客户端自行注册，名称未经核实，请确认是你本人发起的授权再同意。</p>
+            <el-tag v-if="isUnverifiedClient" type="warning" class="unverified-tag">未验证的第三方应用</el-tag>
+            <p v-if="isUnverifiedClient" class="unverified-tip">该应用名称由客户端自行提供，未经核实，请确认是你本人发起的授权再同意。</p>
           </div>
         </div>
         <el-alert v-if="errorMessage" :title="errorMessage" type="error" :closable="false" />
@@ -93,10 +93,17 @@ const formData = reactive({
   scopes: [] as string[]
 })
 const availableScopes = ref<string[]>([])
-// DCR 注册的客户端：client_id 由服务端签发，前缀见后端 McpOAuthProperties.clientIdPrefix
-// 默认值 "mcp-dcr-"。前缀改动须同步改这里，否则“未验证”标记失效（fail-open：不显示标记）。
-// 注意：页面不渲染客户端自称的 logo，只显示名称 + 该标记。
-const isDynamicClient = computed(() => queryParams.clientId.startsWith('mcp-dcr-'))
+// client_id 由客户端自行提供、未经核实：DCR 注册的（mcp-dcr- 前缀，见后端
+// McpOAuthProperties.clientIdPrefix，默认值 "mcp-dcr-"）与 CIMD 的（https/http URL
+// 形态）都要标“未验证”；前缀改动须同步改这里，否则标记失效（fail-open：不显示标记）。
+// 注意：页面不渲染客户端自称的 logo，只显示名称 + 该标记。DB 客户端的 client_id
+// 理论上可填成 URL 形态而被误标，误标方向是 fail-safe（多标一个提醒），可接受。
+const isUnverifiedClient = computed(
+  () =>
+    queryParams.clientId.startsWith('mcp-dcr-') ||
+    queryParams.clientId.startsWith('https://') ||
+    queryParams.clientId.startsWith('http://')
+)
 const formLoading = ref(false)
 const initializing = ref(false)
 const errorMessage = ref('')
