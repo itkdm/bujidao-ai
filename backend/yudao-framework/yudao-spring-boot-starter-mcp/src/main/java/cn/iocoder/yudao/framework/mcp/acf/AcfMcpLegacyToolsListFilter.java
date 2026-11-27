@@ -26,7 +26,11 @@ import io.modelcontextprotocol.spec.McpSchema;
  * contextExtractor bean，transportContext 里同样有 USER_ID / TENANT_ID 等，
  * {@code AcfMcpContextSupport.fromTransport} 产出的 CapabilityContext 与 modern
  * 相同；逐工具调 {@code CapabilityVisibilityService.getVisible(name, query)}，
- * 与 export() 全量导出的策略求值次数相同（每个声明工具一次），不需要缓存。</p>
+ * 与 export() 全量导出的策略求值次数相同（每个声明工具一次），不需要缓存。
+ * 注意这里的“一致”只覆盖可见性判定次数与身份来源，不覆盖工具定义本身：
+ * export() 可能返回治理层替换后的 definition，而 legacy 静态规格永远用
+ * catalog 原始 descriptor——两腿 tools/list 定义的等价只在当前无覆盖定义的
+ * 策略集下成立（见 {@link AcfMcpToolSpecificationProvider} 的等价边界说明）。</p>
  *
  * <p>可见性服务可为空（与 {@code AcfMcpToolRepository} 的 fallback 一致）：
  * 为空时不过滤、全部工具可见；不用 {@code @ConditionalOnBean} 建 bean 是刻意的——

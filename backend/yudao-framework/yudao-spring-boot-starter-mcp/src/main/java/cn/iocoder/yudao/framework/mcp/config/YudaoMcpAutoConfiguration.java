@@ -60,8 +60,8 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
-import java.time.Duration;
 import java.util.Base64;
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -346,11 +346,13 @@ public class YudaoMcpAutoConfiguration {
             ObjectProvider<McpSyncListFilter<McpSchema.Tool>> toolFilters) {
         // 与 main 的 legacy wiring 一致：serverInfo / instructions 取同一份配置
         // （modern 腿同值）；capabilities 只开 tools（listChanged 不通知）、
-        // resources 空列表、prompts 不配；工具由 D1 的 McpToolSpecificationProvider
-        // 喂入（目前只有 acfMcpToolSpecificationProvider）。
-        // requestTimeout：main 默认 30 秒（properties 字段已随 2.2.0 迁移删除，
-        // modern 腿也没有超时）；legacy 腿按 main 保留 30 秒写死在这里，而不是
-        // 用 SDK 默认 10 秒。
+        // resources 空列表、prompts 不配；工具由 D1 的 McpToolSpecificationProvider 喂入（目前只有 acfMcpToolSpecificationProvider）。
+        // 注意：这里不设 requestTimeout——SDK stateless 路径不消费该值：
+        // StatelessSyncSpecification.requestTimeout() 的值传进
+        // McpStatelessAsyncServer 构造器后即被丢弃（SDK v2.2.0 tag 源码：
+        // 该构造器只在参数表里出现一次，全文件再无任何 timeout 字段或引用），
+        // 两腿实际上都没有工具调用超时；如需超时控制，要另找超时机制，不要
+        // 在这里补一个看似生效的 requestTimeout。
         // 入口：McpStatelessSyncServer 构造器是包私有的，只能走
         // io.modelcontextprotocol.server.McpServer.sync(transport) 工厂
         // （与 modern 的 io.modelcontextprotocol.modern.server.McpServer 同名，
@@ -367,7 +369,6 @@ public class YudaoMcpAutoConfiguration {
                         .jsonMapper(jsonMapper)
                         .serverInfo(properties.getName(), properties.getVersion())
                         .instructions(properties.getInstructions())
-                        .requestTimeout(Duration.ofSeconds(30))
                         .capabilities(capabilities)
                         .tools(createLegacyToolSpecifications(toolProviders))
                         .resources(List.of())
@@ -378,8 +379,13 @@ public class YudaoMcpAutoConfiguration {
 
     private List<McpStatelessServerFeatures.SyncToolSpecification> createLegacyToolSpecifications(
             ObjectProvider<McpToolSpecificationProvider> toolProviders) {
+        // 构建时按工具名升序：SDK 的 legacy tools/list 按声明顺序返回，modern 腿
+        // 的仓库按名升序返回；这里排好序，两腿 tools/list 的顺序才一致。
+        // 注意 cursor 语义仍不同（见采用指南“双协议分流”）：modern 遇非空 cursor
+        // 以 -32602 拒绝，legacy 忽略 cursor 返回全量——顺序对齐不等于分页对齐。
         return toolProviders.orderedStream()
                 .flatMap(provider -> provider.createToolSpecifications().stream())
+                .sorted(Comparator.comparing(specification -> specification.tool().name()))
                 .toList();
     }
 
