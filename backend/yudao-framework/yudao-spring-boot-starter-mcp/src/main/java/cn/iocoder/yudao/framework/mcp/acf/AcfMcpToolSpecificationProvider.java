@@ -2,7 +2,7 @@ package cn.iocoder.yudao.framework.mcp.acf;
 
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolCatalog;
 import cn.iocoder.yudao.framework.acf.core.tool.CapabilityToolDescriptor;
-import cn.iocoder.yudao.framework.mcp.tool.McpToolSpecificationProvider;
+import cn.iocoder.yudao.framework.mcp.tool.McpLegacyToolSpecificationProvider;
 import io.modelcontextprotocol.server.McpStatelessServerFeatures;
 
 import java.util.List;
@@ -41,7 +41,7 @@ import java.util.List;
  *
  * @author bujidao
  */
-public class AcfMcpToolSpecificationProvider implements McpToolSpecificationProvider {
+public class AcfMcpToolSpecificationProvider implements McpLegacyToolSpecificationProvider {
 
     private final CapabilityToolCatalog capabilityToolCatalog;
     private final AcfMcpToolMapper toolMapper;

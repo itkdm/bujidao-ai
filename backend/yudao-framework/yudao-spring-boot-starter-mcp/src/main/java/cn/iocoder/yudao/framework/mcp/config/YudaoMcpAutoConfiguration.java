@@ -12,7 +12,7 @@ import cn.iocoder.yudao.framework.mcp.security.McpStrictAccessTokenFilter;
 import cn.iocoder.yudao.framework.mcp.security.McpTenantContextFilter;
 import cn.iocoder.yudao.framework.mcp.security.McpTransportContextKeys;
 import cn.iocoder.yudao.framework.common.biz.system.oauth2.OAuth2TokenCommonApi;
-import cn.iocoder.yudao.framework.mcp.tool.McpToolSpecificationProvider;
+import cn.iocoder.yudao.framework.mcp.tool.McpLegacyToolSpecificationProvider;
 import cn.iocoder.yudao.framework.mcp.transport.McpProtocolDispatcherServlet;
 import cn.iocoder.yudao.framework.mcp.transport.McpRequestBodyCharsetFilter;
 import cn.iocoder.yudao.framework.mcp.transport.McpRequestSizeLimitFilter;
@@ -342,11 +342,11 @@ public class YudaoMcpAutoConfiguration {
             HttpServletStatelessServerTransport transport,
             McpJsonMapper jsonMapper,
             YudaoMcpServerProperties properties,
-            ObjectProvider<McpToolSpecificationProvider> toolProviders,
+            ObjectProvider<McpLegacyToolSpecificationProvider> toolProviders,
             ObjectProvider<McpSyncListFilter<McpSchema.Tool>> toolFilters) {
         // 与 main 的 legacy wiring 一致：serverInfo / instructions 取同一份配置
         // （modern 腿同值）；capabilities 只开 tools（listChanged 不通知）、
-        // resources 空列表、prompts 不配；工具由 D1 的 McpToolSpecificationProvider 喂入（目前只有 acfMcpToolSpecificationProvider）。
+        // resources 空列表、prompts 不配；工具由 D1 的 McpLegacyToolSpecificationProvider 喂入（目前只有 acfMcpToolSpecificationProvider）。
         // 注意：这里不设 requestTimeout——SDK stateless 路径不消费该值：
         // StatelessSyncSpecification.requestTimeout() 的值传进
         // McpStatelessAsyncServer 构造器后即被丢弃（SDK v2.2.0 tag 源码：
@@ -378,7 +378,7 @@ public class YudaoMcpAutoConfiguration {
     }
 
     private List<McpStatelessServerFeatures.SyncToolSpecification> createLegacyToolSpecifications(
-            ObjectProvider<McpToolSpecificationProvider> toolProviders) {
+            ObjectProvider<McpLegacyToolSpecificationProvider> toolProviders) {
         // 构建时按工具名升序：SDK 的 legacy tools/list 按声明顺序返回，modern 腿
         // 的仓库按名升序返回；这里排好序，两腿 tools/list 的顺序才一致。
         // 注意 cursor 语义仍不同（见采用指南“双协议分流”）：modern 遇非空 cursor
