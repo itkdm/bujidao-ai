@@ -297,12 +297,18 @@ public class YudaoMcpAutoConfiguration {
     // D2 只建 bean，不接线；D3 由 McpProtocolDispatcherServlet 分流：legacy transport
     // 仍不注册到 /mcp 上（下面的 disabled 注册占住它），分流器直接调它的 service()。
 
-    @Bean
+    @Bean(destroyMethod = "destroy")
     @ConditionalOnMissingBean(HttpServletStatelessServerTransport.class)
     public HttpServletStatelessServerTransport mcpLegacyStatelessServerTransport(
             McpJsonMapper jsonMapper, YudaoMcpServerProperties properties,
             McpTransportContextExtractor<HttpServletRequest> contextExtractor,
             ServerHttpHeaderValidator httpHeaderValidator) {
+        // 关闭与 modern 腿对称：modern transport bean 用 destroyMethod =
+        // "closeGracefully"（其方法是 public void）。legacy transport 的
+        // closeGracefully() 返回 Mono<Void>（SDK v2.2.0 tag 源码），Spring 的
+        // destroyMethod 调了也不会订阅，等于空操作；这里用 destroyMethod =
+        // "destroy"——GenericServlet.destroy() 内部正是 closeGracefully().block()，
+        // 才是真正优雅关闭的 void 入口。
         // 2.2.0 里 Builder.securityValidator(...) 仍存在但已 @Deprecated，内部转调
         // ServerTransportSecurityValidator.toHttpHeaderValidator(...)；直接用
         // httpHeaderValidator(...)：DefaultServerTransportSecurityValidator 同时
@@ -336,7 +342,7 @@ public class YudaoMcpAutoConfiguration {
         return registration;
     }
 
-    @Bean(name = "mcpStatelessSyncServer", destroyMethod = "close")
+    @Bean(name = "mcpStatelessSyncServer", destroyMethod = "closeGracefully")
     @ConditionalOnMissingBean(McpStatelessSyncServer.class)
     public McpStatelessSyncServer mcpStatelessSyncServer(
             HttpServletStatelessServerTransport transport,
@@ -360,6 +366,9 @@ public class YudaoMcpAutoConfiguration {
         // tools/list 可见性：D3 用 SDK 自带的 addToolFilter 挂
         // AcfMcpLegacyToolsListFilter（ACF 自动配置提供；无可见性服务时过滤器放行
         // 全部，与 modern 仓库缺可见性服务时退回声明目录一致）。
+        // destroyMethod = "closeGracefully"：SDK v2.2.0 的 McpStatelessSyncServer
+        // 确有 public void closeGracefully()（内部 block 等在途操作完成），与 modern
+        // 腿 mcpServer bean 对称；旧的 close() 是立即关闭。
         McpSchema.ServerCapabilities capabilities = McpSchema.ServerCapabilities.builder()
                 .tools(false)
                 .resources(false, false)
