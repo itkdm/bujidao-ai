@@ -6,8 +6,11 @@
 -- 3. ACF 高风险能力确认 challenge 表
 -- 4. ACF 管理后台菜单与按钮权限
 --
--- MCP OAuth 正式方案默认使用 CIMD（Client ID Metadata Document），不需要预置固定 OAuth client；
--- 客户端以 client_id URL 发布元数据文档，服务端拉取校验后合成临时客户端，不写入 system_oauth2_client 表。
+-- MCP OAuth 正式方案同时支持 DCR（Dynamic Client Registration）与 CIMD（Client ID
+-- Metadata Document），CIMD 优先，不需要预置固定 OAuth client；
+-- CIMD 客户端以 client_id URL 发布元数据文档，服务端拉取校验后合成临时客户端，
+-- 不写入 system_oauth2_client 表；DCR 注册的客户端由服务端签发 mcp-dcr- 前缀的
+-- client_id 并写入 system_oauth2_client 表。
 
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;

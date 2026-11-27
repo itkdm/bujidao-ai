@@ -65,7 +65,7 @@
 - `yudao-spring-boot-starter-acf`：ACF 核心，包含 `@AgentCapability`、能力注册、能力执行、权限契约、协议 schema、幂等与确认控制抽象。
 - `yudao-spring-boot-starter-mcp`：通用 MCP Server starter，提供 MCP endpoint、安全过滤、协议适配、可插拔 Tool Provider，并内置可选 ACF Tool Provider。
 - `yudao-module-acf`：ACF 官方生产适配模块，提供能力目录、调用日志、确认 challenge 持久化和最小后台 API。
-- `yudao-module-mcp`：MCP 应用层 OAuth 适配模块，复用上游 `system_oauth2_client`、授权码、access token、refresh token、用户、租户和权限基础设施，补充 MCP OAuth / CIMD / PKCE / resource 校验。
+- `yudao-module-mcp`：MCP 应用层 OAuth 适配模块，复用上游 `system_oauth2_client`、授权码、access token、refresh token、用户、租户和权限基础设施，补充 MCP OAuth / DCR / CIMD / PKCE / resource 校验。
 
 ### 后端按需
 
@@ -190,6 +190,11 @@ yudao:
       instructions: ${YOUR_MCP_SERVER_INSTRUCTIONS}
       required-scopes:
         - mcp:access
+      # DCR 元数据宣告开关：默认 false，只控制元数据是否暴露 registration_endpoint；
+      # 注册端点本身由下面 oauth 的 dynamic-client-registration-enabled 控制（默认 true）。
+      # 两开关须配套开启：只开本开关、不开端点开关时，元数据会宣告一个不可用的注册端点；
+      # 只开端点开关、不开本开关时，客户端从元数据发现不了 DCR。按指南部署须显式配 true。
+      dynamic-client-registration-enabled: true
       # 生产部署必须按实际域名配置，默认只允许 localhost / 127.0.0.1
       allowed-origins:
         - https://${YOUR_ADMIN_DOMAIN}
@@ -222,6 +227,22 @@ yudao:
         - mcp:access
       access-token-validity-seconds: 1800
       refresh-token-validity-seconds: 2592000
+      # DCR（Dynamic Client Registration）：端点开关默认 true，控制 POST /mcp/oauth2/register
+      # 本身；与上面 server 层的 dynamic-client-registration-enabled（默认 false，
+      # 只控制元数据宣告）须配套开启，见 server 层注释。
+      dynamic-client-registration-enabled: true
+      # 同意页用此前缀识别 DCR 客户端并显示“未验证”标记；改动须同步改前端判断，
+      # 否则标记失效（fail-open：不显示标记）。
+      client-id-prefix: mcp-dcr-
+      # 是否允许 native app 私有 URI scheme 回调（如 workbuddy-ai://、vscode://），默认 true；
+      # 公网暴露且无桌面客户端需求时可关掉收紧，只放行回环与前缀白名单内的回调。
+      allow-private-use-uri-scheme-redirects: true
+      # 额外允许的 redirect_uri 前缀：前缀匹配在黑名单与回环限制之前短路返回，
+      # 配了就同时绕过这两道检查；只配完全信任的前缀（startsWith 匹配无边界，
+      # https://trusted.example 也会匹配 https://trusted.example.evil.com，是已知后续项）。
+      allowed-redirect-uri-prefixes: []
+      # DCR 请求未提供 client_name 时的默认名称。
+      default-client-name: MCP Client
       cimd:
         fetch-timeout: 3s
         max-document-bytes: 5120
@@ -241,7 +262,7 @@ yudao:
         register-per-ip-per-minute: 10
 ```
 
-限流阈值口径：以上阈值均按 60 秒滑动窗口计，进程内计数，多实例部署下各实例各自限流、非全局共享；超限返回 429（OAuth 错误响应为 `temporarily_unavailable`，带 `Retry-After: 60`）。
+限流阈值口径：以上阈值均按 60 秒滑动窗口计，进程内计数，多实例部署下各实例各自限流、非全局共享；超限返回 429（OAuth 错误响应为 `temporarily_unavailable`，带 `Retry-After: 60`）。按 IP 计的限流（authorize / token / register）取 IP 时优先读 `X-Forwarded-For` 首值：该头是无条件信任的——直连部署下调用方同样可自带伪造的 XFF（其次是 `X-Real-IP`）当限流身份；只有可信代理剥离/重写这类转发头才能防住，直连部署应接受按 IP 限流可被轮换，或不要单独依赖它。
 
 还要确认上游已有配置：
 
@@ -255,6 +276,15 @@ yudao:
 - `allowed-origins`
 - `cimd.allow-private-addresses`（仅本地开发 / 测试临时开启，生产保持 false）
 - redirect URI 的 https 要求（CIMD 客户端不放行自定义 scheme；http 仅放行 localhost / 127.0.0.1 回调）
+
+### DCR redirect 策略
+
+DCR 注册时 `redirect_uris` 的放行规则（`McpOAuthClientRegistrationService`，按顺序判定）：
+
+- `allowed-redirect-uri-prefixes` 优先：前缀匹配在下面两道检查之前短路返回，配了前缀就同时绕过黑名单与回环限制；只配完全信任的前缀。注意前缀是 `startsWith` 匹配、无边界（`https://trusted.example` 也会匹配 `https://trusted.example.evil.com`），是已知后续项。
+- http(s) 回调只放行默认回环地址（`localhost` / `127.0.0.1`，不带 userinfo）；非回环的 http(s) 回调一律拒绝。
+- 自定义 scheme（如 `workbuddy-ai://`）默认放行（`allow-private-use-uri-scheme-redirects` 默认 true；scheme 须符合 `[a-z][a-z0-9+.-]{2,63}` 且带内容），但有 34 项私有 scheme 黑名单兜底（`ms-msdt`、`search-ms`、`microsoft-edge` 等曾被用于钓鱼 / 远程执行的协议处理器）。
+- 黑名单永远补不完：新协议处理器还会出现，残余风险须在部署时接受——不要把本服务端暴露给不可信网络，或改用 `allowed-redirect-uri-prefixes` 由管理员逐个放行。不要改成白名单：开放 DCR 的意义就是任意桌面客户端都能注册，而合法应用的 scheme 无法事先枚举。
 
 ## 双协议分流（modern 2026-07-28 + legacy 2025-11-25）
 
@@ -303,7 +333,7 @@ MCP OAuth 正式方案复用上游系统能力：
 - 提供 `/mcp/oauth2/token`
 - 提供 `/mcp/oauth2/revoke`
 - 保存 MCP 授权请求和授权码扩展信息到 Redis
-- 对 CIMD、PKCE、resource indicator、redirect URI 策略做 MCP 需要的校验
+- 对 DCR、CIMD、PKCE、resource indicator、redirect URI 策略做 MCP 需要的校验
 
 除非目标项目上游版本缺少必要 OAuth API，否则不要修改 `yudao-module-system`。如果确实缺少 API，先判断是升级上游、复制最小缺失 API，还是做适配接口，不要直接重构系统 OAuth 模块。
 
@@ -400,7 +430,7 @@ mvn package -DskipTests -pl yudao-server -am
 用 Codex、WorkBuddy 或其他 Remote MCP 客户端配置：
 
 - MCP URL：`https://${YOUR_API_DOMAIN}/mcp`
-- 认证方式：OAuth / CIMD（client_id URL + 元数据文档）
+- 认证方式：OAuth / CIMD（client_id URL + 元数据文档）或 DCR（不支持 CIMD 的客户端走 DCR 注册）
 - 不手动填写固定 token 作为生产方案
 
 测试：

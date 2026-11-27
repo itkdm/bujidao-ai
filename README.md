@@ -32,7 +32,7 @@
 | **权限控制**       | 根据当前登录用户原有业务权限决定 Agent 能看到、能调用哪些能力                                      |
 | **执行治理**       | 提供权限校验、幂等控制、调用审计、Confirmation Challenge 等机制                             |
 | **Remote MCP** | 将受治理的业务能力通过 MCP 暴露给 Codex、WorkBuddy 等 AI 客户端                            |
-| **OAuth 接入**   | 支持 Authorization Code + PKCE、CIMD（Client ID Metadata Document）等 MCP OAuth 流程 |
+| **OAuth 接入**   | 支持 Authorization Code + PKCE、DCR（Dynamic Client Registration）与 CIMD（Client ID Metadata Document）等 MCP OAuth 流程 |
 | **真实业务示例**     | 已提供商品、库存、客户、供应商、销售订单、采购订单等 ERP Capability 示例                            |
 
 一句话理解整个项目：
@@ -48,7 +48,7 @@
         ↓
  Remote MCP Server
         ↓
- OAuth / PKCE / CIMD
+ OAuth / PKCE / DCR / CIMD
         ↓
 AI Agent / MCP Client
 ```
@@ -190,13 +190,14 @@ Remote MCP 正式接入复用 ruoyi-vue-pro 已有的：
 
 * Authorization Code；
 * PKCE；
+* DCR（Dynamic Client Registration）；
 * CIMD（Client ID Metadata Document）；
 * Resource Indicator；
 * Redirect URI 校验；
 * MCP OAuth Metadata；
 * Token / Revoke 等相关 Endpoint。
 
-默认使用 CIMD：兼容的 MCP Client 以 client_id URL 发布 Client ID Metadata Document，服务端拉取并校验后合成临时客户端，不要求预置固定的 `client_id`，也不写入 `system_oauth2_client` 表。
+DCR 与 CIMD 并存，CIMD 优先：支持 CIMD 的 MCP Client 以 client_id URL 发布 Client ID Metadata Document，服务端拉取并校验后合成临时客户端，不要求预置固定的 `client_id`，也不写入 `system_oauth2_client` 表；不支持 CIMD 的客户端（如 WorkBuddy）走 DCR，向 `POST /mcp/oauth2/register` 注册，服务端签发 `mcp-dcr-` 前缀的 client_id 并写入 `system_oauth2_client` 表。
 
 ---
 
@@ -288,7 +289,7 @@ Capability 调用会产生调用日志，用于记录执行结果并支持后续
 │        resources/*     OAuth Metadata        │
 └─────────────────────┬────────────────────────┘
                       │
-              OAuth / PKCE / CIMD
+              OAuth / PKCE / DCR / CIMD
                       │
                       ▼
 ┌──────────────────────────────────────────────┐
@@ -615,6 +616,7 @@ yudao-module-*
 | Remote MCP Server           | 已实现 |
 | MCP OAuth / PKCE            | 已实现 |
 | CIMD（Client ID Metadata Document） | 已实现 |
+| DCR（Dynamic Client Registration） | 已实现 |
 | ACF 管理后台                    | 已实现 |
 | ERP Capability 示例           | 已实现 |
 
@@ -660,7 +662,8 @@ Remote MCP 涉及真实企业业务能力，部署到生产环境前请重点确
 * MCP Endpoint；
 * OAuth Issuer；
 * Authorization Endpoint；
-* Token Endpoint。
+* Token Endpoint；
+* Registration Endpoint（DCR 注册端点，见下）。
 
 ### Hosts 与 Origins
 
@@ -669,6 +672,7 @@ Remote MCP 涉及真实企业业务能力，部署到生产环境前请重点确
 ```text
 allowed-hosts
 allowed-origins
+allowed-redirect-uri-prefixes
 ```
 
 不要直接沿用开发环境的宽松配置。
@@ -694,6 +698,20 @@ system_oauth2_client
 ```
 
 服务端拉取文档并校验（client_id 与托管 URL 一致、redirect URI 为 HTTPS、grant 仅支持 authorization_code / refresh_token、认证方式仅支持 none）后合成临时客户端。生产环境应根据企业安全要求限制 Redirect URI 与客户端来源。
+
+### DCR（Dynamic Client Registration）
+
+不支持 CIMD 的客户端（如 WorkBuddy）向 `POST /mcp/oauth2/register` 注册，服务端签发 `mcp-dcr-` 前缀的 client_id 并写入 ruoyi-vue-pro 已有的：
+
+```text
+system_oauth2_client
+```
+
+只支持公开客户端（`token_endpoint_auth_method=none`）且强制 PKCE；同意页会给 `mcp-dcr-` 前缀的客户端打“未验证”标记（CIMD 客户端的 client_name 是自断言的，同样未经核实）。
+
+DCR 有两层开关，须配套开启：`yudao.mcp.oauth.dynamic-client-registration-enabled`（默认 true，控制注册端点本身）与 `yudao.mcp.server.dynamic-client-registration-enabled`（默认 false，只控制元数据是否宣告 `registration_endpoint`）。只开元数据开关、不开端点开关时，元数据会宣告一个不可用的注册端点；只开端点开关、不开元数据开关时，客户端从元数据发现不了 DCR。
+
+Redirect 策略：http(s) 回调只放行默认回环地址（localhost / 127.0.0.1）；自定义 scheme（如 `workbuddy-ai://`）默认放行，但有 34 项私有 scheme 黑名单兜底——黑名单永远补不完，新协议处理器还会出现；`allowed-redirect-uri-prefixes` 会绕过黑名单与回环限制，只配完全信任的前缀（`startsWith` 匹配无边界是已知后续项）。
 
 ### 权限
 
