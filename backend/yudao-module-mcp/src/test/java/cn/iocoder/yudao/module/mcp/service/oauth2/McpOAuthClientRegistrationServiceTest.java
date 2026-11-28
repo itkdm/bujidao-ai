@@ -169,10 +169,93 @@ class McpOAuthClientRegistrationServiceTest {
     }
 
     @Test
-    void shouldRejectScopeOverLimit() {
+    void shouldAcceptAndStripOfflineAccessScope() {
         McpOAuthClientRegistrationReqVO reqVO = new McpOAuthClientRegistrationReqVO();
         reqVO.setRedirectUris(List.of("http://127.0.0.1:10244/callback"));
         reqVO.setScope("mcp:access offline_access");
+        when(oauth2ClientMapper.selectByClientId(anyString())).thenReturn(null);
+        when(cacheManager.getCache(RedisKeyConstants.OAUTH_CLIENT)).thenReturn(cache);
+
+        McpOAuthClientRegistrationRespVO response = service.register(reqVO, "http://127.0.0.1:48080/mcp");
+
+        // offline_access 只表达刷新意图：接受、不拒绝，但剥离、不计入授予 scope；
+        // 响应 scope 由剥离后的授予 scope 生成，不含 offline_access（与 CIMD 的 parseScopes 一致）。
+        assertThat(response.getScope()).isEqualTo("mcp:access");
+        ArgumentCaptor<OAuth2ClientDO> clientCaptor = ArgumentCaptor.forClass(OAuth2ClientDO.class);
+        verify(oauth2ClientMapper).insert(clientCaptor.capture());
+        assertThat(clientCaptor.getValue().getScopes()).containsExactly("mcp:access");
+        verify(cache).evict(clientCaptor.getValue().getClientId());
+        verify(cache, never()).clear();
+    }
+
+    @Test
+    void shouldDefaultScopesWhenOnlyOfflineAccessRequested() {
+        McpOAuthClientRegistrationReqVO reqVO = new McpOAuthClientRegistrationReqVO();
+        reqVO.setRedirectUris(List.of("http://127.0.0.1:10244/callback"));
+        reqVO.setScope("offline_access");
+        when(oauth2ClientMapper.selectByClientId(anyString())).thenReturn(null);
+        when(cacheManager.getCache(RedisKeyConstants.OAUTH_CLIENT)).thenReturn(cache);
+
+        McpOAuthClientRegistrationRespVO response = service.register(reqVO, "http://127.0.0.1:48080/mcp");
+
+        // offline_access 剥离后为空，视同未声明 scope，取 defaultScopes。
+        assertThat(response.getScope()).isEqualTo("mcp:access");
+        ArgumentCaptor<OAuth2ClientDO> clientCaptor = ArgumentCaptor.forClass(OAuth2ClientDO.class);
+        verify(oauth2ClientMapper).insert(clientCaptor.capture());
+        assertThat(clientCaptor.getValue().getScopes()).containsExactly("mcp:access");
+        verify(cache).evict(clientCaptor.getValue().getClientId());
+        verify(cache, never()).clear();
+    }
+
+    @Test
+    void shouldAcceptScopeWithExtraSpacesAndDuplicates() {
+        McpOAuthClientRegistrationReqVO reqVO = new McpOAuthClientRegistrationReqVO();
+        reqVO.setRedirectUris(List.of("http://127.0.0.1:10244/callback"));
+        reqVO.setScope("  mcp:access   offline_access  mcp:access ");
+        when(oauth2ClientMapper.selectByClientId(anyString())).thenReturn(null);
+        when(cacheManager.getCache(RedisKeyConstants.OAUTH_CLIENT)).thenReturn(cache);
+
+        McpOAuthClientRegistrationRespVO response = service.register(reqVO, "http://127.0.0.1:48080/mcp");
+
+        // 多余空格与重复 scope 先归一化（去空白、去重），再剥离 offline_access。
+        assertThat(response.getScope()).isEqualTo("mcp:access");
+        ArgumentCaptor<OAuth2ClientDO> clientCaptor = ArgumentCaptor.forClass(OAuth2ClientDO.class);
+        verify(oauth2ClientMapper).insert(clientCaptor.capture());
+        assertThat(clientCaptor.getValue().getScopes()).containsExactly("mcp:access");
+    }
+
+    @Test
+    void shouldRejectOfflineAccessWithWrongCase() {
+        McpOAuthClientRegistrationReqVO reqVO = new McpOAuthClientRegistrationReqVO();
+        reqVO.setRedirectUris(List.of("http://127.0.0.1:10244/callback"));
+        reqVO.setScope("mcp:access Offline_Access");
+
+        // scope 区分大小写（RFC 6749 §3.3）：剥离只认小写 offline_access，
+        // 大写变体不剥离，仍按超限 scope 拒 invalid_scope（与 CIMD 一致）。
+        assertThatThrownBy(() -> service.register(reqVO, "http://127.0.0.1:48080/mcp"))
+                .isInstanceOf(McpOAuthException.class)
+                .extracting("status", "error")
+                .containsExactly(HttpStatus.BAD_REQUEST, "invalid_scope");
+    }
+
+    @Test
+    void shouldRejectOtherScopeEvenWithOfflineAccess() {
+        McpOAuthClientRegistrationReqVO reqVO = new McpOAuthClientRegistrationReqVO();
+        reqVO.setRedirectUris(List.of("http://127.0.0.1:10244/callback"));
+        reqVO.setScope("mcp:other offline_access");
+
+        // 剥离 offline_access 后仍有超限 scope，照常拒 invalid_scope。
+        assertThatThrownBy(() -> service.register(reqVO, "http://127.0.0.1:48080/mcp"))
+                .isInstanceOf(McpOAuthException.class)
+                .extracting("status", "error")
+                .containsExactly(HttpStatus.BAD_REQUEST, "invalid_scope");
+    }
+
+    @Test
+    void shouldRejectScopeOverLimit() {
+        McpOAuthClientRegistrationReqVO reqVO = new McpOAuthClientRegistrationReqVO();
+        reqVO.setRedirectUris(List.of("http://127.0.0.1:10244/callback"));
+        reqVO.setScope("mcp:other");
 
         assertThatThrownBy(() -> service.register(reqVO, "http://127.0.0.1:48080/mcp"))
                 .isInstanceOf(McpOAuthException.class)

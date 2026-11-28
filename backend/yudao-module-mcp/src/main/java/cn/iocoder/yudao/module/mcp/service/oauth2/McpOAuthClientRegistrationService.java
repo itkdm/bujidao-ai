@@ -43,6 +43,8 @@ public class McpOAuthClientRegistrationService {
             OAuth2GrantTypeEnum.AUTHORIZATION_CODE.getGrantType(),
             OAuth2GrantTypeEnum.REFRESH_TOKEN.getGrantType());
     private static final List<String> SUPPORTED_RESPONSE_TYPES = List.of("code");
+    /** 只表达“想要 refresh token”的意图（见 normalizeScopes）：接受、剥离、不计入授予 scope。 */
+    private static final String OFFLINE_ACCESS_SCOPE = "offline_access";
     // 私有 scheme 黑名单：注册时拒绝这些 scheme 作 redirect_uri。
     // 原因：授权通过后浏览器会直接导航到注册的 redirect_uri（带 code），
     // 若 scheme 对应操作系统/浏览器的协议处理器，攻击者只需骗用户点一次
@@ -175,15 +177,28 @@ public class McpOAuthClientRegistrationService {
         return properties.getClientIdPrefix() + IdUtil.fastSimpleUUID();
     }
 
+    /**
+     * 归一化注册请求的 scope：未声明时取 {@code defaultScopes}；已声明时必须是
+     * {@code defaultScopes} 的子集，超限抛 {@code invalid_scope}（静默丢弃超限 scope
+     * 会让客户端以为自己拿到了没拿到的权限，所以直接拒绝）。
+     * 例外是 {@code offline_access}：它只表达“想要 refresh token”的意图，本服务端
+     * 换码时无条件签发 refresh token、不以 offline_access 为条件（见 P1-8）；
+     * 接受它，但剥离、不计入授予 scope——授予的仍只是 defaultScopes，不扩大任何权限。
+     * 剥离后为空时视同未声明 scope，取 defaultScopes。
+     * 与 CIMD 的 {@code McpOAuthClientResolver.parseScopes} 语义一致。
+     */
     private List<String> normalizeScopes(String scope) {
         List<String> scopes = normalizeList(OAuth2Utils.buildScopes(scope));
         if (CollUtil.isEmpty(scopes)) {
             return properties.getDefaultScopes();
         }
-        if (!CollUtil.containsAll(properties.getDefaultScopes(), scopes)) {
+        List<String> grantableScopes = scopes.stream()
+                .filter(s -> !OFFLINE_ACCESS_SCOPE.equals(s))
+                .toList();
+        if (!CollUtil.containsAll(properties.getDefaultScopes(), grantableScopes)) {
             throw McpOAuthException.invalidScope("requested scope is not allowed");
         }
-        return scopes;
+        return grantableScopes.isEmpty() ? properties.getDefaultScopes() : grantableScopes;
     }
 
     private static List<String> normalizeGrantTypes(List<String> grantTypes) {
